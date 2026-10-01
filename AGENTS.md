@@ -1609,12 +1609,13 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/cluster](https://github.com/Kronuz/cluster) &middot; depends on: `reactor`, `varint`
 - **What it is:** A header-only UDP multicast substrate providing typed, token-scoped bus framing and a generic Raft implementation.
 - **Header / target:** `#include "bus.h"` and `#include "raft.h"`; target `cluster::cluster`; C++20; requires standalone Asio transitively through `reactor`.
-- **How it works:** `cluster::Bus` owns one multicast UDP socket and receive loop, and frames messages as version, type, serialized token, and content. It rejects malformed frames, newer versions, out-of-range types, and mismatched cluster tokens before dispatching on the bus reactor thread. `cluster::Raft` supplies terms, roles, votes, append, commit, election, and application hooks, but membership gossip is not implemented despite the README describing that future layer.
+- **How it works:** `cluster::Bus` owns one multicast UDP socket and receive loop, and frames messages as version, type, serialized token, and content. It rejects malformed frames, newer versions, out-of-range types, and mismatched cluster tokens before dispatching on the bus reactor thread. `cluster::Raft` supplies terms, roles, votes, append, commit, election, and application hooks, but membership gossip is not implemented despite the README describing that future layer. `liveness.h`'s `LivenessTracker` is a ready-made, last-seen-timestamp-based `RaftDelegate::is_alive()` for a consumer with no other authoritative liveness source (a static peer list instead of gossip membership, for example) -- a permanently-dead peer misreported alive forever otherwise silently freezes `heartbeat_cb()`'s next-entry pick and blocks all future commits.
 - **Key API:**
   - `cluster::Bus(major, minor, token, max_type, Handler)`
   - `set_options(reactor::UdpOptions)`
   - `start(port)`, `send(type, payload)`, `io()`
   - `cluster::Raft` with injected bus, node, state, and apply seams
+  - `cluster::LivenessTracker`: `touch(id)`, `is_alive(id)`, `count_alive(ids)`
   - Message frame: `[major][minor][type][serialise_string(token)][content]`
 - **Example:**
   ```cpp
