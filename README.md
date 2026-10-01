@@ -1,6 +1,6 @@
 # Kronuz C++ Libraries
 
-Sixty-five small, standalone C++ libraries, each in its own repository under
+Sixty-six small, standalone C++ libraries, each in its own repository under
 [github.com/Kronuz](https://github.com/Kronuz). This repo is the index: what exists, what
 each one is for, and how to use them together.
 
@@ -53,14 +53,14 @@ lists the real include line for every one.
 `times`, `datetime`, `io`, `fs`
 
 **Networking, serialization, storage.** `reactor`, `server`, `http`, `http-parser`,
-`http-log`, `radix-router`, `url-parser`, `compressors`, `flume`, `storage`, `msgpack`,
-`cluster`, `prism`
+`http-log`, `radix-router`, `url-parser`, `compressors`, `varint`, `flume`, `storage`,
+`msgpack`, `cluster`, `prism`
 
 **Domain: geospatial, text, diagnostics.** `cartesian`, `htm`, `double-metaphone`,
 `soundex`, `string-similarity`, `boolean-parser`, `logger`, `term-color`, `traceback`,
 `located-exception`, `errno-names`, `system`
 
-Dependencies run one way and stay shallow: thirty-two of the sixty-five pull nothing
+Dependencies run one way and stay shallow: thirty-three of the sixty-six pull nothing
 first-party at all. The service stack is the deepest chain,
 `reactor -> http-parser -> http -> http-log -> prism`, and
 [prism](https://github.com/Kronuz/prism) is the worked example of the whole thing

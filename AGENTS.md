@@ -138,6 +138,7 @@ Facts worth knowing before you wire anything up:
 | Route paths with named parameters | `radix-router` |
 | Parse URLs and query strings | `url-parser` |
 | deflate / lz4 / zstd in memory | `compressors` |
+| Compact self-terminating length/integer wire encoding, exception-free decode | `varint` |
 | Send a file over a byte channel, framed and checked | `flume` |
 | Append-only compressed blob store | `storage` |
 | MessagePack values, copy-on-write | `msgpack` |
@@ -156,14 +157,14 @@ Facts worth knowing before you wire anything up:
 
 ## How they layer
 
-Dependencies run one way and stay shallow. Thirty-two libraries pull nothing
+Dependencies run one way and stay shallow. Thirty-three libraries pull nothing
 first-party at all.
 
 ```
 leaves        char-classify  static-string  split  strict-stox  stringified  endian
               constexpr-phf  ctrie  uinteger_t  utype  math  io  stash  threadpool
               queue  reactor  radix-router  compressors  cartesian  lru-cache
-              generation-cache  ...
+              generation-cache  varint  ...
 
 utilities     repr -> char-classify          escape -> char-classify
               strings -> char-classify, repr, split, static-string, term-color
@@ -1549,6 +1550,32 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - It is not a transactional database or key/value index.
   - The reference footer has no checksum; supply a footer policy if corruption detection is required.
 
+### varint
+[github.com/Kronuz/varint](https://github.com/Kronuz/varint) &middot; depends on: none
+- **What it is:** A compact length/integer codec (a byte-below-255-is-the-length fast path, base-128 continuation beyond that) plus a length-prefixed string, a one-byte bool, and a one-byte char. Exception-free.
+- **Header / target:** `#include "varint.hh"`; target `varint`; header-only; C++17.
+- **How it works:** A byte below 255 is the length verbatim. A byte of `0xff` introduces `(length - 255)` as a little-endian base-128 sequence, where the LAST byte (not every byte but the last, the opposite of classic LEB128) has its top bit set, marking the end. Every `unserialise_*` function returns `bool` instead of throwing, so decoding untrusted input is a plain `if`.
+- **Key API:**
+  - `serialise_length` / `unserialise_length<T>` (templated on the destination type, so `std::uint64_t`/`unsigned long long`/`std::size_t` all bind without a cast)
+  - `serialise_string` / `unserialise_string` (the output is a view into the input buffer, not a copy)
+  - `serialise_bool` / `unserialise_bool`, `serialise_char` / `unserialise_char`
+- **Example:**
+  ```cpp
+  #include "varint.hh"
+
+  std::string wire = varint::serialise_string("hello");
+  const char* p = wire.data();
+  const char* end = p + wire.size();
+  std::string_view out;
+  if (!varint::unserialise_string(&p, end, out)) { /* truncated/malformed */ }
+  ```
+- **Use it when:**
+  - A wire protocol needs a compact, self-terminating length or string encoding and exception-free decoding of untrusted input.
+  - `cluster` is the proven consumer (its own Raft/gossip message framing).
+- **Do not use it when / gotchas:**
+  - The continuation-bit direction (set on the LAST byte, not every byte except the last) is deliberate wire-format compatibility, not a style choice -- don't "fix" it to match classic LEB128.
+  - `unserialise_string`'s output is a view; it's only valid as long as the input buffer is.
+
 ### msgpack
 [github.com/Kronuz/msgpack](https://github.com/Kronuz/msgpack) &middot; depends on: `atomic-shared-ptr`, `constexpr-phf`, `enum-reflection`, `hashes`, `located-exception`, `repr`, `strict-stox`
 - **What it is:** A header-heavy MessagePack and JSON-like copy-on-write value library with serialization, adaptors, and RFC 6902 patching.
@@ -1579,7 +1606,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Its default RapidJSON parse flags accept comments, trailing commas, and `NaN`/`Inf`, which is not strict JSON.
 
 ### cluster
-[github.com/Kronuz/cluster](https://github.com/Kronuz/cluster) &middot; depends on: `reactor`
+[github.com/Kronuz/cluster](https://github.com/Kronuz/cluster) &middot; depends on: `reactor`, `varint`
 - **What it is:** A header-only UDP multicast substrate providing typed, token-scoped bus framing and a generic Raft implementation.
 - **Header / target:** `#include "bus.h"` and `#include "raft.h"`; target `cluster::cluster`; C++20; requires standalone Asio transitively through `reactor`.
 - **How it works:** `cluster::Bus` owns one multicast UDP socket and receive loop, and frames messages as version, type, serialized token, and content. It rejects malformed frames, newer versions, out-of-range types, and mismatched cluster tokens before dispatching on the bus reactor thread. `cluster::Raft` supplies terms, roles, votes, append, commit, election, and application hooks, but membership gossip is not implemented despite the README describing that future layer.
