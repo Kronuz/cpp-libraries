@@ -116,6 +116,7 @@ Facts worth knowing before you wire anything up:
 | Random values, jitter, test data | `random` |
 | Probabilistic membership, bounded memory | `bloom-filter` |
 | Bounded cache with LRU and TTL | `lru-cache` |
+| Cache invalidated wholesale on a write/version change, not per-entry | `generation-cache` |
 | Ordered map/set with better locality than `std::map` | `cpp-btree` |
 | Fixed-size worker pool | `threadpool` |
 | Bounded blocking MPMC queue | `queue` |
@@ -155,13 +156,14 @@ Facts worth knowing before you wire anything up:
 
 ## How they layer
 
-Dependencies run one way and stay shallow. Thirty-one libraries pull nothing
+Dependencies run one way and stay shallow. Thirty-two libraries pull nothing
 first-party at all.
 
 ```
 leaves        char-classify  static-string  split  strict-stox  stringified  endian
               constexpr-phf  ctrie  uinteger_t  utype  math  io  stash  threadpool
-              queue  reactor  radix-router  compressors  cartesian  lru-cache  ...
+              queue  reactor  radix-router  compressors  cartesian  lru-cache
+              generation-cache  ...
 
 utilities     repr -> char-classify          escape -> char-classify
               strings -> char-classify, repr, split, static-string, term-color
@@ -820,6 +822,33 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Not thread-safe; wrap it yourself for concurrent use.
   - `find` renews recency, `exists` does not. Picking the wrong one silently changes eviction order.
   - A plain `lru` with a non-zero TTL asserts; use `aging_lru`.
+
+### generation-cache
+[github.com/Kronuz/generation-cache](https://github.com/Kronuz/generation-cache) &middot; depends on: none
+- **What it is:** A thread-safe cache invalidated as a whole group by a generation bump, not individually by LRU/TTL.
+- **Header / target:** `#include "generation_cache.hh"`; target `generation_cache`; header-only; C++17.
+- **How it works:** A `std::map` and a generation counter behind one mutex. `clear()` erases every entry and bumps the generation. A reader captures the generation alongside its lookup (`get_with_generation`); `try_insert` only commits if that generation still matches current, so a value computed before a concurrent `clear()` but inserted after it is silently dropped instead of resurrecting stale data.
+- **Key API:**
+  - `generation_cache::Cache<Key, Value>`
+  - `get`, `get_with_generation`, `try_insert`, `clear`, `size`, `generation`
+- **Example:**
+  ```cpp
+  #include "generation_cache.hh"
+
+  generation_cache::Cache<int, std::string> cache;
+  auto lookup = cache.get_with_generation(42);
+  if (!lookup.value) {
+      auto value = expensive_compute(42);
+      cache.try_insert(42, value, lookup.generation);
+  }
+  cache.clear(); // e.g. when the source state this was computed from changes
+  ```
+- **Use it when:**
+  - Many readers derive an expensive Value from a Key against one shared mutable source of truth that changes in discrete steps (a write, a new version), and every cached result is valid until the next step and wrong after it -- no per-entry ranking applies.
+- **Do not use it when / gotchas:**
+  - You want size-bounded or recency-bounded eviction instead -- use `lru-cache`.
+  - No built-in size cap; the natural bound comes from how many distinct keys the caller's own domain can reach (see its `ARCHITECTURE.md`).
+  - One mutex guards the whole cache; not sharded, not lock-free.
 
 ### cpp-btree
 [github.com/Kronuz/cpp-btree](https://github.com/Kronuz/cpp-btree) &middot; depends on: none
