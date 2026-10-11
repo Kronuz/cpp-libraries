@@ -10,7 +10,7 @@ by task" before you write anything.
 
 ## What this is
 
-About sixty-nine small, standalone C++ libraries, each in its own public repository under
+About seventy-one small, standalone C++ libraries, each in its own public repository under
 [github.com/Kronuz](https://github.com/Kronuz). They were extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand), a distributed RESTful search engine, over
 roughly a decade of building it. Whenever a piece grew sharp enough and self-contained
@@ -120,6 +120,8 @@ Facts worth knowing before you wire anything up:
 | Bounded cache with LRU and TTL | `lru-cache` |
 | Cache invalidated wholesale on a write/version change, not per-entry | `generation-cache` |
 | Ordered map/set with better locality than `std::map` | `cpp-btree` |
+| Coroutine tasks on a host event loop: time slices, cancellation, when_all | `task` |
+| Make file ranges resident before an event loop reads them | `residency` |
 | Fixed-size worker pool | `threadpool` |
 | Bounded blocking MPMC queue | `queue` |
 | Cancellable delayed tasks, debounce | `scheduler` |
@@ -161,7 +163,7 @@ Facts worth knowing before you wire anything up:
 
 ## How they layer
 
-Dependencies run one way and stay shallow. Thirty-six libraries pull nothing
+Dependencies run one way and stay shallow. Thirty-seven libraries pull nothing
 first-party at all.
 
 ```
@@ -913,6 +915,37 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 *Threads, queues, timers, clocks and the syscalls that need wrapping.*
 
+### task
+[github.com/Kronuz/task](https://github.com/Kronuz/task) &middot; depends on: none (`task::asio` adds standalone Asio)
+- **What it is:** C++20 coroutine tasks for code that runs on someone else's event loop: `task<T>`, a scheduler concept, time-slice budgets with cancellation, `when_all`, and an Asio binding.
+- **Header / target:** `#include "task.hh"`; target `task::task`; `#include "task_asio.hh"`, target `task::asio`; header-only; C++20.
+- **How it works:** Tasks are lazy and resume their awaiter in constant stack: symmetric transfer on Clang, a per-thread trampoline on GCC. A finished task resumes its awaiter on the awaiter's scheduler, posting back when it ran elsewhere. `budget::checkpoint()` reads the cycle counter and requeues the coroutine as demoted once its slice is spent, so long work cannot hold a loop. Frames come from per-thread size-class pools: a no-op task costs 15-22 ns with zero allocations.
+- **Key API:**
+  - `task<T>`, `spawn(scheduler_ref, task, done)`, `run(inline_scheduler&, task)`
+  - `scheduler` concept (`post`, `now`, optional `post_demoted`), `scheduler_ref::of(s)`, `inline_scheduler`, `current()`, `running_on`
+  - `yield()`, `schedule_on{s}`, `budget(slice, token).checkpoint()`, `cancel_source`/`cancel_token`, `cancelled`
+  - `when_all(task...)`, `when_all(std::vector<task<T>>)`
+  - `asio_scheduler(executor)`, `as_awaitable(scheduler, task)` for `asio::awaitable` code
+- **Example:**
+  ```cpp
+  #include "task.hh"
+
+  task::task<int> sum(std::span<const int> v, task::cancel_token cancel) {
+      task::budget slice(std::chrono::microseconds(200), cancel);
+      int s = 0;
+      for (std::size_t i = 0; i < v.size(); ++i) {
+          s += v[i];
+          if (i % 4096 == 4095) { co_await slice.checkpoint(); }
+      }
+      co_return s;
+  }
+  ```
+- **Use it when:**
+  - CPU-heavy work must run on a reactor without stalling it, or async code needs a small, allocation-free task type independent of Asio.
+- **Do not use it when / gotchas:**
+  - Every scheduler must wrap resumes in `task::running_on`, or affinity and yielding see no current scheduler.
+  - An exception escaping a fire-and-forget `spawn` terminates.
+
 ### threadpool
 [github.com/Kronuz/threadpool](https://github.com/Kronuz/threadpool) &middot; depends on: none
 - **What it is:** A fixed-size C++20 worker pool with fire-and-forget, bulk, and future-returning task submission.
@@ -1223,6 +1256,30 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Invalid input can throw `DatetimeError` subclasses; callers must handle it.
   - `tm_t` and `clk_t` are value structures, not synchronized shared state.
   - Floating-point timestamps have microsecond-oriented precision and are not arbitrary-precision time values.
+
+### residency
+[github.com/Kronuz/residency](https://github.com/Kronuz/residency) &middot; depends on: `task`, `hashes`
+- **What it is:** Read-only file regions for event-loop code: memory-mapped files with bounds-checked views, checksum-verified pinned copies, and `prefetch` of byte ranges as a coroutine task with pluggable backends.
+- **Header / target:** `#include "residency.hh"`; target `residency::residency`; header-only; C++20; POSIX.
+- **How it works:** `file` maps a file read-only. `pinned::copy` copies a region into owned memory and verifies its CRC-32C, for hot structures that must never fault. A `backend` returns `task::task<void>` from `prefetch(file, ranges)`; `sync_backend` advises the kernel (`MADV_WILLNEED`) and does not suspend, and asynchronous backends implement the same concept.
+- **Key API:**
+  - `file::open(path)`, `file::view(range)`, `file::size()`
+  - `pinned::copy(file, range, crc32c)`, `pinned::bytes()`
+  - `backend` concept, `sync_backend::prefetch(file, ranges)`
+- **Example:**
+  ```cpp
+  #include "residency.hh"
+
+  auto f = residency::file::open("segment.sx");
+  residency::sync_backend io;
+  // inside a task:
+  co_await io.prefetch(f, ranges);
+  auto bytes = f.view(ranges[0]);
+  ```
+- **Use it when:**
+  - An index or data file is read from coroutines on a reactor and reads should not block it.
+- **Do not use it when / gotchas:**
+  - The synchronous backend only advises; a first touch can still fault.
 
 ### io
 [github.com/Kronuz/io](https://github.com/Kronuz/io) &middot; depends on: none
