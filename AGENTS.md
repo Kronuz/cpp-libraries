@@ -10,7 +10,7 @@ by task" before you write anything.
 
 ## What this is
 
-About sixty small, standalone C++ libraries, each in its own public repository under
+About sixty-seven small, standalone C++ libraries, each in its own public repository under
 [github.com/Kronuz](https://github.com/Kronuz). They were extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand), a distributed RESTful search engine, over
 roughly a decade of building it. Whenever a piece grew sharp enough and self-contained
@@ -106,6 +106,7 @@ Facts worth knowing before you wire anything up:
 | Modulo of negatives, saturating add/sub | `math` |
 | Byte-order conversion, including 56-bit | `endian` |
 | Hash a string at compile time, switch on it | `hashes` |
+| CRC-32C checksums, hardware-accelerated | `hashes` (`crc32c.hh`) |
 | O(1) dispatch over a fixed integer key set | `constexpr-phf` |
 | Fixed word set to index, no hashing | `ctrie` |
 | Enum to string and back, generated | `enum-reflection` |
@@ -138,6 +139,7 @@ Facts worth knowing before you wire anything up:
 | Route paths with named parameters | `radix-router` |
 | Parse URLs and query strings | `url-parser` |
 | deflate / lz4 / zstd in memory | `compressors` |
+| Bit-pack blocks of 128 integers (postings, FOR/PFOR) | `bitpack` |
 | Compact self-terminating length/integer wire encoding, exception-free decode | `varint` |
 | Send a file over a byte channel, framed and checked | `flume` |
 | Append-only compressed blob store | `storage` |
@@ -157,7 +159,7 @@ Facts worth knowing before you wire anything up:
 
 ## How they layer
 
-Dependencies run one way and stay shallow. Thirty-three libraries pull nothing
+Dependencies run one way and stay shallow. Thirty-four libraries pull nothing
 first-party at all.
 
 ```
@@ -570,8 +572,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### hashes
 [github.com/Kronuz/hashes](https://github.com/Kronuz/hashes) &middot; depends on: `char-classify`, `static-string`
-- **What it is:** Compile-time and runtime non-cryptographic hash families (xxHash, FNV-1a, djb2) plus string-switch user-defined literals.
-- **Header / target:** `#include "hashes.hh"`; target `hashes::hashes`; C++20.
+- **What it is:** Compile-time and runtime non-cryptographic hash families (xxHash, FNV-1a, djb2) plus string-switch user-defined literals, and a standalone CRC-32C header.
+- **Header / target:** `#include "hashes.hh"`, `#include "crc32c.hh"` (no dependencies); target `hashes::hashes`; C++20.
 - **How it works:** Every family has a `constexpr` form, which is what makes `switch (fnv1ah32(s)) { case "GET"_fnv1a: ... }` legal. The runtime xxh64/xxh32 paths defer to the real `XXH64()`/`XXH32()` when an xxHash header is detected through `__has_include`, and fall back to the portable constexpr implementation when it is not, so the fast path is opt-in without a hard dependency. `jump_consistent_hash` implements Lamping-Veach bucket assignment for sharding.
 - **Key API:**
   - `xxh64::hash(...)`, `xxh32::hash(...)`
@@ -579,6 +581,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `djb2h8/16/32/64`
   - `operator""_xx`, `operator""_fnv1a`
   - `jump_consistent_hash(uint64_t, int32_t)`, `jump_consistent_hash(string_view, int32_t)`
+  - `hashes::crc32c(data, size)`, `hashes::Crc32c` (incremental), `hashes::crc32c_combine(a, b, size_b)`; constexpr for string views. Uses SSE4.2 or ARMv8 CRC instructions when present (about 14-19 GB/s on an i9-9980HK), slice-by-8 otherwise
 - **Example:**
   ```cpp
   #include "hashes.hh"
@@ -592,6 +595,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Use it when:**
   - Compile-time string dispatch without a chain of `strcmp`.
   - Hash table keys, cache keys, or consistent sharding across N buckets.
+  - Integrity checks on stored or transmitted data (`crc32c`), the same CRC-32C as iSCSI and ext4.
 - **Do not use it when / gotchas:**
   - None of these are cryptographic. Never use them for passwords, signatures or anything adversarial.
   - Case-insensitive variants fold through `char-classify`, so they are ASCII only.
@@ -1575,6 +1579,31 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - The continuation-bit direction (set on the LAST byte, not every byte except the last) is deliberate wire-format compatibility, not a style choice -- don't "fix" it to match classic LEB128.
   - `unserialise_string`'s output is a view; it's only valid as long as the input buffer is.
+
+### bitpack
+[github.com/Kronuz/bitpack](https://github.com/Kronuz/bitpack) &middot; depends on: none
+- **What it is:** SIMD bit packing for blocks of 128 unsigned 32-bit integers, the codec under search-engine postings: fixed-width pack/unpack, delta decoding, and FOR/PFOR block codecs.
+- **Header / target:** `#include "bitpack.hh"`; target `bitpack::bitpack`; header-only; C++20.
+- **How it works:** Integer `j` lives in lane `j % 4`, row `j / 4`, so a block at width `b` is `b` 128-bit words and one SSE2 or NEON register decodes four consecutive integers. Each width is a template instance with compile-time shifts, dispatched through a 33-entry table. The bytes are identical to Lemire's SIMD-BP128 and decode at the same speed (0.99x; delta decoding 1.02x). PFOR chooses the width with the smallest exact encoded size and stores outliers as exceptions; constant blocks take 5 bytes.
+- **Key API:**
+  - `pack(in, bits, out)`, `unpack(in, bits, out)`, `unpack_delta(in, bits, base, out)`, `max_bits(in)`, `packed_bytes(bits)`
+  - `encode_for(in, out)`, `encode_pfor(in, out)`, `decode(in, out)`, `decode_delta(in, base, out)`
+- **Example:**
+  ```cpp
+  #include "bitpack.hh"
+
+  std::uint32_t deltas[128];
+  bitpack::delta_encode(0, doc_ids, deltas);
+  std::uint8_t buf[bitpack::max_encoded_bytes];
+  std::size_t size = bitpack::encode_pfor(deltas, buf);
+  std::uint32_t back[128];
+  bitpack::decode_delta(buf, 0, back);
+  ```
+- **Use it when:**
+  - Compressing sorted integer lists (doc ids, positions) or small counts (frequencies) in blocks.
+- **Do not use it when / gotchas:**
+  - Blocks are exactly 128 integers; encode shorter tails with `varint`.
+  - Little-endian hosts only (x86-64, AArch64).
 
 ### msgpack
 [github.com/Kronuz/msgpack](https://github.com/Kronuz/msgpack) &middot; depends on: `atomic-shared-ptr`, `constexpr-phf`, `enum-reflection`, `hashes`, `located-exception`, `repr`, `strict-stox`
