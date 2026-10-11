@@ -1648,6 +1648,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Key API:**
   - `serialise_length` / `unserialise_length<T>` (templated on the destination type, so `std::uint64_t`/`unsigned long long`/`std::size_t` all bind without a cast)
   - `serialise_length(char* out, value)`: allocation-free, writes at most `max_length_bytes` and returns the end
+  - `leb128::encode(out, v)` / `leb128::decode<T>(&p, end, out)`: standard LEB128, a separate format, smaller for values >= 255
   - `serialise_string` / `unserialise_string` (the output is a view into the input buffer, not a copy)
   - `serialise_bool` / `unserialise_bool`, `serialise_char` / `unserialise_char`
 - **Example:**
