@@ -611,7 +611,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **How it works:** The builder minimizes incrementally (Daciuk et al.), sharing equal suffixes through a node registry and pushing outputs toward the root, so a value is the sum of outputs along its path. Nodes are written children first with delta targets; single-transition chains take a few bytes and wider nodes keep their labels contiguous for SSE2 search. On a 236k-word dictionary it uses 6.2 bytes per key, a tenth of a hash map, with lookups at about twice the hash map's latency.
 - **Key API:**
   - `fst::builder`: `insert(key, value)` in strictly increasing order, `finish()` returning the bytes
-  - `fst::map(bytes)`: `get`, `contains`, `floor`, `range(lo, hi, f)`, `for_each(f)`, `intersect(automaton, f)`
+  - `fst::map(bytes)`: `get`, `contains`, `floor`, `floor_value` (allocation-free), `range(lo, hi, f)`, `for_each(f)`, `intersect(automaton, f)`
   - Automaton concept: `start()`, `accept(state, byte)`, `is_match(state)`, `can_match(state)`; `fst::prefix_automaton` ships
 - **Example:**
   ```cpp
