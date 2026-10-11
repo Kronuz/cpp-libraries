@@ -10,7 +10,7 @@ by task" before you write anything.
 
 ## What this is
 
-About sixty-eight small, standalone C++ libraries, each in its own public repository under
+About sixty-nine small, standalone C++ libraries, each in its own public repository under
 [github.com/Kronuz](https://github.com/Kronuz). They were extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand), a distributed RESTful search engine, over
 roughly a decade of building it. Whenever a piece grew sharp enough and self-contained
@@ -109,6 +109,7 @@ Facts worth knowing before you wire anything up:
 | CRC-32C checksums, hardware-accelerated | `hashes` (`crc32c.hh`) |
 | O(1) dispatch over a fixed integer key set | `constexpr-phf` |
 | Fixed word set to index, no hashing | `ctrie` |
+| Compact sorted string map, prefix/range/automaton queries | `fst` |
 | Enum to string and back, generated | `enum-reflection` |
 | Integers wider than 64 bits | `uinteger_t` |
 | Base58/62/64/32 encoding, checksums | `base-x` |
@@ -160,7 +161,7 @@ Facts worth knowing before you wire anything up:
 
 ## How they layer
 
-Dependencies run one way and stay shallow. Thirty-five libraries pull nothing
+Dependencies run one way and stay shallow. Thirty-six libraries pull nothing
 first-party at all.
 
 ```
@@ -600,6 +601,33 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - None of these are cryptographic. Never use them for passwords, signatures or anything adversarial.
   - Case-insensitive variants fold through `char-classify`, so they are ASCII only.
+
+### fst
+[github.com/Kronuz/fst](https://github.com/Kronuz/fst) &middot; depends on: none
+- **What it is:** Minimal acyclic finite state transducers: an ordered map from byte strings to `uint64` values, built from sorted keys and read in place from bytes (a string or a memory-mapped file).
+- **Header / target:** `#include "fst.hh"`; target `fst::fst`; header-only; C++20.
+- **How it works:** The builder minimizes incrementally (Daciuk et al.), sharing equal suffixes through a node registry and pushing outputs toward the root, so a value is the sum of outputs along its path. Nodes are written children first with delta targets; single-transition chains take a few bytes and wider nodes keep their labels contiguous for SSE2 search. On a 236k-word dictionary it uses 6.2 bytes per key, a tenth of a hash map, with lookups at about twice the hash map's latency.
+- **Key API:**
+  - `fst::builder`: `insert(key, value)` in strictly increasing order, `finish()` returning the bytes
+  - `fst::map(bytes)`: `get`, `contains`, `floor`, `range(lo, hi, f)`, `for_each(f)`, `intersect(automaton, f)`
+  - Automaton concept: `start()`, `accept(state, byte)`, `is_match(state)`, `can_match(state)`; `fst::prefix_automaton` ships
+- **Example:**
+  ```cpp
+  #include "fst.hh"
+
+  fst::builder b;
+  b.insert("cat", 7);
+  b.insert("dog", 3);
+  std::string bytes = b.finish();
+  fst::map m(bytes);
+  auto v = m.get("cat");      // 7
+  auto f = m.floor("cow");    // {"cat", 7}
+  ```
+- **Use it when:**
+  - Term dictionaries, vocabularies, or any large sorted string set that must stay small and support prefix, range, or fuzzy enumeration.
+- **Do not use it when / gotchas:**
+  - Immutable: keys must be inserted sorted and the whole map is rebuilt to change it.
+  - Values are unsigned and additive along the path.
 
 ### enum-reflection
 [github.com/Kronuz/enum-reflection](https://github.com/Kronuz/enum-reflection) &middot; depends on: `constexpr-phf`, `hashes`
