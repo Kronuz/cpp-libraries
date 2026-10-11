@@ -10,7 +10,7 @@ by task" before you write anything.
 
 ## What this is
 
-About sixty-seven small, standalone C++ libraries, each in its own public repository under
+About sixty-eight small, standalone C++ libraries, each in its own public repository under
 [github.com/Kronuz](https://github.com/Kronuz). They were extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand), a distributed RESTful search engine, over
 roughly a decade of building it. Whenever a piece grew sharp enough and self-contained
@@ -140,6 +140,7 @@ Facts worth knowing before you wire anything up:
 | Parse URLs and query strings | `url-parser` |
 | deflate / lz4 / zstd in memory | `compressors` |
 | Bit-pack blocks of 128 integers (postings, FOR/PFOR) | `bitpack` |
+| Sets of doc ids: bitset, sorted array, Roaring-style chunks; AND/OR/ANDNOT | `docset` |
 | Compact self-terminating length/integer wire encoding, exception-free decode | `varint` |
 | Send a file over a byte channel, framed and checked | `flume` |
 | Append-only compressed blob store | `storage` |
@@ -159,7 +160,7 @@ Facts worth knowing before you wire anything up:
 
 ## How they layer
 
-Dependencies run one way and stay shallow. Thirty-four libraries pull nothing
+Dependencies run one way and stay shallow. Thirty-five libraries pull nothing
 first-party at all.
 
 ```
@@ -1604,6 +1605,30 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - Blocks are exactly 128 integers; encode shorter tails with `varint`.
   - Little-endian hosts only (x86-64, AArch64).
+
+### docset
+[github.com/Kronuz/docset](https://github.com/Kronuz/docset) &middot; depends on: none
+- **What it is:** Sets of 32-bit document ordinals (a dense `bitset`, a `sorted_set`, and a chunked `set`) plus the `doc_iterator` concept that search-engine posting lists, scorers, and filters share.
+- **Header / target:** `#include "docset.hh"`; target `docset::docset`; header-only; C++20.
+- **How it works:** `set` splits ids into 64Ki chunks, each a sorted array of 16-bit low halves (up to 4096) or an 8 KiB bitmap, with cached cardinality. Array intersection and difference walk 8-lane blocks with SSE4.2 `pcmpestrm`, union is a bitonic vectorized merge, and bitmap operations fuse with popcount (AVX2 behind a runtime check). Against CRoaring the median ratio stays at or below 1.14 from density 1e-6 to 0.5.
+- **Key API:**
+  - `set::from_sorted(universe, docs)`, `a & b`, `a | b`, `a - b`, `count()`, `test(d)`, `for_each(f)`
+  - `begin_iteration()` returning a `doc_iterator`: `doc()`, `next()`, `advance(target)`, `cost()`, ending at `no_more_docs`
+  - `bitset` (`set`/`reset`/`test`, in-place `&= |= -=`), `sorted_set` (SIMD `&`, branchless `|` and `-`)
+- **Example:**
+  ```cpp
+  #include "docset.hh"
+
+  auto a = docset::set::from_sorted(1u << 24, {3, 70000, 70001});
+  auto b = docset::set::from_sorted(1u << 24, {70001});
+  auto it = (a - b).begin_iteration();
+  for (auto d = it.next(); d != docset::no_more_docs; d = it.next()) { /* 3, 70000 */ }
+  ```
+- **Use it when:**
+  - Filter caches, live-docs masks, and set algebra over document ids.
+- **Do not use it when / gotchas:**
+  - No run-length containers: long consecutive ranges cost a bitmap per chunk.
+  - The SIMD union is x86-only; AArch64 uses NEON for intersection and difference.
 
 ### msgpack
 [github.com/Kronuz/msgpack](https://github.com/Kronuz/msgpack) &middot; depends on: `atomic-shared-ptr`, `constexpr-phf`, `enum-reflection`, `hashes`, `located-exception`, `repr`, `strict-stox`
