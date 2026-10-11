@@ -1590,6 +1590,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **How it works:** A byte below 255 is the length verbatim. A byte of `0xff` introduces `(length - 255)` as a little-endian base-128 sequence, where the LAST byte (not every byte but the last, the opposite of classic LEB128) has its top bit set, marking the end. Every `unserialise_*` function returns `bool` instead of throwing, so decoding untrusted input is a plain `if`.
 - **Key API:**
   - `serialise_length` / `unserialise_length<T>` (templated on the destination type, so `std::uint64_t`/`unsigned long long`/`std::size_t` all bind without a cast)
+  - `serialise_length(char* out, value)`: allocation-free, writes at most `max_length_bytes` and returns the end
   - `serialise_string` / `unserialise_string` (the output is a view into the input buffer, not a copy)
   - `serialise_bool` / `unserialise_bool`, `serialise_char` / `unserialise_char`
 - **Example:**
