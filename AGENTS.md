@@ -1597,6 +1597,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `compress_deflate(std::string_view)`, `decompress_deflate(std::string_view)`
   - `compress_lz4(std::string_view)`, `decompress_lz4(std::string_view)`
   - `compress_zstd(std::string_view)`, `decompress_zstd(std::string_view)`
+  - `decompress_zstd(compressed, max_size)`: bounded, for corrupt or hostile input
+  - CMake options `COMPRESSORS_DEFLATE`, `COMPRESSORS_LZ4`, `COMPRESSORS_ZSTD` select backends
   - `DeflateCompressData`, `LZ4CompressData`, `ZstdCompressData`
   - `*CompressFile`, `*DecompressFile` for deflate and LZ4
 - **Example:**
