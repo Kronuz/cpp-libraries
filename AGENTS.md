@@ -10,7 +10,7 @@ by task" before you write anything.
 
 ## What this is
 
-About seventy-one small, standalone C++ libraries, each in its own public repository under
+About seventy-two small, standalone C++ libraries, each in its own public repository under
 [github.com/Kronuz](https://github.com/Kronuz). They were extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand), a distributed RESTful search engine, over
 roughly a decade of building it. Whenever a piece grew sharp enough and self-contained
@@ -110,6 +110,7 @@ Facts worth knowing before you wire anything up:
 | O(1) dispatch over a fixed integer key set | `constexpr-phf` |
 | Fixed word set to index, no hashing | `ctrie` |
 | Compact sorted string map, prefix/range/automaton queries | `fst` |
+| Term dictionary: sorted keys to value bytes in prefix-compressed blocks | `termdict` |
 | Enum to string and back, generated | `enum-reflection` |
 | Integers wider than 64 bits | `uinteger_t` |
 | Base58/62/64/32 encoding, checksums | `base-x` |
@@ -630,6 +631,31 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - Immutable: keys must be inserted sorted and the whole map is rebuilt to change it.
   - Values are unsigned and additive along the path.
+
+### termdict
+[github.com/Kronuz/termdict](https://github.com/Kronuz/termdict) &middot; depends on: `fst`, `varint`
+- **What it is:** A block-tree sorted string table: sorted byte-string keys mapped to opaque value bytes, the term dictionary of a search engine.
+- **Header / target:** `#include "termdict.hh"`; target `termdict::termdict`; header-only; C++20.
+- **How it works:** Entries are prefix-compressed into blocks of 25-48 with a whole-key restart every 16, and an `fst` over block first keys finds the block. A lookup is one `floor_value`, a binary search over at most three restarts, and at most 16 in-place comparisons. On the 4M-term Wikipedia vocabulary it takes 12.35 bytes per key with 6-byte values and runs at 0.54x Lucene 10.4's `seekExact`.
+- **Key API:**
+  - `termdict::builder`: `add(key, value)` in strictly increasing order, `finish()` returning `{blocks, index}`
+  - `termdict::reader(blocks, index)`: `find(key)`, `scan(from, f)`; malformed input throws `termdict::corrupt`
+- **Example:**
+  ```cpp
+  #include "termdict.hh"
+
+  termdict::builder b;
+  b.add("apple", "\x01");
+  b.add("apply", "\x02");
+  auto t = b.finish();
+  termdict::reader r(t.blocks, t.index);
+  auto v = r.find("apply");   // "\x02"
+  ```
+- **Use it when:**
+  - Large on-disk vocabularies with per-key payloads (term statistics, postings offsets) and ordered scans.
+- **Do not use it when / gotchas:**
+  - Immutable: build once from sorted keys.
+  - Values are opaque bytes; for small integer values alone, a plain `fst` is smaller.
 
 ### enum-reflection
 [github.com/Kronuz/enum-reflection](https://github.com/Kronuz/enum-reflection) &middot; depends on: `constexpr-phf`, `hashes`
