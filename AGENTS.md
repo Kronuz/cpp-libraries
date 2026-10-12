@@ -1294,6 +1294,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Key API:**
   - `file::open(path)`, `file::view(range)`, `file::size()`
   - `pinned::copy(file, range, crc32c)`, `pinned::bytes()`
+  - `verified_regions(bytes, regions)`, `verify(range)`: per-region CRC-32C checked on first touch
   - `backend` concept, `sync_backend::prefetch(file, ranges)`
 - **Example:**
   ```cpp
