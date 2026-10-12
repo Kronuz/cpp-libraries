@@ -10,7 +10,7 @@ by task" before you write anything.
 
 ## What this is
 
-About seventy-three small, standalone C++ libraries, each in its own public repository under
+About seventy-five small, standalone C++ libraries, each in its own public repository under
 [github.com/Kronuz](https://github.com/Kronuz). They were extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand), a distributed RESTful search engine, over
 roughly a decade of building it. Whenever a piece grew sharp enough and self-contained
@@ -155,6 +155,8 @@ Facts worth knowing before you wire anything up:
 | Phonetic matching of names | `double-metaphone`, `soundex` |
 | Edit distance, Jaro-Winkler, similarity | `string-similarity` |
 | Unicode categories, lowercase, lenient UTF-8 | `unicode` |
+| Stem words in 38 languages (Snowball) | `snowball` |
+| Text to index terms, Xapian TermGenerator rules | `analysis` |
 | Parse a boolean query expression | `boolean-parser` |
 | Deferred, lock-free logging | `logger` |
 | ANSI color with graceful downgrade | `term-color` |
@@ -2007,6 +2009,50 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - Simple mappings only: no full case folding (`ß` stays `ß`), normalization, or grapheme segmentation.
   - Latin-1 fallback is deliberate; it does not report invalid UTF-8.
+
+### snowball
+[github.com/Kronuz/snowball](https://github.com/Kronuz/snowball) &middot; depends on: none
+- **What it is:** The Snowball stemmers for 38 languages (generated C, BSD-3) behind a small C++ API.
+- **Header / target:** `#include "snowball.hh"`; target `snowball::snowball`; compiled library; C++20 and C.
+- **How it works:** `tools/regenerate.sh` builds the Snowball compiler at a pinned commit and regenerates every algorithm plus the runtime, prefixing every external C symbol with `kronuz_snowball_` so it links beside libstemmer. The pinned commit stems exactly as Xapian 2.1.0 on all 11,648,988 snowball-data vocabulary words.
+- **Key API:**
+  - `snowball::stemmer(language)`: canonical names or aliases (`"en"`, `"eng"`); unknown throws `std::invalid_argument`
+  - `stem(word)` returning a `std::string_view` valid until the next call
+  - `stemmer::languages()`, `stemmer::canonical(name)`
+- **Example:**
+  ```cpp
+  #include "snowball.hh"
+
+  snowball::stemmer stem("english");
+  auto s = stem("running");   // "run"
+  ```
+- **Use it when:**
+  - Stemming terms for search in any of the Snowball languages.
+- **Do not use it when / gotchas:**
+  - A stemmer is not thread-safe; use one per thread.
+
+### analysis
+[github.com/Kronuz/analysis](https://github.com/Kronuz/analysis) &middot; depends on: `unicode`, `snowball`
+- **What it is:** Text to index terms reproducing Xapian's `TermGenerator`: word rules, case folding, `Z`-prefixed stems, stop strategies, CJK n-grams, wdf, and positions.
+- **Header / target:** `#include "analysis.hh"`; target `analysis::analysis`; header-only; C++20.
+- **How it works:** A single pass over UTF-8 (invalid bytes read as Latin-1) applies the infix, suffix, acronym, and length rules recorded from Xapian 2.1.0 by an oracle, then emits terms through a callback. The test replays 966 oracle vectors and per-code-point sweeps over all 1,114,112 code points; it runs 1.8x faster than Xapian's `TermGenerator` on Wikipedia text.
+- **Key API:**
+  - `term_generator`: `stem`, `stop`, `cjk_ngram`, `max_word_length`, `stemmer`, `stop_words`, `termpos()`, `increase_termpos()`
+  - `index_text(text, sink, field{wdf_inc, prefix, positions})` with `sink(term, wdf_inc, position)` (position 0 for none)
+  - `stopper`, `is_word_char`, `is_ngram_char`
+- **Example:**
+  ```cpp
+  #include "analysis.hh"
+
+  snowball::stemmer english("english");
+  analysis::term_generator g;
+  g.stemmer = &english;
+  g.index_text("The quick foxes", [](std::string_view term, std::uint32_t wdf, std::uint32_t pos) { /* ... */ });
+  ```
+- **Use it when:**
+  - Indexing text that must produce the same terms as Xapian (Xapiand compatibility).
+- **Do not use it when / gotchas:**
+  - It reproduces Xapian's rules, quirks included (no terms at all for `stem_strategy::all` without a stemmer); it is not a UAX #29 tokenizer.
 
 ### boolean-parser
 [github.com/Kronuz/boolean-parser](https://github.com/Kronuz/boolean-parser) &middot; depends on: none
