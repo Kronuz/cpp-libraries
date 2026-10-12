@@ -46,7 +46,7 @@ lists the real include line for every one.
 
 **Compile time, hashing, identifiers, containers.** `constexpr-phf`, `ctrie`, `fst`, `termdict`, `hashes`,
 `enum-reflection`, `uinteger_t`, `base-x`, `cuuid`, `md5`, `sha256`, `random`,
-`bloom-filter`, `lru-cache`, `generation-cache`, `cpp-btree`
+`bloom-filter`, `fusefilter`, `lru-cache`, `generation-cache`, `cpp-btree`
 
 **Concurrency, time, and the operating system.** `task`, `threadpool`, `queue`, `stash`,
 `scheduler`, `atomic-shared-ptr`, `allocators`, `nanosleep`, `epoch`, `time-point`,
@@ -60,7 +60,7 @@ lists the real include line for every one.
 `soundex`, `string-similarity`, `unicode`, `snowball`, `analysis`, `boolean-parser`, `logger`, `term-color`, `traceback`,
 `located-exception`, `errno-names`, `system`
 
-Dependencies run one way and stay shallow: thirty-nine of the seventy-five pull nothing
+Dependencies run one way and stay shallow: forty of the seventy-six pull nothing
 first-party at all. The service stack is the deepest chain,
 `reactor -> http-parser -> http -> http-log -> prism`, and
 [prism](https://github.com/Kronuz/prism) is the worked example of the whole thing

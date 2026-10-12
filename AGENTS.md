@@ -10,7 +10,7 @@ by task" before you write anything.
 
 ## What this is
 
-About seventy-five small, standalone C++ libraries, each in its own public repository under
+About seventy-six small, standalone C++ libraries, each in its own public repository under
 [github.com/Kronuz](https://github.com/Kronuz). They were extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand), a distributed RESTful search engine, over
 roughly a decade of building it. Whenever a piece grew sharp enough and self-contained
@@ -860,6 +860,26 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `true` means probably present; only `false` is definitive.
   - No removal, and no resizing. Large `N` must not go on the stack.
   - The salt must be non-zero and must match between `add` and `contains`.
+
+### fusefilter
+[github.com/Kronuz/fusefilter](https://github.com/Kronuz/fusefilter) &middot; depends on: none
+- **What it is:** Binary fuse filters (Graf and Lemire, 2022): an immutable set of 64-bit keys answering "maybe present" with no false negatives.
+- **Header / target:** `#include "fusefilter.hh"`; target `fusefilter::fusefilter`; header-only; C++20.
+- **How it works:** Each key maps to three slots in consecutive power-of-two segments; 8-bit fingerprints XOR to the key's fingerprint. Construction peels the hypergraph with hashes in slot order. About 9 bits per key and 0.39% false positives at 1M keys, 5.6 ns lookups.
+- **Key API:**
+  - `filter8::build(keys)`, `contains(key)`, `size_in_bytes()`
+  - `serialize()`, `filter8::deserialize(bytes)` (nullopt when malformed)
+- **Example:**
+  ```cpp
+  #include "fusefilter.hh"
+
+  auto f = fusefilter::filter8::build(hashes);
+  if (f.contains(h)) { /* probably present */ }
+  ```
+- **Use it when:**
+  - A static key set must be probed cheaply before an expensive lookup (primary keys per immutable segment).
+- **Do not use it when / gotchas:**
+  - Immutable: rebuild to add keys. Hash keys to 64 bits first; adversarial keys can make construction fail.
 
 ### lru-cache
 [github.com/Kronuz/lru-cache](https://github.com/Kronuz/lru-cache) &middot; depends on: none
