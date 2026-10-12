@@ -1704,7 +1704,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **How it works:** Integer `j` lives in lane `j % 4`, row `j / 4`, so a block at width `b` is `b` 128-bit words and one SSE2 or NEON register decodes four consecutive integers. Each width is a template instance with compile-time shifts, dispatched through a 33-entry table. The bytes are identical to Lemire's SIMD-BP128 and decode at the same speed (0.99x; delta decoding 1.02x). PFOR chooses the width with the smallest exact encoded size and stores outliers as exceptions; constant blocks take 5 bytes.
 - **Key API:**
   - `pack(in, bits, out)`, `unpack(in, bits, out)`, `unpack_delta(in, bits, base, out)`, `max_bits(in)`, `packed_bytes(bits)`
-  - `encode_for(in, out)`, `encode_pfor(in, out)`, `decode(in, out)`, `decode_delta(in, base, out)`
+  - `encode_for(in, out)`, `encode_pfor(in, out)`, `decode(in, size, out)`, `decode_delta(in, size, base, out)`, `encoded_size(in, size)`
 - **Example:**
   ```cpp
   #include "bitpack.hh"
