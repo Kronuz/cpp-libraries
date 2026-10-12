@@ -642,7 +642,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **How it works:** Entries are prefix-compressed into blocks of 25-48 with a whole-key restart every 16, and an `fst` over block first keys finds the block. A lookup is one `floor_value`, a binary search over at most three restarts, and at most 16 in-place comparisons. On the 4M-term Wikipedia vocabulary it takes 12.35 bytes per key with 6-byte values and runs at 0.54x Lucene 10.4's `seekExact`.
 - **Key API:**
   - `termdict::builder`: `add(key, value)` in strictly increasing order, `finish()` returning `{blocks, index}`
-  - `termdict::reader(blocks, index)`: `find(key)`, `scan(from, f)`; malformed input throws `termdict::corrupt`
+  - `termdict::reader(blocks, index[, verify, context])`: `find(key)`, `scan(from, f)`; malformed input throws `termdict::corrupt`; `verify` sees each block range before it is read
 - **Example:**
   ```cpp
   #include "termdict.hh"
