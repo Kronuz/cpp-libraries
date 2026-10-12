@@ -118,6 +118,7 @@ Facts worth knowing before you wire anything up:
 | MD5 / SHA-256 digests | `md5`, `sha256` |
 | Random values, jitter, test data | `random` |
 | Probabilistic membership, bounded memory | `bloom-filter` |
+| Static key set, ~9 bits per key, three reads per lookup | `fusefilter` |
 | Bounded cache with LRU and TTL | `lru-cache` |
 | Cache invalidated wholesale on a write/version change, not per-entry | `generation-cache` |
 | Ordered map/set with better locality than `std::map` | `cpp-btree` |
