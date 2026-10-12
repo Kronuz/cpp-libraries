@@ -57,10 +57,10 @@ lists the real include line for every one.
 `msgpack`, `cluster`, `prism`
 
 **Domain: geospatial, text, diagnostics.** `cartesian`, `htm`, `double-metaphone`,
-`soundex`, `string-similarity`, `boolean-parser`, `logger`, `term-color`, `traceback`,
+`soundex`, `string-similarity`, `unicode`, `boolean-parser`, `logger`, `term-color`, `traceback`,
 `located-exception`, `errno-names`, `system`
 
-Dependencies run one way and stay shallow: thirty-seven of the seventy-two pull nothing
+Dependencies run one way and stay shallow: thirty-eight of the seventy-three pull nothing
 first-party at all. The service stack is the deepest chain,
 `reactor -> http-parser -> http -> http-log -> prism`, and
 [prism](https://github.com/Kronuz/prism) is the worked example of the whole thing

@@ -10,7 +10,7 @@ by task" before you write anything.
 
 ## What this is
 
-About seventy-two small, standalone C++ libraries, each in its own public repository under
+About seventy-three small, standalone C++ libraries, each in its own public repository under
 [github.com/Kronuz](https://github.com/Kronuz). They were extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand), a distributed RESTful search engine, over
 roughly a decade of building it. Whenever a piece grew sharp enough and self-contained
@@ -154,6 +154,7 @@ Facts worth knowing before you wire anything up:
 | Spherical spatial index over the whole planet | `htm` |
 | Phonetic matching of names | `double-metaphone`, `soundex` |
 | Edit distance, Jaro-Winkler, similarity | `string-similarity` |
+| Unicode categories, lowercase, lenient UTF-8 | `unicode` |
 | Parse a boolean query expression | `boolean-parser` |
 | Deferred, lock-free logging | `logger` |
 | ANSI color with graceful downgrade | `term-color` |
@@ -1984,6 +1985,28 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Metrics default to case-insensitive comparison by upper-casing inputs; pass `false` when case matters.
   - Empty inputs produce distance `1` and similarity `0`, including the identical-empty case according to the documented behavior.
   - Jaccard operates on character sets and Sørensen-Dice on character bigrams, not word tokens.
+
+### unicode
+[github.com/Kronuz/unicode](https://github.com/Kronuz/unicode) &middot; depends on: none
+- **What it is:** Unicode general categories, simple lowercase mappings, and lenient UTF-8 decoding and encoding (Unicode 17.0.0).
+- **Header / target:** `#include "unicode.hh"`; target `unicode::unicode`; header-only; C++20.
+- **How it works:** `tools/gen_tables.py` turns `UnicodeData.txt` into two-stage tables of 256-code-point blocks with identical blocks shared (75.8 KB), so every lookup is two constexpr array reads. Invalid or overlong UTF-8 decodes one byte at a time as Latin-1. The tables match Xapian 2.1.0's on all 1,114,112 code points, with the same category numbering.
+- **Key API:**
+  - `category_of(c)` returning `unicode::category`, `tolower(c)`, `is_letter`, `is_mark`, `is_number`
+  - `next_utf8(p, end)` (advances `p`), `append_utf8(out, c)`
+- **Example:**
+  ```cpp
+  #include "unicode.hh"
+
+  const char* p = s.data();
+  char32_t c = unicode::next_utf8(p, s.data() + s.size());
+  if (unicode::is_letter(c)) { unicode::append_utf8(out, unicode::tolower(c)); }
+  ```
+- **Use it when:**
+  - Tokenizers and analyzers that classify and case-fold text by code point.
+- **Do not use it when / gotchas:**
+  - Simple mappings only: no full case folding (`ß` stays `ß`), normalization, or grapheme segmentation.
+  - Latin-1 fallback is deliberate; it does not report invalid UTF-8.
 
 ### boolean-parser
 [github.com/Kronuz/boolean-parser](https://github.com/Kronuz/boolean-parser) &middot; depends on: none
