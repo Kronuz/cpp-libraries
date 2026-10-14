@@ -10,7 +10,7 @@ by task" before you write anything.
 
 ## What this is
 
-About seventy-six small, standalone C++ libraries, each in its own public repository under
+Eighty small, standalone C++ libraries, each in its own public repository under
 [github.com/Kronuz](https://github.com/Kronuz). They were extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand), a distributed RESTful search engine, over
 roughly a decade of building it. Whenever a piece grew sharp enough and self-contained
@@ -150,7 +150,10 @@ Facts worth knowing before you wire anything up:
 | Send a file over a byte channel, framed and checked | `flume` |
 | Append-only compressed blob store | `storage` |
 | MessagePack values, copy-on-write | `msgpack` |
-| Multicast bus, Raft, membership gossip | `cluster` |
+| Multicast bus, volatile Raft, liveness | `cluster` |
+| Durable Raft with fixed voters | `consensus` |
+| Crash-safe append-only journal with checkpoints | `journal` |
+| Completion-based file I/O (io_uring, kqueue) | `completion` |
 | Geodetic to geocentric coordinates | `cartesian` |
 | Spherical spatial index over the whole planet | `htm` |
 | Phonetic matching of names | `double-metaphone`, `soundex` |
@@ -160,6 +163,7 @@ Facts worth knowing before you wire anything up:
 | Text to index terms, Xapian TermGenerator rules | `analysis` |
 | Parse a boolean query expression | `boolean-parser` |
 | Deferred, lock-free logging | `logger` |
+| Saturating counters, latency histograms | `metrics` |
 | ANSI color with graceful downgrade | `term-color` |
 | Stack traces, crash handlers | `traceback` |
 | Exceptions that capture the throw site | `located-exception` |
@@ -168,7 +172,7 @@ Facts worth knowing before you wire anything up:
 
 ## How they layer
 
-Dependencies run one way and stay shallow. Thirty-seven libraries pull nothing
+Dependencies run one way and stay shallow. Forty-four libraries pull nothing
 first-party at all.
 
 ```
@@ -186,6 +190,8 @@ services      enum-reflection -> constexpr-phf, hashes
               scheduler -> stash, threadpool          logger -> scheduler, term-color
               http-parser -> enum-reflection          storage -> compressors, ...
               traceback -> errno-names, nanosleep, strings, term-color
+
+storage       consensus -> journal -> completion -> metrics
 
 stack         http     -> compressors, http-parser, radix-router, reactor
               http-log -> http, logger, repr, strings
@@ -1395,6 +1401,21 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Recursive operations can allocate and perform many syscalls; they are not atomic transactions.
   - Logging is a no-op unless `FS_TRACE_HEADER` is supplied, so failures must be checked through return values or exceptions.
 
+### completion
+[github.com/Kronuz/completion](https://github.com/Kronuz/completion) &middot; depends on: `metrics`
+- **What it is:** Completion-based file I/O: owned primitive requests over a trusted directory, native completion backends (io_uring on Linux, kqueue/AIO on BSD and macOS, a fallback elsewhere), crash-safe image preparation and publication, and directory scans.
+- **Header / target:** `#include "completion/api.h"` (also `completion/posix.h`, `completion/native_completion.h`, `completion/image.h`, and the optional `completion/asio_completion.h`); targets `completion::completion` and `completion::asio`; header-only; C++20; POSIX.
+- **How it works:** An operation owns every filename, buffer, and file lease its request names, and a driver keeps it until the original primitive completes; cancellation never fabricates a completion. `drive_synchronously()` runs the same primitives on a worker; event-loop owners use the native queue or the Asio adapter. The POSIX backend rejects unsafe basenames, symlinks, and foreign-owned files. Types live in `kronuz::journal` (their namespace before the module stood alone).
+- **Key API:**
+  - `make_posix_io(context, directory, mode)`, `make_native_queue(context, ...)`
+  - `IO`: `create_exclusive`, `open_existing`, `replace`, `remove`, `sync_directory`, `scan_directory`, `acquire_owner`
+  - `ImagePreparation`, `ImagePublication`, `drive_synchronously()`
+  - `AllocationContext`, `OwnedAllocator<T>`
+- **Use it when:**
+  - Durable files must be written with explicit barriers from an event loop without blocking it.
+- **Do not use it when / gotchas:**
+  - The directory must be caller-created and exclusively owned; the backend refuses shared or untrusted directories.
+
 ## Networking, serialization, storage
 
 *The service stack: sockets to HTTP to persistence. `prism` shows them assembled.*
@@ -1663,6 +1684,34 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - It is a transport framing layer, not a general message queue.
   - The codec is part of the wire format; both endpoints must agree on codec family.
 
+### journal
+[github.com/Kronuz/journal](https://github.com/Kronuz/journal) &middot; depends on: `completion`
+- **What it is:** A durable journal of bounded opaque batches with a checksummed durable frontier, immutable checkpoint artifacts, resumable mutations, reclamation, and storage admission.
+- **Header / target:** `#include "journal/journal.h"` (also `journal/store.h`, `journal/artifact.h`, `journal/admission.h`); target `journal::journal`; header-only; C++20; no Asio or reactor.
+- **How it works:** One serialized executor owns a journal. `append_batch()` writes a complete batch, syncs it, and publishes a manifest by temporary file, sync, rename, and directory sync before returning the frontier. Recovery validates the frontier before discarding an incomplete tail. Any uncertain I/O fences the journal until it is closed and recovered. Checkpoints publish sealed artifacts and a new generation the same way.
+- **Key API:**
+  - `kronuz::journal::Journal`: `create(identity)`, `recover(callback)`, `append_batch()`
+  - `prepare_artifact()`, `publish_checkpoint(bundle, dependencies, covered_sequence)`
+  - `Admission`, `StoragePermit` (storage accounting)
+- **Use it when:**
+  - You need crash-safe append-only storage with a precise durable frontier, for a replicated log or a write-ahead log.
+- **Do not use it when / gotchas:**
+  - It stores opaque bytes; record semantics and replay are the application's.
+
+### consensus
+[github.com/Kronuz/consensus](https://github.com/Kronuz/consensus) &middot; depends on: `journal` (`reactor` for its Asio test only)
+- **What it is:** Strict durable Raft: a deterministic `Core` with persisted terms, votes, and log, fixed voters, a `Worker` over journal storage, local checkpoints, and snapshot transfer.
+- **Header / target:** `#include "consensus/core.h"` (also `consensus/worker.h`, `consensus/storage.h`, `consensus/checkpoint.h`); target `consensus::consensus`; header-only; C++20.
+- **How it works:** The core has no sockets, clocks, randomness, or filesystem calls: the host delivers events (ticks, messages, completions) and carries out its actions (persist, send, commit). Replies, proposal placement, and application wait for the matching durable completion. `storage.h` encodes hard state and log suffixes as journal batches. Unrelated to `cluster::Raft`, the volatile multicast Raft.
+- **Key API:**
+  - `kronuz::consensus::Core(FixedConfiguration, RecoveredState, limits, timing)`, `Core::step(event)`
+  - `Worker` (journal-backed host), `storage_batch_size()`
+  - `SnapshotDescriptor`, snapshot channel and transfer
+- **Use it when:**
+  - A replicated service needs durable consensus whose safety does not depend on volatile votes.
+- **Do not use it when / gotchas:**
+  - Voters are fixed (no membership changes yet), and the transport is the host's.
+
 ### storage
 [github.com/Kronuz/storage](https://github.com/Kronuz/storage) &middot; depends on: `compressors`, `errno-names`, `strict-stox`, `stringified`
 - **What it is:** A header-only append-only compressed multi-volume blob store with stable record offsets.
@@ -1801,7 +1850,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### cluster
 [github.com/Kronuz/cluster](https://github.com/Kronuz/cluster) &middot; depends on: `reactor`, `varint`
-- **What it is:** A header-only UDP multicast substrate providing typed, token-scoped bus framing and a generic Raft implementation.
+- **What it is:** A header-only UDP multicast substrate providing typed, token-scoped bus framing and a generic, volatile Raft implementation. The durable storage and consensus that grew here moved to `completion`, `journal`, `consensus`, and `metrics`.
 - **Header / target:** `#include "bus.h"` and `#include "raft.h"`; target `cluster::cluster`; C++20; requires standalone Asio transitively through `reactor`.
 - **How it works:** `cluster::Bus` owns one multicast UDP socket and receive loop, and frames messages as version, type, serialized token, and content. It rejects malformed frames, newer versions, out-of-range types, and mismatched cluster tokens before dispatching on the bus reactor thread. `cluster::Raft` supplies terms, roles, votes, append, commit, election, and application hooks, but membership gossip is not implemented despite the README describing that future layer. `liveness.h`'s `LivenessTracker` is a ready-made, last-seen-timestamp-based `RaftDelegate::is_alive()` for a consumer with no other authoritative liveness source (a static peer list instead of gossip membership, for example) -- a permanently-dead peer misreported alive forever otherwise silently freezes `heartbeat_cb()`'s next-entry pick and blocks all future commits.
 - **Key API:**
@@ -1822,7 +1871,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   ```
 - **Use it when:**
   - Building multicast discovery, replicated state, or leader-election substrates.
-  - You need Raft without binding the library to a database or shard model.
+  - You need Raft without binding the library to a database or shard model, and volatile terms and votes are acceptable; otherwise use `consensus`.
 - **Do not use it when / gotchas:**
   - Membership gossip/node-table support is not implemented.
   - The application must supply node types, lifecycle hooks, message codecs, and command application.
@@ -2141,6 +2190,26 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - It is not a general structured logging framework with arbitrary sinks and routing.
   - A delayed message must be cleared or unlogged according to the intended macro behavior before the operation completes.
   - Call `Logging::finish()` during orderly shutdown to drain and stop the logging thread.
+
+### metrics
+[github.com/Kronuz/metrics](https://github.com/Kronuz/metrics) &middot; depends on: nothing first-party
+- **What it is:** Saturating counters and nanosecond duration histograms.
+- **Header / target:** `#include "metrics.hh"`; target `metrics::metrics`; header-only; C++20.
+- **How it works:** `Counter` and `AtomicCounter` saturate at 2^64 - 1 instead of wrapping. `DurationHistogram` keeps 15 buckets with inclusive bounds from 1 µs to 64 s, growing by 4×, plus count, sum, and maximum; `snapshot()` copies them out. No allocation or locks on update.
+- **Key API:**
+  - `kronuz::metrics::Counter`, `AtomicCounter`: `add(n)`, `observe_max(v)`, `get()`
+  - `DurationHistogram<>`, `AtomicDurationHistogram`: `observe(ns)`, `snapshot()`
+- **Example:**
+  ```cpp
+  #include "metrics.hh"
+  kronuz::metrics::DurationHistogram<> latency;
+  latency.observe(12'000);
+  auto s = latency.snapshot();
+  ```
+- **Use it when:**
+  - Counting events and timing operations in a library without a metrics framework.
+- **Do not use it when / gotchas:**
+  - Bucket bounds are fixed; it is not a general-purpose histogram.
 
 ### term-color
 [github.com/Kronuz/term-color](https://github.com/Kronuz/term-color) &middot; depends on: `static-string`

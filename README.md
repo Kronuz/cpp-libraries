@@ -1,6 +1,6 @@
 # Kronuz C++ Libraries
 
-Seventy-one small, standalone C++ libraries, each in its own repository under
+Eighty small, standalone C++ libraries, each in its own repository under
 [github.com/Kronuz](https://github.com/Kronuz). This repo is the index: what exists, what
 each one is for, and how to use them together.
 
@@ -50,17 +50,17 @@ lists the real include line for every one.
 
 **Concurrency, time, and the operating system.** `task`, `threadpool`, `queue`, `stash`,
 `scheduler`, `atomic-shared-ptr`, `allocators`, `nanosleep`, `epoch`, `time-point`,
-`times`, `datetime`, `residency`, `io`, `fs`
+`times`, `datetime`, `residency`, `io`, `fs`, `completion`
 
 **Networking, serialization, storage.** `reactor`, `server`, `http`, `http-parser`,
 `http-log`, `radix-router`, `url-parser`, `compressors`, `varint`, `bitpack`, `docset`, `flume`, `storage`,
-`msgpack`, `cluster`, `prism`
+`msgpack`, `journal`, `consensus`, `cluster`, `prism`
 
 **Domain: geospatial, text, diagnostics.** `cartesian`, `htm`, `double-metaphone`,
 `soundex`, `string-similarity`, `unicode`, `snowball`, `analysis`, `boolean-parser`, `logger`, `term-color`, `traceback`,
-`located-exception`, `errno-names`, `system`
+`located-exception`, `errno-names`, `system`, `metrics`
 
-Dependencies run one way and stay shallow: forty of the seventy-six pull nothing
+Dependencies run one way and stay shallow: forty-four of the eighty pull nothing
 first-party at all. The service stack is the deepest chain,
 `reactor -> http-parser -> http -> http-log -> prism`, and
 [prism](https://github.com/Kronuz/prism) is the worked example of the whole thing
