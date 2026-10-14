@@ -1423,7 +1423,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 ### reactor
 [github.com/Kronuz/reactor](https://github.com/Kronuz/reactor) &middot; depends on: none
 - **What it is:** A header-only standalone Asio runtime that accepts TCP connections, distributes them across reactor threads, and shuts them down cleanly.
-- **Header / target:** `#include "reactor.h"` and optionally `#include "reactor_udp.h"`; CMake target `reactor::reactor`; C++20; requires standalone Asio.
+- **Header / target:** `#include "reactor.h"`, and optionally `#include "reactor_udp.h"` and `#include "reactor_tls.h"`; CMake targets `reactor::reactor` and, when OpenSSL 3 is found, `reactor::tls`; C++20; requires standalone Asio.
 - **How it works:** `TcpServer` runs shared-nothing Asio `io_context` reactors, normally one per core, and invokes a coroutine `Session` for each accepted socket. Linux uses `SO_REUSEPORT`; macOS and BSD use a shared acceptor fallback. Each reactor has an offload thread pool and bounded `gate()`, while tracked `Abortable` operations are cancelled before reactor shutdown. `UdpServer` provides one receive loop, multicast options, and an exposed `io()` for timers and protocol state.
 - **Key API:**
   - `reactor::TcpServer(reactors, workers, queue, Session)`
@@ -1432,6 +1432,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `asio::awaitable<void> Session(asio::ip::tcp::socket, reactor::Reactor&)`
   - `Reactor::pool()`, `Reactor::gate()`, `Reactor::track(Abortable&)`
   - `reactor::UdpServer(Datagram)`, `set_options(UdpOptions)`, `start(port)`, `send(bytes)`
+  - `reactor::tls::configure(context, Options, Role::{Peer, Server, Client})`: TLS 1.2+, no renegotiation or 0-RTT, certificates and verification per role; `reactor::tls::bind_hostname(ssl, name)` for clients
 - **Example:**
   ```cpp
   #include "reactor.h"
@@ -1699,18 +1700,19 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - It stores opaque bytes; record semantics and replay are the application's.
 
 ### consensus
-[github.com/Kronuz/consensus](https://github.com/Kronuz/consensus) &middot; depends on: `journal` (`reactor` for its Asio test only)
+[github.com/Kronuz/consensus](https://github.com/Kronuz/consensus) &middot; depends on: `journal`; `reactor` for the optional transport
 - **What it is:** Strict durable Raft: a deterministic `Core` with persisted terms, votes, and log, fixed voters, a `Worker` over journal storage, local checkpoints, and snapshot transfer.
-- **Header / target:** `#include "consensus/core.h"` (also `consensus/worker.h`, `consensus/storage.h`, `consensus/checkpoint.h`); target `consensus::consensus`; header-only; C++20.
+- **Header / target:** `#include "consensus/core.h"` (also `consensus/worker.h`, `consensus/storage.h`, `consensus/checkpoint.h`); target `consensus::consensus`; header-only; C++20. The optional peer transport is `#include "consensus/transport/peers.h"`, target `consensus::transport` (`CONSENSUS_TRANSPORT`; Asio through `reactor`, OpenSSL 3).
 - **How it works:** The core has no sockets, clocks, randomness, or filesystem calls: the host delivers events (ticks, messages, completions) and carries out its actions (persist, send, commit). Replies, proposal placement, and application wait for the matching durable completion. `storage.h` encodes hard state and log suffixes as journal batches. Unrelated to `cluster::Raft`, the volatile multicast Raft.
 - **Key API:**
   - `kronuz::consensus::Core(FixedConfiguration, RecoveredState, limits, timing)`, `Core::step(event)`
   - `Worker` (journal-backed host), `storage_batch_size()`
   - `SnapshotDescriptor`, snapshot channel and transfer
+  - `transport::Peers<Host>(executor, host, PeerConfiguration, PeerOptions)`: TLS over TCP, a control and a bulk lane per peer, pinned voter certificates
 - **Use it when:**
   - A replicated service needs durable consensus whose safety does not depend on volatile votes.
 - **Do not use it when / gotchas:**
-  - Voters are fixed (no membership changes yet), and the transport is the host's.
+  - Voters are fixed (no membership changes yet).
 
 ### storage
 [github.com/Kronuz/storage](https://github.com/Kronuz/storage) &middot; depends on: `compressors`, `errno-names`, `strict-stox`, `stringified`
