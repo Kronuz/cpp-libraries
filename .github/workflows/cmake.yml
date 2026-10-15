@@ -59,7 +59,8 @@ jobs:
         run: brew install ${{ inputs.brew_packages }}
       - name: Configure
         env: { CC: "${{ matrix.cc }}", CXX: "${{ matrix.cxx }}" }
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{ inputs.cmake_args }}
+        # RelWithDebInfo without NDEBUG: the tests' assert() calls must stay live.
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -g" "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -g" ${{ inputs.cmake_args }}
       - name: Build
         run: cmake --build build --parallel 4
       - name: Test
@@ -100,6 +101,6 @@ jobs:
           usesh: true
           prepare: pkg install -y cmake git ${{ inputs.freebsd_packages }}
           run: |
-            cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{ inputs.cmake_args }}
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -g" "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -g" ${{ inputs.cmake_args }}
             cmake --build build --parallel 4
             ctest --test-dir build --output-on-failure --no-tests=ignore --parallel 2
