@@ -1,0 +1,84 @@
+# The Kronuz C++ libraries' shared CI: configure, build, and test a CMake repository on
+# Linux (x86_64 with GCC and Clang, arm64), macOS (arm64, x86_64), and FreeBSD, plus an
+# ASan and UBSan build. Each repository calls it:
+#
+#   jobs:
+#     ci:
+#       uses: Kronuz/cpp-libraries/.github/workflows/cmake.yml@main
+name: cmake
+
+on:
+  workflow_call:
+    inputs:
+      cmake_args:
+        description: Extra arguments for the configure step
+        type: string
+        default: ""
+      freebsd:
+        description: Run the FreeBSD job
+        type: boolean
+        default: true
+      sanitize:
+        description: Run the ASan and UBSan job
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64-gcc, os: ubuntu-24.04, cc: gcc, cxx: g++ }
+          - { name: linux-x86_64-clang, os: ubuntu-24.04, cc: clang, cxx: clang++ }
+          - { name: linux-arm64-gcc, os: ubuntu-24.04-arm, cc: gcc, cxx: g++ }
+          - { name: macos-arm64, os: macos-15, cc: clang, cxx: clang++ }
+          - { name: macos-x86_64, os: macos-15-intel, cc: clang, cxx: clang++ }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        env: { CC: "${{ matrix.cc }}", CXX: "${{ matrix.cxx }}" }
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{ inputs.cmake_args }}
+      - name: Build
+        run: cmake --build build --parallel 4
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --no-tests=ignore --parallel 2
+
+  sanitize:
+    name: linux-asan-ubsan
+    if: inputs.sanitize
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        env: { CC: clang, CXX: clang++ }
+        run: >-
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+          "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer"
+          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined" ${{ inputs.cmake_args }}
+      - name: Build
+        run: cmake --build build --parallel 4
+      - name: Test
+        env: { ASAN_OPTIONS: "detect_leaks=1", UBSAN_OPTIONS: "print_stacktrace=1" }
+        run: ctest --test-dir build --output-on-failure --no-tests=ignore --parallel 2
+
+  freebsd:
+    name: freebsd-x86_64
+    if: inputs.freebsd
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.3"
+          usesh: true
+          prepare: pkg install -y cmake git
+          run: |
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{ inputs.cmake_args }}
+            cmake --build build --parallel 4
+            ctest --test-dir build --output-on-failure --no-tests=ignore --parallel 2
