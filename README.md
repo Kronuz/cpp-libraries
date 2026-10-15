@@ -44,6 +44,11 @@ Every library builds and runs its tests on Linux (x86_64 with GCC and Clang, arm
 macOS (arm64, x86_64), and FreeBSD, plus an ASan and UBSan build, through the shared
 workflow in [`.github/workflows/cmake.yml`](.github/workflows/cmake.yml).
 
+Assertions stay live in every build, the standard library's own checks are on, a
+ThreadSanitizer job runs alongside ASan and UBSan, and every repository runs nightly.
+[`tools/preflight.sh`](tools/preflight.sh) runs the same matrix locally, on macOS and on
+Linux and FreeBSD VMs, before a push.
+
 | | | |
 |---|---|---|
 | [allocators](https://github.com/Kronuz/allocators) [![CI](https://github.com/Kronuz/allocators/actions/workflows/ci.yml/badge.svg)](https://github.com/Kronuz/allocators/actions/workflows/ci.yml) | [analysis](https://github.com/Kronuz/analysis) [![CI](https://github.com/Kronuz/analysis/actions/workflows/ci.yml/badge.svg)](https://github.com/Kronuz/analysis/actions/workflows/ci.yml) | [atomic-shared-ptr](https://github.com/Kronuz/atomic-shared-ptr) [![CI](https://github.com/Kronuz/atomic-shared-ptr/actions/workflows/ci.yml/badge.svg)](https://github.com/Kronuz/atomic-shared-ptr/actions/workflows/ci.yml) |
