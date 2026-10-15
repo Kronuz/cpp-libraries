@@ -24,7 +24,8 @@ run_local() {  # label, build dir, compiler, extra flags
 }
 run_vm() {  # label, vm script, extra flags
 	local label=$1 vm=$2 extra=$3
-	tar -C "$repo" --exclude .git --exclude 'build*' -czf "$scratch/tree.tgz" .
+	# Tracked and untracked files, minus ignored ones (scratch data, build trees).
+	(cd "$repo" && git ls-files -co --exclude-standard -z | xargs -0 tar -czf "$scratch/tree.tgz")
 	if "$strata/tools/vm/$vm" ssh "rm -rf ~/preflight/$name && mkdir -p ~/preflight/$name && cd ~/preflight/$name && tar xzf - &&
 		cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo '-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$flags $extra' >build.log 2>&1 &&
 		cmake --build build --parallel 4 >>build.log 2>&1 && ctest --test-dir build --output-on-failure --no-tests=ignore >>build.log 2>&1 ||
