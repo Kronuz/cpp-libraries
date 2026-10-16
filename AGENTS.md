@@ -587,7 +587,6 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - Production keyword dispatch: `constexpr-phf` is faster.
   - Matching is exact, including case.
-  - The header ends with `#pragma clang diagnostic push` instead of `pop`, so its warning suppression leaks into includers.
 
 ### hashes
 [github.com/Kronuz/hashes](https://github.com/Kronuz/hashes) &middot; depends on: `char-classify`, `static-string`
