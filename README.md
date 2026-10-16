@@ -1,6 +1,6 @@
 # Kronuz C++ Libraries
 
-Eighty small, standalone C++ libraries, each in its own repository under
+About eighty small, standalone C++ libraries, each in its own repository under
 [github.com/Kronuz](https://github.com/Kronuz). This repo is the index: what exists, what
 each one is for, and how to use them together.
 
@@ -31,8 +31,10 @@ target_link_libraries(my_app PRIVATE hashes::hashes)
 
 C++20 is the norm, C++17 for a handful. Tests and demos only build when a repo is the
 top-level project, so pulling a library in does not build its suite. `GIT_TAG main` tracks
-the tip; pin a SHA when you need reproducibility. MIT licensed, apart from `cpp-btree`
-(Apache 2.0).
+the tip; pin a SHA when you need reproducibility. Everything is MIT licensed except
+`cpp-btree` (Apache 2.0) and `static-string` (Boost 1.0). Some repos bundle third-party code under its own license:
+`msgpack` (Boost 1.0 for msgpack-c), `snowball` (BSD 3-clause for the generated
+stemmers), and `unicode` (the Unicode License for its tables).
 
 The include filename often differs from the repo name: `char-classify` gives `chars.hh`,
 `constexpr-phf` gives `phf.hh`, `enum-reflection` gives `enum.h`. [AGENTS.md](AGENTS.md)
@@ -40,7 +42,7 @@ lists the real include line for every one.
 
 ## Build status
 
-Every library builds and runs its tests on Linux (x86_64 with GCC and Clang, arm64),
+Every library in the table below builds and runs its tests on Linux (x86_64 with GCC and Clang, arm64),
 macOS (arm64, x86_64), and FreeBSD, plus an ASan and UBSan build, through the shared
 workflow in [`.github/workflows/cmake.yml`](.github/workflows/cmake.yml).
 
@@ -182,6 +184,9 @@ Linux and FreeBSD VMs, before a push.
 </tr>
 </table>
 
+Three have no CI yet: `cpp-btree` (a script-driven test), `generation-cache`, and
+`server` (an early libev prototype that `reactor` and `http` superseded).
+
 ## What's here
 
 **Foundations: bytes, strings, parsing.** `char-classify`, `static-string`, `strings`,
@@ -204,9 +209,9 @@ Linux and FreeBSD VMs, before a push.
 `soundex`, `string-similarity`, `unicode`, `snowball`, `analysis`, `boolean-parser`, `logger`, `term-color`, `traceback`,
 `located-exception`, `errno-names`, `system`, `metrics`
 
-Dependencies run one way and stay shallow: forty-four of the eighty pull nothing
-first-party at all. The service stack is the deepest chain,
-`reactor -> http-parser -> http -> http-log -> prism`, and
+Dependencies run one way and stay shallow: more than half pull nothing first-party
+at all. The service stack is the deepest chain,
+`reactor` and `http-parser` under `http`, then `http-log`, then `prism`, and
 [prism](https://github.com/Kronuz/prism) is the worked example of the whole thing
 assembled into a running HTTP server.
 

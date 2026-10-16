@@ -10,7 +10,7 @@ by task" before you write anything.
 
 ## What this is
 
-Eighty small, standalone C++ libraries, each in its own public repository under
+About eighty small, standalone C++ libraries, each in its own public repository under
 [github.com/Kronuz](https://github.com/Kronuz). They were extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand), a distributed RESTful search engine, over
 roughly a decade of building it. Whenever a piece grew sharp enough and self-contained
@@ -85,7 +85,10 @@ Facts worth knowing before you wire anything up:
 - **Tests and demos only build when the repo is the top-level project**, so pulling a
   library into your build does not build its test suite.
 - **`GIT_TAG main` tracks the tip.** For anything reproducible, pin a commit SHA.
-- **Licensing is MIT** across the collection, with `cpp-btree` under Apache 2.0.
+- **Licensing is MIT** across the collection, with `cpp-btree` under Apache 2.0 and
+  `static-string` under the Boost Software License 1.0. Bundled
+  third-party code keeps its license: msgpack-c in `msgpack` (Boost 1.0), the generated
+  stemmers in `snowball` (BSD 3-clause), and the UCD tables in `unicode` (Unicode License).
 - **Third-party dependencies are rare and localized.** The networking stack wants
   standalone Asio; `compressors` wants zlib, lz4 and zstd; `hashes` optionally detects an
   xxHash header and falls back to its own implementation when absent.
@@ -137,7 +140,7 @@ Facts worth knowing before you wire anything up:
 | mkdir -p, glob delete, directory copy | `fs` |
 | fd counts, RAM, disk and inode usage | `system` |
 | TCP/UDP reactor pool, graceful shutdown | `reactor` |
-| Generic connection server engine | `server` |
+| Generic connection server engine (legacy libev; prefer `reactor` + `http`) | `server` |
 | HTTP/1.1 application framework | `http` |
 | Streaming HTTP/1.x parser only | `http-parser` |
 | Access logging middleware | `http-log` |
@@ -172,8 +175,8 @@ Facts worth knowing before you wire anything up:
 
 ## How they layer
 
-Dependencies run one way and stay shallow. Forty-four libraries pull nothing
-first-party at all.
+Dependencies run one way and stay shallow. More than half of the libraries pull
+nothing first-party at all.
 
 ```
 leaves        char-classify  static-string  split  strict-stox  stringified  endian
@@ -565,8 +568,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 ### ctrie
 [github.com/Kronuz/ctrie](https://github.com/Kronuz/ctrie) &middot; depends on: none
 - **What it is:** A compile-time compressed trie mapping a fixed set of words to their insertion index.
-- **Header / target:** `#include "ctrie.hh"`; C++20. Undocumented: the repo contains only the header and a CMakeLists.
-- **How it works:** `ctrie::build` constructs a type-level trie from `Word` types, assigning each terminal an index in argument order, so the structure exists purely in the type system. Lookup walks character nodes and returns `ctrie::npos` for an unknown or non-terminal word. Because it is a trie rather than a hash it never needs to see the whole key when a prefix already fails, which is its advantage over a perfect hash for string dispatch.
+- **Header / target:** `#include "ctrie.hh"`; `ctrie::ctrie`; C++17 (needs the GNU string literal operator template, so Clang or GCC).
+- **How it works:** `ctrie::build` constructs a type-level trie from `Word` types, assigning each terminal an index in argument order, so the structure exists purely in the type system. Lookup walks character nodes and returns `ctrie::npos` for an unknown or non-terminal word. Because it is a trie it rejects a failing prefix early, but measured lookups are slower than a perfect hash; it stays as a benchmark contender and reference.
 - **Key API:**
   - `ctrie::build(Words...)`, `operator""_cword`
   - `find(const char*)`, `find(const char*, const char*)`, `find(const char*, size_t)`
@@ -579,11 +582,12 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   static_assert(words.find("banana") == 1);
   ```
 - **Use it when:**
-  - Mapping a fixed vocabulary of short words to indexes with no hashing and no allocation.
-  - Dispatching on keywords where early prefix rejection helps.
+  - A reference or benchmark contender for fixed-set string membership.
+  - A fixed vocabulary needs indexes at compile time, with no tables at runtime.
 - **Do not use it when / gotchas:**
-  - Undocumented, so treat the header as the contract and pin the commit.
+  - Production keyword dispatch: `constexpr-phf` is faster.
   - Matching is exact, including case.
+  - The header ends with `#pragma clang diagnostic push` instead of `pop`, so its warning suppression leaks into includers.
 
 ### hashes
 [github.com/Kronuz/hashes](https://github.com/Kronuz/hashes) &middot; depends on: `char-classify`, `static-string`
