@@ -1236,10 +1236,10 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - The return type is the period's integral `count()` type.
 
 ### time-point
-[github.com/Kronuz/time-point](https://github.com/Kronuz/time-point) &middot; depends on: none
-- **What it is:** Header-only C++17 conversion helpers between chrono time points and unsigned nanosecond values.
-- **Header / target:** `#include "time_point.hh"`; CMake target `time-point::time-point` if discoverable; C++17.
-- **How it works:** `time_point_to_ullong` duration-casts any `std::chrono::time_point` to nanoseconds since that clock's epoch. `time_point_from_ullong` constructs a time point from an unsigned nanosecond count, defaulting to `std::chrono::steady_clock`. The header also contains an EINTR-safe inline nanosecond sleep helper and performs no dynamic allocation.
+[github.com/Kronuz/time-point](https://github.com/Kronuz/time-point) &middot; depends on: `nanosleep`
+- **What it is:** Header-only C++20 conversion helpers between chrono time points and unsigned nanosecond values.
+- **Header / target:** `#include "time_point.hh"`; `time_point::time_point`; C++20.
+- **How it works:** `time_point_to_ullong` duration-casts any `std::chrono::time_point` to nanoseconds since that clock's epoch. `time_point_from_ullong` constructs a time point from an unsigned nanosecond count, defaulting to `std::chrono::steady_clock`. The header re-exports the nanosleep library's EINTR-safe `nanosleep(unsigned long long)` and performs no dynamic allocation.
 - **Key API:**
   - `time_point_to_ullong(std::chrono::time_point<Clock>) -> unsigned long long`
   - `time_point_from_ullong<Clock = std::chrono::steady_clock>(unsigned long long)`
