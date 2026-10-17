@@ -12,6 +12,8 @@ strata="${STRATA:-$HOME/code/Kronuz/strata}"
 scratch="$HOME/.scratch/preflight/$name"; mkdir -p "$scratch"
 flags="-O2 -g"  # RelWithDebInfo without NDEBUG
 status=0
+# Another agent's measurement holds the host quiet (tools/quiet.sh): wait for it.
+if ! "$(dirname "$0")/quiet.sh" check >&2; then echo "preflight: waiting for the host to be quiet" >&2; "$(dirname "$0")/quiet.sh" wait; fi
 
 run_local() {  # label, build dir, compiler, extra flags
 	local label=$1 dir=$2 cxx=$3 extra=$4
