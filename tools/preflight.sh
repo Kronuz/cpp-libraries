@@ -12,15 +12,21 @@ strata="${STRATA:-$HOME/code/Kronuz/strata}"
 scratch="$HOME/.scratch/preflight/$name"; mkdir -p "$scratch"
 flags="-O2 -g"  # RelWithDebInfo without NDEBUG
 status=0
-# Another agent's measurement holds the host quiet (tools/quiet.sh): wait for it.
-if ! "$(dirname "$0")/quiet.sh" check >&2; then echo "preflight: waiting for the host to be quiet" >&2; "$(dirname "$0")/quiet.sh" wait; fi
+# Another agent's measurement holds the host (tools/quiet.sh): wait out a strict hold; under
+# a light one, build at the lowest priority with at most 4 jobs.
+jobs=8 nice=""
+"$(dirname "$0")/quiet.sh" check >&2
+case $? in
+1) echo "preflight: waiting for a strict hold" >&2; "$(dirname "$0")/quiet.sh" wait --light ;;
+esac
+if ! "$(dirname "$0")/quiet.sh" check > /dev/null 2>&1; then jobs=4 nice="nice -n 19"; fi
 
 run_local() {  # label, build dir, compiler, extra flags
 	local label=$1 dir=$2 cxx=$3 extra=$4
 	if cmake -S "$repo" -B "$dir" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER="$cxx" \
 		"-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$flags $extra" >"$dir.log" 2>&1 &&
-		cmake --build "$dir" --parallel 8 >>"$dir.log" 2>&1 &&
-		ctest --test-dir "$dir" --output-on-failure --no-tests=ignore >>"$dir.log" 2>&1; then
+		$nice cmake --build "$dir" --parallel $jobs >>"$dir.log" 2>&1 &&
+		$nice ctest --test-dir "$dir" --output-on-failure --no-tests=ignore >>"$dir.log" 2>&1; then
 		echo "$label: ok"
 	else echo "$label: FAILED ($dir.log)"; status=1; fi
 }

@@ -2469,8 +2469,11 @@ tools/quiet.sh check || tools/quiet.sh wait            # before compiling or run
 tools/quiet.sh run NAME 90 "what it measures" -- cmd   # around a measurement
 ```
 
-While any hold is live, do not compile, run test suites, or start another measurement;
-edit, read, and write instead. A hold names what it measures and its deadline, and it
+A strict hold (A/Bs, gate runs: a few percent decides them) means no compiles, test
+suites, or other measurements; edit, read, and write instead. A light hold (single-threaded
+or informational runs, `QUIET_LEVEL=light`) allows compiles and tests at `nice -n 19` with
+at most 4 parallel jobs. `quiet.sh check` exits 0 when free, 2 under light holds only, and
+1 under a strict one. A hold names what it measures and its deadline, and it
 ends with its process or at the deadline, so a crashed holder blocks no one for long.
 `tools/preflight.sh` waits on its own; strata's `tools/vm/quiet_trials.sh` holds the host
 while its trials run.
