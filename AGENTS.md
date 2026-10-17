@@ -2458,26 +2458,6 @@ Working rules, in priority order.
    `hashes` is not cryptographic, `repr` is not reversible, `split` is not a CSV parser,
    `bloom-filter` cannot remove. Do not fix these by expanding scope. Write a new library.
 
-## Sharing the host
-
-Several agents work on this Mac at once, and its benchmarks run in VMs on it, so a compile
-during a measurement corrupts the measurement. `tools/quiet.sh` coordinates them through
-hold files in `~/.scratch/quiet/`:
-
-```sh
-tools/quiet.sh check || tools/quiet.sh wait            # before compiling or running tests
-tools/quiet.sh run NAME 90 "what it measures" -- cmd   # around a measurement
-```
-
-A strict hold (A/Bs, gate runs: a few percent decides them) means no compiles, test
-suites, or other measurements; edit, read, and write instead. A light hold (single-threaded
-or informational runs, `QUIET_LEVEL=light`) allows compiles and tests at `nice -n 19` with
-at most 4 parallel jobs. `quiet.sh check` exits 0 when free, 2 under light holds only, and
-1 under a strict one. A hold names what it measures and its deadline, and it
-ends with its process or at the deadline, so a crashed holder blocks no one for long.
-`tools/preflight.sh` waits on its own; strata's `tools/vm/quiet_trials.sh` holds the host
-while its trials run.
-
 ## Provenance
 
 All of these were extracted from [Xapiand](https://github.com/Kronuz/Xapiand), a
