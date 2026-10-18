@@ -26,6 +26,14 @@ on:
         description: Run the ThreadSanitizer job
         type: boolean
         default: true
+      asan_timeout_minutes:
+        description: Timeout in minutes for the ASan and UBSan job
+        type: number
+        default: 60
+      tsan_timeout_minutes:
+        description: Timeout in minutes for the ThreadSanitizer job
+        type: number
+        default: 60
       apt_packages:
         description: Ubuntu packages the build needs
         type: string
@@ -75,7 +83,7 @@ jobs:
     name: linux-asan-ubsan
     if: inputs.sanitize
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.asan_timeout_minutes }}
     steps:
       - uses: actions/checkout@v5
       - name: Packages
@@ -97,7 +105,7 @@ jobs:
     name: linux-tsan
     if: inputs.tsan
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.tsan_timeout_minutes }}
     steps:
       - uses: actions/checkout@v5
       - name: Packages
