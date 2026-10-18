@@ -29,8 +29,13 @@ here, already has tests, and is already used in production by at least one real 
 
 Read this section before changing anything.
 
-1. **Use whatever fits.** Every library here is available to you. Prefer reusing one over
-   writing an equivalent from scratch. Prefer composing several over building a monolith.
+1. **Never duplicate; extend.** Before writing a component, check this index and every
+   `Kronuz/*` C++ repository (`gh repo list Kronuz --limit 1000`; local clones miss some).
+   If a library already does the job, or nearly does, use it or extend it at the source;
+   never write a parallel copy. Inside one project the same holds: one implementation per
+   mechanism, with a compatibility behavior as a preset of it, never a second code path.
+   Compose several libraries rather than building a monolith. A library that lands or
+   changes updates this index in the same series.
 2. **These are our libraries.** You may modify them. You do not need to work around a
    limitation, vendor a patched copy, or reimplement a piece because it is slightly wrong.
    Fix it at the source.
