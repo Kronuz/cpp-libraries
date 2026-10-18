@@ -1716,13 +1716,14 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Key API:**
   - `kronuz::consensus::Core(FixedConfiguration, RecoveredState, limits, timing)`, `Core::step(event)`
   - `Worker` (journal-backed host), `storage_batch_size()`
+  - `RetainedStatePolicy` and `WorkerLimits::retained` bound historical allocation/replay independently of operating limits; `Core::capture_usage(request)` shares rejection checks and returns the surviving suffix budget for funded capture.
   - `SnapshotDescriptor`, snapshot channel and transfer
   - Terminal retirement shares one budget across output and retained-log cleanup; one oversized first historical payload can progress under lowered operating limits without unsigned byte underflow.
   - `transport::Peers<Host>(executor, host, PeerConfiguration, PeerOptions)`: TLS over TCP, a control and a bulk lane per peer, pinned voter certificates
 - **Use it when:**
   - A replicated service needs durable consensus whose safety does not depend on volatile votes.
 - **Do not use it when / gotchas:**
-  - Voters are fixed (no membership changes yet).
+  - The host owns membership policy and checkpoint funding. Retained-policy ceilings do not reserve storage; provision the surviving suffix and grow its existing Journal reservation before capture.
 
 ### storage
 [github.com/Kronuz/storage](https://github.com/Kronuz/storage) &middot; depends on: `compressors`, `errno-names`, `strict-stox`, `stringified`
