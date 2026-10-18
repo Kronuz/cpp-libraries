@@ -1716,6 +1716,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `kronuz::consensus::Core(FixedConfiguration, RecoveredState, limits, timing)`, `Core::step(event)`
   - `Worker` (journal-backed host), `storage_batch_size()`
   - `SnapshotDescriptor`, snapshot channel and transfer
+  - Terminal retirement shares one budget across output and retained-log cleanup; one oversized first historical payload can progress under lowered operating limits without unsigned byte underflow.
   - `transport::Peers<Host>(executor, host, PeerConfiguration, PeerOptions)`: TLS over TCP, a control and a bulk lane per peer, pinned voter certificates
 - **Use it when:**
   - A replicated service needs durable consensus whose safety does not depend on volatile votes.
