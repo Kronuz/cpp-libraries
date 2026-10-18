@@ -1702,6 +1702,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `kronuz::journal::Journal`: `create(identity)`, `recover(callback)`, `append_batch()`
   - `prepare_artifact()`, `publish_checkpoint(bundle, dependencies, covered_sequence)`
   - `Admission`, `StoragePermit` (storage accounting)
+  - `Store::grow_replacement(id, minimum_bundle_cap)` and `Admission::grow_replacement(permit, minimum_peak)` grow the same protected checkpoint reservation without I/O; refusal leaves accounting unchanged. Growth waits for original preparation I/O and ends when bundle preparation starts.
 - **Use it when:**
   - You need crash-safe append-only storage with a precise durable frontier, for a replicated log or a write-ahead log.
 - **Do not use it when / gotchas:**
