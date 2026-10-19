@@ -201,6 +201,8 @@ Three have no CI yet: `cpp-btree` (a script-driven test), `generation-cache`, an
 `scheduler`, `atomic-shared-ptr`, `allocators`, `nanosleep`, `epoch`, `time-point`,
 `times`, `datetime`, `residency`, `io`, `fs`, `completion`
 
+`allocators::resources` provides owning byte accounts, allocation adapters and explicit reservation bookkeeping without global allocation interception. Optional `allocators::retirement` supplies caller-owned deferred cleanup. Completion shares its allocation contexts, while Journal retains durable settlement policy around the shared reservation arithmetic.
+
 **Networking, serialization, storage.** `reactor`, `server`, `http`, `http-parser`,
 `http-log`, `radix-router`, `url-parser`, `compressors`, `varint`, `bitpack`, `docset`, `bkd`, `flume`, `storage`,
 `msgpack`, `journal`, `consensus`, `cluster`, `prism`

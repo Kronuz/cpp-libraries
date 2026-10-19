@@ -138,6 +138,7 @@ Facts worth knowing before you wire anything up:
 | The lock-free slot store under a timer wheel | `stash` |
 | Atomic operations over `shared_ptr` | `atomic-shared-ptr` |
 | Custom allocators, memory pools | `allocators` |
+| Owning byte admission, durable reservation bookkeeping, deferred cleanup | `allocators` (`resources`, optional `retirement`) |
 | Precise sleep, EINTR-safe | `nanosleep` |
 | Current time since epoch | `epoch`, `times`, `time-point` |
 | Parse and format ISO-8601, date math | `datetime` |
@@ -1172,8 +1173,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### allocators
 [github.com/Kronuz/allocators](https://github.com/Kronuz/allocators) &middot; depends on: none
-- **What it is:** C++17 allocator implementations for system allocation tracking and single-object memory pooling.
-- **Header / target:** `#include "allocators.h"`; CMake target `allocators::allocators`; C++17.
+- **What it is:** Allocation tracking and single-object pooling, plus independent owning resource accounts, reservation bookkeeping and optional deferred cleanup.
+- **Header / target:** `#include "allocators.h"`, target `allocators::allocators`; resource headers under `allocators/`, target `allocators::resources`; optional POSIX `allocators/retirement.h`, target `allocators::retirement`; C++20.
 - **How it works:** `vanilla_allocator` delegates allocation and deallocation to the library implementation without tracking. `tracked_allocator` records allocation totals, exposed through `total_allocated()` and `local_allocated()`. `allocator<T, Allocator>` adapts either backend to the standard allocator interface. `memory_pool_allocator<T>` stores blocks in a `std::deque`, reuses freed single-object blocks through an intrusive free list, and rejects allocations other than exactly one object.
 - **Key API:**
   - `allocators::vanilla_allocator::{allocate, deallocate}`
@@ -1181,6 +1182,9 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `allocators::allocator<T, Allocator>::allocate`, `deallocate`, `construct`, `destroy`
   - `allocators::memory_pool_allocator<T>::allocate(1)`, `deallocate`, `construct`, `destroy`
   - `allocators::total_allocated()`, `local_allocated()`
+  - `ByteAccount`, `ByteCharge`, `ResourceVector<N>`, `ReservationBook<N>`, `Reservation<N>`
+  - `AllocationContext`, `OwnedAllocator<T>`, `ChargedAllocator<T>`, `ChargedMemoryResource`, `PagedStorage`, `OwnedBuffer`
+  - `RetirementRuntime`, `RetirementDomain`, `RetirementFactory`, `RetirementHandle<T>`
 - **Example:**
   ```cpp
   #include "allocators.h"
@@ -1194,10 +1198,14 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Use it when:**
   - Standard containers need allocation accounting.
   - A container repeatedly allocates and frees one fixed-size object type.
+  - Explicitly admitted allocations must survive their initiating account facade, or final owner release must enqueue bounded cleanup.
 - **Do not use it when / gotchas:**
   - `memory_pool_allocator<T>` only accepts `allocate(1)` and is not thread-safe.
   - The pool retains its backing `std::deque` storage until allocator destruction.
   - `tracked_allocator` counters are instrumentation, not a synchronization mechanism.
+  - Resource-only targets do not build or link the legacy allocation overrides. Independent byte-account construction allocates fixed shared state outside its own payload quota; successful steady admission allocates no bookkeeping.
+  - Reservation books are single-executor and outlive their capabilities. Unresolved destruction preserves debt; durable proofs and protected-pool policy remain in the caller.
+  - The application retains the retirement runtime until all domains drain. The retirement target follows `BUILD_SHARED_LIBS` and is optional on POSIX.
 
 ### nanosleep
 [github.com/Kronuz/nanosleep](https://github.com/Kronuz/nanosleep) &middot; depends on: none
@@ -1410,7 +1418,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Logging is a no-op unless `FS_TRACE_HEADER` is supplied, so failures must be checked through return values or exceptions.
 
 ### completion
-[github.com/Kronuz/completion](https://github.com/Kronuz/completion) &middot; depends on: `metrics`
+[github.com/Kronuz/completion](https://github.com/Kronuz/completion) &middot; depends on: `metrics`, `allocators` (resources only)
 - **What it is:** Completion-based file I/O: owned primitive requests over a trusted directory, native completion backends (io_uring on Linux, kqueue/AIO on BSD and macOS, a fallback elsewhere), crash-safe image preparation and publication, and directory scans.
 - **Header / target:** `#include "completion/api.h"` (also `completion/posix.h`, `completion/native_completion.h`, `completion/image.h`, and the optional `completion/asio_completion.h`); targets `completion::completion` and `completion::asio`; header-only; C++20; POSIX.
 - **How it works:** An operation owns every filename, buffer, and file lease its request names, and a driver keeps it until the original primitive completes; cancellation never fabricates a completion. `drive_synchronously()` runs the same primitives on a worker; event-loop owners use the native queue or the Asio adapter. The POSIX backend rejects unsafe basenames, symlinks, and foreign-owned files. Types live in `kronuz::journal` (their namespace before the module stood alone).
@@ -1423,6 +1431,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Durable files must be written with explicit barriers from an event loop without blocking it.
 - **Do not use it when / gotchas:**
   - The directory must be caller-created and exclusively owned; the backend refuses shared or untrusted directories.
+  - Allocation names alias the canonical owning `allocators` types. Rebuild C++ dependents together when adopting that type-identity change; persisted bytes are unchanged.
 
 ## Networking, serialization, storage
 
@@ -1694,7 +1703,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - The codec is part of the wire format; both endpoints must agree on codec family.
 
 ### journal
-[github.com/Kronuz/journal](https://github.com/Kronuz/journal) &middot; depends on: `completion`
+[github.com/Kronuz/journal](https://github.com/Kronuz/journal) &middot; depends on: `completion`, `allocators` (resources only)
 - **What it is:** A durable journal of bounded opaque batches with a checksummed durable frontier, immutable checkpoint artifacts, resumable mutations, reclamation, and storage admission.
 - **Header / target:** `#include "journal/journal.h"` (also `journal/store.h`, `journal/artifact.h`, `journal/admission.h`); target `journal::journal`; header-only; C++20; no Asio or reactor.
 - **How it works:** One serialized executor owns a journal. `append_batch()` writes a complete batch, syncs it, and publishes a manifest by temporary file, sync, rename, and directory sync before returning the frontier. Recovery validates the frontier before discarding an incomplete tail. Any uncertain I/O fences the journal until it is closed and recovered. Checkpoints publish sealed artifacts and a new generation the same way.
