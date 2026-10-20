@@ -160,6 +160,8 @@ Facts worth knowing before you wire anything up:
 | Compact self-terminating length/integer wire encoding, exception-free decode | `varint` |
 | Send a file over a byte channel, framed and checked | `flume` |
 | Append-only compressed blob store | `storage` |
+| Embedded LSM-style segment store: immutable segments, background merges, crash-safe commits, checkpoints | `strata` (`strata::core`) |
+| Full-text search on that store: postings, BM25 with block-max pruning, queries, aggregations | `prospect` (on `strata`) |
 | MessagePack values, copy-on-write | `msgpack` |
 | Multicast bus, volatile Raft, liveness | `cluster` |
 | Offline CA for a cluster's TLS: private-file and directory checks, SPKI pins, expiry, SPIFFE IDs | `pki` |
@@ -205,6 +207,9 @@ services      enum-reflection -> constexpr-phf, hashes
 
 storage       consensus -> journal -> completion -> metrics
               journal -> crc32c
+
+engine        strata -> termdict, fusefilter, completion, task, threadpool, compressors, ...
+              prospect -> strata, docset, bitpack, fst, analysis
 
 stack         http     -> compressors, http-parser, radix-router, reactor
               http-log -> http, logger, repr, strings
@@ -1805,6 +1810,23 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - It is not a transactional database or key/value index.
   - The reference footer has no checksum; supply a footer policy if corruption detection is required.
 
+### strata
+[github.com/Kronuz/strata](https://github.com/Kronuz/strata) &middot; depends on: `hashes`, `crc32c`, `residency`, `varint`, `termdict` (and through it `fst`), `fusefilter`, `compressors` (zstd), `completion`, `task`, `threadpool`
+- **What it is:** The segment core of Elysian, Xapiand's successor: an LSM-style store of immutable segments with background merges, crash-safe commits, checkpoints, and a node-wide indexing budget. A segment's sections come from the plugins a layout names; the document layout (`keys` and `stored`) alone is a key-value store.
+- **Header / target:** `#include "strata/core/index.hh"` (also `strata/core/budget.hh`, `strata/core/pool_executor.hh`, `strata/core/faultfs.hh`); target `strata::core`; header-only; C++20.
+- **How it works:** `basic_index<Layout>` buffers a transaction's operations, flushes them as one segment file (sections, a table of contents, a CRC32C footer) and commits a checksummed manifest. It folds over the layout's plugins and calls their optional static hooks (`builder`, `inverter`, `records`, `check`, ...), so it never names a search type; `order_source<Layout>` lets a layout reorder merges. All file I/O goes through `completion`'s `IO`, so `faultfs` replays power loss, ENOSPC, and media faults at every barrier.
+- **Key API:**
+  - `basic_index<document_layout>::create(io, options, uuid)`, `open(io, options)`
+  - `apply(transaction, at)` returning a `verdict`; `get(key)`; `refresh()`, `commit()`, `force_merge(n)`
+  - `segments()`, `digest()`, `check()`, `checkpoint()`, `install(source, generation)`
+  - `byte_budget`, `pool_executor`, `merge_policy`; `faultfs::filesystem` for tests
+- **Use it when:**
+  - You need an embedded key-value or segment store whose writes, merges, and recovery are proven under crashes, or the base for a layout of your own.
+- **Do not use it when / gotchas:**
+  - Under active development: the API and segment format change between phases (format 13 pending).
+  - No `scan(from, n)` yet: a scan walks `segments()` with the keys plugin's reader, and sees buffered writes only after `refresh()`.
+  - Search is not here; that is `prospect`, which links `strata::core`.
+
 ### varint
 [github.com/Kronuz/varint](https://github.com/Kronuz/varint) &middot; depends on: none
 - **What it is:** A compact length/integer codec (a byte-below-255-is-the-length fast path, base-128 continuation beyond that) plus a length-prefixed string, a one-byte bool, and a one-byte char. Exception-free.
@@ -2221,6 +2243,22 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Indexing text that must produce the same terms as Xapian (Xapiand compatibility).
 - **Do not use it when / gotchas:**
   - It reproduces Xapian's rules, quirks included (no terms at all for `stem_strategy::all` without a stemmer); it is not a UAX #29 tokenizer.
+
+### prospect
+[github.com/Kronuz/prospect](https://github.com/Kronuz/prospect) &middot; depends on: `strata` (pinned by commit), `docset`, `bitpack`, `fst`, `analysis`
+- **What it is:** The search library of Elysian: the search layout of `strata` (terms, postings, positions, lengths), scoring, queries, aggregation, sort keys, collapse, doc values, and reordering at merge. Pruned Ranking Over Scored Postings with Early-terminating Cursor Traversal.
+- **Header / target:** `#include "prospect/index.hh"` (also `prospect/searcher.hh`, `prospect/search.hh`, `prospect/aggregate.hh`); target `prospect::prospect`; header-only; C++20.
+- **How it works:** `search_layout` is `layout<inverted_plugin, keys_plugin, stored_plugin>` over strata's `basic_index`; the inverted plugin writes 128-ordinal FOR/PFOR postings blocks with two skip levels of competitive (wdf, length) pairs. Queries are scorer trees: conjunctions leapfrog, disjunctions run block-max MaxScore in 4,096-ordinal windows, and BM25 comes in Lucene's (`bm25`) and Xapian's (`bm25_xapian`) parameterizations. Merges can reorder documents by recursive graph bisection.
+- **Key API:**
+  - `prospect::index` (`create`, `open`, `apply`, `commit`, ...), `transaction`, `operation`, `document`
+  - `term_scorer`, `conjunction_scorer`, `disjunction_scorer`, `phrase_scorer`, `required_optional_scorer`, `weight::bm25(...)`
+  - `search(snapshots, build, k)`, `search_count(snapshots, build)`, `top_k(segment, scorer, k)`
+  - `aggregate::`, `sortkey::`, `collapse::`, `docvalues::`
+- **Use it when:**
+  - Full-text search with Xapian-compatible ranking and semantics in an embedded C++ engine.
+- **Do not use it when / gotchas:**
+  - Under active development; its query rows do not yet meet the ≤ 1.0x target against the fastest of Lucene and Tantivy.
+  - The benchmark harness still names the engine `strata` (`strata_engine`, `STRATA_*` knobs).
 
 ### boolean-parser
 [github.com/Kronuz/boolean-parser](https://github.com/Kronuz/boolean-parser) &middot; depends on: none
