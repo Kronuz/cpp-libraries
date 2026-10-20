@@ -134,8 +134,10 @@ Facts worth knowing before you wire anything up:
 | Make file ranges resident before an event loop reads them | `residency` |
 | Fixed-size worker pool | `threadpool` |
 | Bounded blocking MPMC queue | `queue` |
-| Cancellable delayed tasks, debounce | `scheduler` |
-| The lock-free slot store under a timer wheel | `stash` |
+| Many timers or deadlines armed from many threads, most of them firing; cancellable delayed tasks, debounce | `scheduler` (on `stash`) |
+| A custom deadline queue or timer wheel: another geometry, a longer horizon, no scheduler thread | `stash` |
+| Timers owned by one event loop: connection idle, request deadlines, protocol ticks | `reactor` (`PeriodicTimer`) or Asio `steady_timer` |
+| TTL expiry or idle eviction of cache entries, no timers | `lru-cache` (`aging_lru`, trimmed by the caller) |
 | Atomic operations over `shared_ptr` | `atomic-shared-ptr` |
 | Custom allocators, memory pools | `allocators` |
 | Owning byte admission, durable reservation bookkeeping, deferred cleanup | `allocators` (`resources`, optional `retirement`) |
@@ -1089,34 +1091,38 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### stash
 [github.com/Kronuz/stash](https://github.com/Kronuz/stash) &middot; depends on: none
-- **What it is:** A header-only C++17 lock-free hierarchical slot store for keyed, time-ordered values.
-- **Header / target:** `#include "stash.h"`; CMake target is not clearly exposed in the repository metadata; C++17.
-- **How it works:** `Stash` is a lazily grown chunked array of atomic pointers, with overflow chunks linked through atomic publication. Producers reserve and publish slots with compare-exchange and do not take locks. `StashSlots` maps integer keys to nested stash levels using `(key / Div) % Mod`; `StashValues` provides an append-only leaf with atomic write and consumer cursors. A single consumer walks, peeks, and cleans while producers add concurrently.
+- **What it is:** A header-only C++17 lock-free hierarchical slot store for keyed, time-ordered values: many threads add deadline-tagged items, one walker fires what is due.
+- **Header / target:** `#include "stash.h"`; CMake target `stash::stash`; C++17.
+- **How it works:** `Stash` is a lazily grown chunked array of atomic pointers, with overflow chunks linked through atomic publication. Producers reserve and publish slots with compare-exchange and do not take locks. `StashSlots` maps integer keys to nested stash levels using `(key / Div) % Mod`; `StashValues` is the append-only leaf. One consumer thread runs `walk`, `peep`, and `clean` while producers `add` concurrently. Producers announce each insert before descending, so the walk never passes one in flight. Xapiand's stack is `50 x 1 ms -> 10 x 50 ms -> 36 x 500 ms -> 4800 x 18 s`: 1 ms resolution, 24 h horizon.
 - **Key API:**
-  - `Stash<T, Size, Reserved = false>`
-  - `StashSlots<T, Size, Div, Mod>`
-  - `StashValues<T, Size>`
-  - `StashContext::{walk, peep, clean}`
-  - `StashContext::next(...)`, `Stash::add(...)`
-  - `stash_reserved<T>()`
+  - `Stash<T, Size, Reserved = false>`, `StashSlots<T, Size, Div, Mod>`, `StashValues<T, Size>`
+  - `StashSlots::add(ctx, key, value)` (concurrent), `put` (no announce; not for use while a walk runs)
+  - `StashSlots::next(ctx, &value)` with `ctx.op` = `StashContext::Operation::{walk, peep, clean}`
+  - `StashContext(begin_key)`, `atom_first_valid_key`, `horizon_margin`
 - **Example:**
   ```cpp
   #include "stash.h"
-  StashValues<int*, 16> values;
-  StashContext context(0);
-  values.add(context, 0, new int(42));
-  int* value = nullptr;
-  context.op = StashContext::Operation::walk;
-  values.next(context, &value);
+  using Item  = std::shared_ptr<int>;                  // values must be pointer-like
+  using Wheel = StashSlots<StashValues<Item, 4>, 8, /*Div*/ 1, /*Mod*/ 8>;
+  Wheel wheel;
+  StashContext ctx(0);
+  wheel.add(ctx, 1, std::make_shared<int>(11));
+  Item item;
+  ctx.begin_key = ctx.atom_first_valid_key.load();
+  ctx.end_key = 6;                                     // fire everything due before key 6
+  wheel.next(ctx, &item);
   ```
 - **Use it when:**
-  - A scheduler or timer wheel needs lock-free producer insertion.
-  - One consumer can walk and reclaim entries in key order.
-  - Multiple time resolutions can be represented by nested slot levels.
+  - Timers or deferred work are armed from many threads and one thread fires them, at the finest slot's resolution and within the horizon.
+  - Most items fire; cancelling is the exception.
+  - A custom geometry is needed: add a level (for example `_Div` = 24 h, `_Mod` = 367 above Xapiand's stack for about a year); the extension is documented in its README and not built.
 - **Do not use it when / gotchas:**
-  - The design assumes a single consumer for sequential walking and cleanup.
-  - Producers can allocate chunks and overflow nodes lazily; insertion is not allocation-free.
-  - Keys outside the configured hierarchy or wheel horizon can throw or be discarded by higher-level users.
+  - There is no cancel or reschedule: the caller flags the value dead and the entry (and the object it points to) stays until the walk drains its slot. Churn that slides deadlines (idle timeouts reset per request, election timers) accumulates about rate times delay in dead entries; re-arm lazily or use the loop's own timers.
+  - Timers owned by one loop have no producer contention to remove; use `reactor::PeriodicTimer` or Asio `steady_timer`. A few hundred timers on one thread want a heap.
+  - A finest slot drains whole (an item can fire up to a slot early) and fires in arrival order, not deadline order; overdue keys are filed at the last walk's end.
+  - Keys past the horizon throw `std::out_of_range`; scheduler drops them. A producer stalled mid-`add` holds the low-water mark and the horizon.
+  - About 4.3 KB per `StashContext` and a 38 KB top-level chunk per wheel on Xapiand's stack (from the layout): share one wheel per walker, not one per object.
+  - Values must be pointer-like and non-null (`*ptr && **ptr`); a "zero" value reads as absent. Two consumers corrupt the cursors.
 
 ### scheduler
 [github.com/Kronuz/scheduler](https://github.com/Kronuz/scheduler) &middot; depends on: `stash`, `threadpool`
@@ -1147,6 +1153,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - Tasks scheduled beyond the wheel horizon are silently discarded unless trace hooks are enabled.
   - The wheel requires the `stash` single-consumer traversal model.
+  - `clear()` is one CAS and costs the walk nothing, but the entry and the task stay in the wheel until its slot drains. Replacing a deadline (the debouncer does it on every touch) is `clear()`, a new task, and an `add`; a task that holds a large payload or a `shared_ptr` to a closing object is pinned until then. Keep one wheel per host, not per object; the geometry (24 h, 1 ms) is fixed in `SchedulerQueue`.
+  - `add` takes the scheduler's mutex and notifies when the new task is due before the thread's current wakeup. Each `add` and `clear` also reads the clock.
   - Scheduler execution and task callbacks can allocate through `shared_ptr` and the thread pool.
 
 ### atomic-shared-ptr
@@ -1472,6 +1480,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - It does not parse HTTP or provide application framing.
   - Sessions must cooperate with cancellation and must offload blocking work.
+  - Loop timers live on the owning loop: `reactor::PeriodicTimer` (`reactor_events.h`: `start`, `again`, `stop`, `set_repeat`) over `steady_timer`. Use them, not `scheduler`, for per-connection and protocol timers.
 
 ### server
 [github.com/Kronuz/server](https://github.com/Kronuz/server) &middot; depends on: `compressors`, `queue`
