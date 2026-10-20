@@ -123,7 +123,7 @@ Facts worth knowing before you wire anything up:
 | Integers wider than 64 bits | `uinteger_t` |
 | Base58/62/64/32 encoding, checksums | `base-x` |
 | UUIDs with a compact wire form | `cuuid` |
-| MD5 / SHA-256 digests | `md5`, `sha256` |
+| MD5 / SHA-256 digests (SHA-256 on SHA-NI/ARMv8 when present) | `md5`, `sha256` |
 | Random values, jitter, test data | `random` |
 | Probabilistic membership, bounded memory | `bloom-filter` |
 | Static key set, ~9 bits per key, three reads per lookup | `fusefilter` |
@@ -805,28 +805,33 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### sha256
 [github.com/Kronuz/sha256](https://github.com/Kronuz/sha256) &middot; depends on: `endian`
-- **What it is:** SHA-256 digests, 32 bytes or 64 hex characters, for integrity checks and content ids.
-- **Header / target:** `#include "sha256.h"`; target `sha256::sha256`; C++20. Compiled, not header-only.
-- **How it works:** A standard SHA-256 compression implementation with incremental `add()` plus one-shot buffer and string overloads, tracking the 256-bit state and exposing both raw digest bytes and hex text.
+- **What it is:** SHA-256 digests, 32 bytes or 64 hex characters, for integrity checks and content ids, on the CPU's SHA instructions when it has them.
+- **Header / target:** `#include "sha256.h"`; target `sha256::sha256`; C++20. Compiled, not header-only (three `.cc` files).
+- **How it works:** One buffering and padding path feeds 64-byte blocks to one of three kernels: x86_64 SHA-NI (CPUID leaf 7 EBX bit 29, plus SSSE3/SSE4.1), arm64 SHA2 (`HWCAP_SHA2`, or always on Apple silicon), or the portable unrolled rounds. Detection runs once and caches an atomic function pointer; one binary is correct on CPUs with and without the instructions. `-DSHA256_HARDWARE=OFF` builds the portable kernel only.
 - **Key API:**
-  - `class SHA256`, constructed from buffer or string
-  - `operator()(const void*, size_t)` / `operator()(string_view)` -> 64 hex chars
-  - `add(const void*, size_t)` for streaming, then `getHash()`
-  - `getHash(unsigned char buffer[HashBytes])` for raw bytes
+  - `kronuz::sha256::hasher`: `init()`, `update(const void*, size_t)` / `update(string_view)`, `final()` -> `digest_type` (`std::array<unsigned char, 32>`); `final()` leaves the stream appendable
+  - `kronuz::sha256::digest(data, size)` / `digest(string_view)`, `to_hex(digest_type)`
+  - `active_kernel()`, `kernel_available(kernel)`, `kernel_name(kernel)`; `force_kernel(kernel)` / `reset_kernel()` as the test and benchmark hook
+  - The original global `class SHA256` is unchanged and runs on the same kernels: `operator()(const void*, size_t)` / `operator()(string_view)` -> 64 hex chars, `add()`, `getHash()`, `getHash(unsigned char[HashBytes])`, `reset()`
 - **Example:**
   ```cpp
   #include "sha256.h"
 
-  SHA256 sha256;
-  std::string hex = sha256("Hello World");    // one shot, 64 hex chars
-  sha256.add(more, n);                        // or stream, then:
-  std::string streamed = sha256.getHash();
+  namespace sha = kronuz::sha256;
+  sha::digest_type d = sha::digest("Hello World");   // 32 raw bytes
+  std::string hex = sha::to_hex(d);
+
+  sha::hasher h;                                     // or stream
+  h.update(chunk, n);
+  sha::digest_type streamed = h.final();
   ```
 - **Use it when:**
-  - Verifying file or message integrity.
+  - Verifying file or message integrity, including bulk segment and file checksums without linking OpenSSL: on the library's CI runners (SHA-NI on AMD EPYC and Intel Xeon, ARMv8 on Neoverse-N2 and Apple M1) the hardware kernel is within 1% of OpenSSL EVP at 64 MiB (GCC on Neoverse-N2: EVP 1.06× faster) and faster than EVP on 64-byte messages. The README has the table.
   - Deriving stable content identifiers.
 - **Do not use it when / gotchas:**
   - A bare hash is not a MAC and not password storage; use HMAC or a KDF for those.
+  - On x86_64 without SHA-NI (Intel cores before Ice Lake) the portable kernel is 2.1× to 2.2× slower than EVP's vectorized assembly; prefer EVP there if a binary already links OpenSSL.
+  - In a file that includes `<openssl/sha.h>`, OpenSSL's global `SHA256()` function hides the class: use `kronuz::sha256`, or spell `class SHA256`.
   - Link the target; the header alone does not carry every symbol.
 
 ### random
