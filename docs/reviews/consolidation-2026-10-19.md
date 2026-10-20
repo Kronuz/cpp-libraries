@@ -378,3 +378,11 @@ no cycles, and no consumer builds more than it links.
   adoption; CL-1 stays blocked on its target composition (the `HASHES_FAMILIES` fetch-order
   question); the two flakes stay open as Detent release work; Detent prioritizes adopting stash's
   correctness fix and measuring its footprint.
+- **Detent (2026-10-20), on CL-1's fix:** accepts the separate `hashes_crc32c` population name
+  (`SOURCE_SUBDIR crc32c-leaf`), including a possible second clone, pending the final SHAs and a
+  clean-build qualification. Detent will separate the reproduced 45-second timeout in
+  `poll_publisher` from the unconfirmed segfault in its failure record and check its direct
+  scheduler and stash use. It noted that a caller ignoring the scheduler's new `bool` still loses a
+  refused task silently. For the logger (owner, 2026-10-20): a deferred log is a slow-work
+  watchdog, so a refused one is never written immediately; it stays armed, and at its cancel point
+  it is written only if its deadline has passed.
