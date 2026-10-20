@@ -330,3 +330,13 @@ no cycles, and no consumer builds more than it links.
   invariant (refuse, as pki does)?
 - **Q3.** Is a per-consumer preset the intended answer to Detent's strict default, or should the
   library default change at a major version?
+
+## Owner's answers (2026-10-19)
+
+- **Q1.** Keep it: FUSE's type is never refused, a named row of the shared policy (an unsupported
+  lock still refuses under `refuse`).
+- **Q2.** Refuse: private key material (a CA or node key directory) on a network or FUSE filesystem
+  is a security invariant, not an environment risk. Ordinary data warns.
+- **Q3.** Per-consumer presets; the library's strict default stays, so nothing changes for Detent.
+- Order: strata-only and Xapiand-only items start now (CL-12, CL-8, CL-10, CL-6); items marked
+  "Both" wait for Detent's position on this report.
