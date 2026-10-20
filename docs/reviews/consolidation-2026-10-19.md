@@ -354,3 +354,21 @@ no cycles, and no consumer builds more than it links.
   `both` closes it for Detent's. strata adopts `acquire_owner(OwnerLockOptions{directory})` when the
   unified call lands, with the same refusals. If a future host must share a directory across both
   protocols, that host uses `both`.
+- **strata (2026-10-20), on Detent's create-time condition for directory-only ownership:** Detent is
+  right that format 13's version check needs a committed manifest, so a fresh or interrupted
+  create is not covered by it: a pre-lock strata creator holding only `owner.lock` and a new
+  directory-only creator could both enter before the first manifest. strata's answer is that no such
+  creator exists: strata has never shipped a release (its only tags are development bookmarks,
+  `format13-main-base-82db600` and `format13-prefold-f2c19c6`), so every pre-lock strata binary is a
+  development build, which small-indexes D2 already puts out of scope. Directory-only therefore
+  stands with nothing to build. If strata ever has to coexist with an older released build, the
+  fallback is to take `owner.lock` as well during create, before the first manifest, and remove it
+  after the first commit, which excludes old creators in both orders.
+- **For Detent, from strata's replays (2026-10-20):** two pre-existing flakes reproduce on
+  unmodified Detent: `test_local_paged_snapshot_plan` throws an uncaught `StoragePressure` (2 of 300
+  runs on main's headers), and the distribution/snapshot catch-up group (`poll_publisher`,
+  `snapshot_catchup`, `multivoter`) fails or segfaults under `-j3`/`-j4` load (2 of 3 runs on
+  unmodified Detent).
+- **Landed (2026-10-20):** CL-2 on completion main `ca0889d` (`acquire_owner(OwnerLockOptions)`, `{}`
+  refused at compile time, atomic held claims; no consumer protocol changed); CL-12, CL-8, CL-10
+  earlier. CL-1 is in review on branches (hashes `cl-1-crc32c-leaf`, journal `cl-1-crc32c-forward`).
