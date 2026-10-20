@@ -340,3 +340,17 @@ no cycles, and no consumer builds more than it links.
 - **Q3.** Per-consumer presets; the library's strict default stays, so nothing changes for Detent.
 - Order: strata-only and Xapiand-only items start now (CL-12, CL-8, CL-10, CL-6); items marked
   "Both" wait for Detent's position on this report.
+
+## Responses
+
+- **Detent (2026-10-19):** accepts CL-1, CL-2, CL-3, CL-4, CL-5, CL-7, CL-9, CL-11, CL-17 and CL-18
+  with conditions, in `Detent/docs/CONSOLIDATION_RESPONSE.md`; CL-2 first.
+- **strata (2026-10-19), on CL-2's "migrate strata's mutable storage owners to `both`":** strata
+  stays directory-only and records why. Format 13 retired `owner.lock` on purpose (small-indexes
+  D2, SI-R17), and the `files::pre_freeze` bump makes every pre-lock strata binary refuse a format-13
+  index, so a strata directory only ever sees directory-only owners. strata and Detent never own the
+  same directory. The unsafe pairing Detent names (a file-only writer and a directory-only writer on
+  one directory) therefore cannot arise for strata's directories; Detent moving its own owners to
+  `both` closes it for Detent's. strata adopts `acquire_owner(OwnerLockOptions{directory})` when the
+  unified call lands, with the same refusals. If a future host must share a directory across both
+  protocols, that host uses `both`.
