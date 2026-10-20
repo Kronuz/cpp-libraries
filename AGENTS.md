@@ -160,6 +160,7 @@ Facts worth knowing before you wire anything up:
 | Append-only compressed blob store | `storage` |
 | MessagePack values, copy-on-write | `msgpack` |
 | Multicast bus, volatile Raft, liveness | `cluster` |
+| Offline CA for a cluster's TLS: private-file and directory checks, SPKI pins, expiry, SPIFFE IDs | `pki` |
 | Durable Raft with fixed voters | `consensus` |
 | Crash-safe append-only journal with checkpoints | `journal` |
 | Completion-based file I/O (io_uring, kqueue) | `completion` |
@@ -1897,6 +1898,37 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - Membership gossip/node-table support is not implemented.
   - The application must supply node types, lifecycle hooks, message codecs, and command application.
+
+### pki
+[github.com/Kronuz/pki](https://github.com/Kronuz/pki) &middot; depends on: `io`, `char-classify`, OpenSSL 3
+- **What it is:** An offline certificate authority for a cluster's TLS: one authority per cluster, one certificate profile, and the checks an operator would otherwise skip (who owns the authority directory, what mode its keys have, which filesystem it sits on, when a certificate runs out). It makes certificates; `reactor::tls` only verifies them. Step 1 of 5 of its design: fingerprints, expiry, keys, directory checks, identities, and secrets are in; signing, rotation, and the consumers' adoption are not.
+- **Header / target:** `#include "pki/pki.h"` (also `pki/directory.h`, `pki/private_file.h`, `pki/key.h`, `pki/fingerprint.h`, `pki/identity.h`, `pki/expiry.h`, `pki/pem.h`, `pki/secret.h`, `pki/refusal.h`); CMake target `pki::pki`; static library; C++20; OpenSSL 3.0 or newer (LibreSSL is not OpenSSL 3).
+- **How it works:** `pki::run(Consumer, argc, argv)` is the command entry point each consumer's binary calls with its own consumer fixed (`xapiand pki ...`); `kronuz-pki` is the driver and example and is never packaged. `Directory::open` opens the authority directory once (caller-owned, mode 0700, local POSIX filesystem, never under a Xapiand data root) and every file inside is reached through `openat` on that descriptor. Files are created `O_EXCL | O_NOFOLLOW`, at their mode whatever the umask, and synced (file, then directory) through `io::full_fsync`; pki never writes over a file. Every check throws `pki::Refusal` with a `Reason`. Identities have one byte form (`spiffe://<cluster>/<consumer>/<node|client>/<name>`, lowercase per byte, nothing percent-encoded). CA keys are PKCS#8 under scrypt, readable by `openssl pkcs8`. Exit statuses: 0 ok, 1 a check found something, 2 refused.
+- **Key API:**
+  - `pki::run(consumer, argc, argv)`
+  - `Directory::open(path)`, `read`, `create`, `contains`; `make_directory(path)`
+  - `check_local_filesystem(fd, path)`, `private_file::open(dirfd, name, policy, status)` (`Policy::secret` 0600 only, `Policy::key` also 0640)
+  - `generate_key()`, `encrypt_private_key`, `load_private_key`
+  - `spki_sha256(cert)`, `der_sha256(cert)`, `hex(digest)`
+  - `identity(trust_domain, consumer, role, name)`
+  - `validity`, `standing`, `parse_duration`
+  - `Secret`, `harden_process()`, `read_passphrase_terminal`
+- **Example:**
+  ```cpp
+  #include "pki/pki.h"
+  int pki_command(int argc, char** argv) {  // argv[0] is "pki"
+      return pki::run(pki::Consumer::xapiand, argc, argv);
+  }
+  ```
+- **Use it when:**
+  - A cluster needs one certificate authority whose key directory is checked (owner, mode, filesystem) before any secret is read.
+  - A node must pin a peer by SPKI or certificate digest, or a cron job must check certificate expiry (`check` exits 1).
+  - A private key or passphrase file must be read only if it is regular, singly linked, the caller's, and private.
+- **Do not use it when / gotchas:**
+  - It is not a TLS stack; use `reactor::tls` for the handshake. It is not an online or ACME CA.
+  - The authority directory must be on a local POSIX filesystem; network, FUSE, FAT, tmpfs, and overlay are refused, and a Linux build tree on tmpfs fails its own tests.
+  - It reads a passphrase only after every check on the request and the directory, never from argv or the environment.
+  - A consumer that compiles `io.cc` itself sets `PKI_LINK_IO=OFF`.
 
 ### prism
 [github.com/Kronuz/prism](https://github.com/Kronuz/prism) &middot; depends on: `http`, `http-log`, `logger`, `traceback`
