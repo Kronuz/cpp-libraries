@@ -114,7 +114,7 @@ Facts worth knowing before you wire anything up:
 | Modulo of negatives, saturating add/sub | `math` |
 | Byte-order conversion, including 56-bit | `endian` |
 | Hash a string at compile time, switch on it | `hashes` |
-| CRC-32C checksums, hardware-accelerated | `hashes` (`crc32c.hh`) |
+| CRC-32C checksums, hardware-accelerated | `hashes`, target `hashes::crc32c` (`crc32c.hh` alone, nothing else fetched); `journal`'s `crc32c()` and `Checksum` forward to it, so there is one engine |
 | O(1) dispatch over a fixed integer key set | `constexpr-phf` |
 | Fixed word set to index, no hashing | `ctrie` |
 | Compact sorted string map, prefix/range/automaton queries | `fst` |
@@ -204,6 +204,7 @@ services      enum-reflection -> constexpr-phf, hashes
               traceback -> errno-names, nanosleep, strings, term-color
 
 storage       consensus -> journal -> completion -> metrics
+              journal -> hashes (the crc32c leaf only)
 
 stack         http     -> compressors, http-parser, radix-router, reactor
               http-log -> http, logger, repr, strings
@@ -598,9 +599,9 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Matching is exact, including case.
 
 ### hashes
-[github.com/Kronuz/hashes](https://github.com/Kronuz/hashes) &middot; depends on: `char-classify`, `static-string`
+[github.com/Kronuz/hashes](https://github.com/Kronuz/hashes) &middot; depends on: `char-classify`, `static-string` (the families only; `hashes::crc32c` has none)
 - **What it is:** Compile-time and runtime non-cryptographic hash families (xxHash, FNV-1a, djb2) plus string-switch user-defined literals, and a standalone CRC-32C header.
-- **Header / target:** `#include "hashes.hh"`, `#include "crc32c.hh"` (no dependencies); target `hashes::hashes`; C++20.
+- **Header / target:** `#include "hashes.hh"` with target `hashes::hashes` (which fetches `char-classify` and `static-string`); `#include "crc32c.hh"` with target `hashes::crc32c`, which has no dependencies and fetches nothing. A CRC-only consumer sets `HASHES_FAMILIES` to `OFF` before `FetchContent_MakeAvailable(hashes)`, and then `hashes::hashes` does not exist (`EXCLUDE_FROM_ALL` would still fetch the families). `FetchContent` keeps the first declaration, so a build that needs `hashes::hashes` must make hashes available with the families on first. C++20.
 - **How it works:** Every family has a `constexpr` form, which is what makes `switch (fnv1ah32(s)) { case "GET"_fnv1a: ... }` legal. The runtime xxh64/xxh32 paths defer to the real `XXH64()`/`XXH32()` when an xxHash header is detected through `__has_include`, and fall back to the portable constexpr implementation when it is not, so the fast path is opt-in without a hard dependency. `jump_consistent_hash` implements Lamping-Veach bucket assignment for sharding.
 - **Key API:**
   - `xxh64::hash(...)`, `xxh32::hash(...)`
@@ -608,7 +609,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `djb2h8/16/32/64`
   - `operator""_xx`, `operator""_fnv1a`
   - `jump_consistent_hash(uint64_t, int32_t)`, `jump_consistent_hash(string_view, int32_t)`
-  - `hashes::crc32c(data, size)`, `hashes::Crc32c` (incremental), `hashes::crc32c_combine(a, b, size_b)`; constexpr for string views. Uses SSE4.2 or ARMv8 CRC instructions when present (about 14-19 GB/s on an i9-9980HK), slice-by-8 otherwise
+  - `hashes::crc32c(data, size)`, `hashes::Crc32c` (incremental), `hashes::crc32c_combine(a, b, size_b)`; constexpr for string views. Uses SSE4.2 or ARMv8 CRC instructions when present (about 14-19 GB/s on an i9-9980HK), slice-by-8 otherwise. This is the one CRC-32C in the collection: `journal` (batches, manifests, artifacts, turn logs, and through it `consensus` snapshots), `strata` and `residency` use it
 - **Example:**
   ```cpp
   #include "hashes.hh"
@@ -1718,13 +1719,14 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - The codec is part of the wire format; both endpoints must agree on codec family.
 
 ### journal
-[github.com/Kronuz/journal](https://github.com/Kronuz/journal) &middot; depends on: `completion`, `allocators` (resources only)
+[github.com/Kronuz/journal](https://github.com/Kronuz/journal) &middot; depends on: `completion`, `allocators` (resources only), `hashes` (the `hashes::crc32c` leaf only)
 - **What it is:** A durable journal of bounded opaque batches with a checksummed durable frontier, immutable checkpoint artifacts, resumable mutations, reclamation, and storage admission.
 - **Header / target:** `#include "journal/journal.h"` (also `journal/store.h`, `journal/artifact.h`, `journal/admission.h`); target `journal::journal`; header-only; C++20; no Asio or reactor.
 - **How it works:** One serialized executor owns a journal. `append_batch()` writes a complete batch, syncs it, and publishes a manifest by temporary file, sync, rename, and directory sync before returning the frontier. Recovery validates the frontier before discarding an incomplete tail. Any uncertain I/O fences the journal until it is closed and recovered. Checkpoints publish sealed artifacts and a new generation the same way.
 - **Key API:**
   - `kronuz::journal::Journal`: `create(identity)`, `recover(callback)`, `append_batch()`
   - `prepare_artifact()`, `publish_checkpoint(bundle, dependencies, covered_sequence)`
+  - `crc32c(bytes)` and `Checksum` forward to `hashes::crc32c` and `hashes::Crc32c`; the stored CRC-32C bytes are unchanged
   - `Admission`, `StoragePermit` (storage accounting)
   - `Store::grow_replacement(id, minimum_bundle_cap)` and `Admission::grow_replacement(permit, minimum_peak)` grow the same protected checkpoint reservation without I/O; refusal leaves accounting unchanged. Growth waits for original preparation I/O and ends when bundle preparation starts.
 - **Use it when:**
