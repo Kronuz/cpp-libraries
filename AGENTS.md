@@ -1455,7 +1455,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/reactor](https://github.com/Kronuz/reactor) &middot; depends on: none
 - **What it is:** A header-only standalone Asio runtime that accepts TCP connections, distributes them across reactor threads, and shuts them down cleanly.
 - **Header / target:** `#include "reactor.h"`, and optionally `#include "reactor_udp.h"` and `#include "reactor_tls.h"`; CMake targets `reactor::reactor` and, when OpenSSL 3 is found, `reactor::tls`; C++20; requires standalone Asio.
-- **How it works:** `TcpServer` runs shared-nothing Asio `io_context` reactors, normally one per core, and invokes a coroutine `Session` for each accepted socket. Linux uses `SO_REUSEPORT`; macOS and BSD use a shared acceptor fallback. Each reactor has an offload thread pool and bounded `gate()`, while tracked `Abortable` operations are cancelled before reactor shutdown. `UdpServer` provides one receive loop, multicast options, and an exposed `io()` for timers and protocol state.
+- **How it works:** `TcpServer` runs shared-nothing Asio `io_context` reactors, normally one per core, and invokes a coroutine `Session` for each accepted socket. Linux uses `SO_REUSEPORT`; macOS and BSD use a shared acceptor fallback. Each reactor has an offload thread pool and bounded `gate()`, while tracked `Abortable` operations are cancelled before reactor shutdown. `UdpServer` provides one receive loop, multicast options, and an exposed `io()` for timers and protocol state. Escaped posted/timer callback failures are reported through `L_EXC` without ending its owner loop or reviving an explicit stop; repeating timers rearm before propagating a callback failure.
 - **Key API:**
   - `reactor::TcpServer(reactors, workers, queue, Session)`
   - `void TcpServer::start(port)`
@@ -1912,6 +1912,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - Membership gossip/node-table support is not implemented.
   - The application must supply node types, lifecycle hooks, message codecs, and command application.
+  - A throwing apply callback remains pending for ordered retry on valid traffic or the leader heartbeat timer. It must leave visible state unchanged or support idempotent replay. Use a reactor revision that contains posted/timer failures; callback exceptions still propagate to the executor owner.
 
 ### pki
 [github.com/Kronuz/pki](https://github.com/Kronuz/pki) &middot; depends on: `io`, `char-classify`, OpenSSL 3
