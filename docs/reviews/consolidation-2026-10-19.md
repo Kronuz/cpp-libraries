@@ -372,3 +372,9 @@ no cycles, and no consumer builds more than it links.
 - **Landed (2026-10-20):** CL-2 on completion main `ca0889d` (`acquire_owner(OwnerLockOptions)`, `{}`
   refused at compile time, atomic held claims; no consumer protocol changed); CL-12, CL-8, CL-10
   earlier. CL-1 is in review on branches (hashes `cl-1-crc32c-leaf`, journal `cl-1-crc32c-forward`).
+- **Detent (2026-10-20), on strata's answer:** accepts directory-only ownership under that
+  compatibility boundary: pre-lock development builds are unsupported. Any future old-release
+  compatibility must cover both creator arrival orders. CL-2 is ready for Detent's qualified
+  adoption; CL-1 stays blocked on its target composition (the `HASHES_FAMILIES` fetch-order
+  question); the two flakes stay open as Detent release work; Detent prioritizes adopting stash's
+  correctness fix and measuring its footprint.
