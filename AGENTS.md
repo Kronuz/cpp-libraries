@@ -114,7 +114,7 @@ Facts worth knowing before you wire anything up:
 | Modulo of negatives, saturating add/sub | `math` |
 | Byte-order conversion, including 56-bit | `endian` |
 | Hash a string at compile time, switch on it | `hashes` |
-| CRC-32C checksums, hardware-accelerated | `hashes`, target `hashes::crc32c` (`crc32c.hh` alone, nothing else fetched); `journal`'s `crc32c()` and `Checksum` forward to it, so there is one engine |
+| CRC-32C checksums, hardware-accelerated | `crc32c` (header-only, no dependencies); `journal`'s `crc32c()` and `Checksum` forward to it, so there is one engine |
 | O(1) dispatch over a fixed integer key set | `constexpr-phf` |
 | Fixed word set to index, no hashing | `ctrie` |
 | Compact sorted string map, prefix/range/automaton queries | `fst` |
@@ -204,7 +204,7 @@ services      enum-reflection -> constexpr-phf, hashes
               traceback -> errno-names, nanosleep, strings, term-color
 
 storage       consensus -> journal -> completion -> metrics
-              journal -> hashes (the crc32c leaf only)
+              journal -> crc32c
 
 stack         http     -> compressors, http-parser, radix-router, reactor
               http-log -> http, logger, repr, strings
@@ -599,9 +599,9 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Matching is exact, including case.
 
 ### hashes
-[github.com/Kronuz/hashes](https://github.com/Kronuz/hashes) &middot; depends on: `char-classify`, `static-string` (the families only; `hashes::crc32c` has none)
-- **What it is:** Compile-time and runtime non-cryptographic hash families (xxHash, FNV-1a, djb2) plus string-switch user-defined literals, and a standalone CRC-32C header.
-- **Header / target:** `#include "hashes.hh"` with target `hashes::hashes` (which fetches `char-classify` and `static-string`); `#include "crc32c.hh"` with target `hashes::crc32c`, which has no dependencies and fetches nothing. A CRC-only consumer declares FetchContent name `hashes_crc32c` with `SOURCE_SUBDIR crc32c-leaf` (CMake 3.18) and never touches the `hashes` name, so it does not matter which of the two a build populates first; `hashes::hashes` is not defined by the leaf, and a build that populates both clones the repository twice (`crc32c.hh` is the same in both). C++20.
+[github.com/Kronuz/hashes](https://github.com/Kronuz/hashes) &middot; depends on: `char-classify`, `static-string`
+- **What it is:** Compile-time and runtime non-cryptographic hash families (xxHash, FNV-1a, djb2) plus string-switch user-defined literals. CRC-32C used to live here and is now `crc32c`.
+- **Header / target:** `#include "hashes.hh"` with target `hashes::hashes` (which fetches `char-classify` and `static-string`). C++20.
 - **How it works:** Every family has a `constexpr` form, which is what makes `switch (fnv1ah32(s)) { case "GET"_fnv1a: ... }` legal. The runtime xxh64/xxh32 paths defer to the real `XXH64()`/`XXH32()` when an xxHash header is detected through `__has_include`, and fall back to the portable constexpr implementation when it is not, so the fast path is opt-in without a hard dependency. `jump_consistent_hash` implements Lamping-Veach bucket assignment for sharding.
 - **Key API:**
   - `xxh64::hash(...)`, `xxh32::hash(...)`
@@ -609,7 +609,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `djb2h8/16/32/64`
   - `operator""_xx`, `operator""_fnv1a`
   - `jump_consistent_hash(uint64_t, int32_t)`, `jump_consistent_hash(string_view, int32_t)`
-  - `hashes::crc32c(data, size)`, `hashes::Crc32c` (incremental), `hashes::crc32c_combine(a, b, size_b)`; constexpr for string views. Uses SSE4.2 or ARMv8 CRC instructions when present (about 14-19 GB/s on an i9-9980HK), slice-by-8 otherwise. This is the one CRC-32C in the collection: `journal` (batches, manifests, artifacts, turn logs, and through it `consensus` snapshots), `strata` and `residency` use it
+  - CRC-32C is not here any more: use `crc32c` (`kronuz::crc32c::crc32c`); `hashes::crc32c` was removed without a forwarding header
 - **Example:**
   ```cpp
   #include "hashes.hh"
@@ -623,10 +623,34 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Use it when:**
   - Compile-time string dispatch without a chain of `strcmp`.
   - Hash table keys, cache keys, or consistent sharding across N buckets.
-  - Integrity checks on stored or transmitted data (`crc32c`), the same CRC-32C as iSCSI and ext4.
 - **Do not use it when / gotchas:**
   - None of these are cryptographic. Never use them for passwords, signatures or anything adversarial.
   - Case-insensitive variants fold through `char-classify`, so they are ASCII only.
+
+### crc32c
+[github.com/Kronuz/crc32c](https://github.com/Kronuz/crc32c) &middot; depends on: none
+- **What it is:** CRC-32C (Castagnoli) with hardware instructions where the CPU has them, a slice-by-8 table everywhere else and at compile time, and `crc32c_combine`. The one CRC-32C in the collection; it moved out of `hashes`.
+- **Header / target:** `#include <crc32c/crc32c.hh>`; target `crc32c::crc32c`; header-only; C++20; standard library only, so nothing else is fetched.
+- **How it works:** The reflected polynomial `0x82f63b78` runs on `_mm_crc32_u64` (x86-64, SSE4.2) or `__crc32cd` (ARMv8) in target-attributed functions, so no global `-march` flag is needed; detection runs once. Buffers of 3 KiB and more use three interleaved lanes merged with compile-time shift constants. `Crc32c` keeps the inverted register, so resuming from a stored CRC and empty updates are exact.
+- **Key API:**
+  - `kronuz::crc32c::crc32c(string_view)` (constexpr) and `crc32c(const void*, size_t)`
+  - `kronuz::crc32c::Crc32c`: `Crc32c()`, `Crc32c(stored_crc)` to resume, `update(...)` (any pieces, empty ones included), `value()`
+  - `kronuz::crc32c::crc32c_combine(crc_a, crc_b, size_b)`: CRC of A followed by B without rereading
+- **Example:**
+  ```cpp
+  #include <crc32c/crc32c.hh>
+
+  namespace c32 = kronuz::crc32c;
+  static_assert(c32::crc32c("123456789") == 0xe3069283);
+  c32::Crc32c crc;
+  crc.update(header, header_size).update(body, body_size);
+  std::uint32_t stored = crc.value();
+  ```
+- **Use it when:**
+  - Integrity checks on stored or transmitted data: the same CRC-32C as iSCSI, ext4 and Btrfs. `journal` (and through it `consensus` snapshots), `strata` and `residency` use it.
+- **Do not use it when / gotchas:**
+  - A CRC detects accidental corruption; it does not authenticate. Use `sha256` for content ids.
+  - The header is `crc32c/crc32c.hh`, namespace `kronuz::crc32c`. `hashes::crc32c` and hashes' `crc32c.hh` are gone; migrate with `kronuz::crc32c::` and link `crc32c::crc32c`.
 
 ### fst
 [github.com/Kronuz/fst](https://github.com/Kronuz/fst) &middot; depends on: none
@@ -1345,7 +1369,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Floating-point timestamps have microsecond-oriented precision and are not arbitrary-precision time values.
 
 ### residency
-[github.com/Kronuz/residency](https://github.com/Kronuz/residency) &middot; depends on: `task`, `hashes`
+[github.com/Kronuz/residency](https://github.com/Kronuz/residency) &middot; depends on: `task`, `crc32c`
 - **What it is:** Read-only file regions for event-loop code: memory-mapped files with bounds-checked views, checksum-verified pinned copies, and `prefetch` of byte ranges as a coroutine task with pluggable backends.
 - **Header / target:** `#include "residency.hh"`; target `residency::residency`; header-only; C++20; POSIX.
 - **How it works:** `file` maps a file read-only. `pinned::copy` copies a region into owned memory and verifies its CRC-32C, for hot structures that must never fault. A `backend` returns `task::task<void>` from `prefetch(file, ranges)`; `sync_backend` advises the kernel (`MADV_WILLNEED`) and does not suspend, and asynchronous backends implement the same concept.
@@ -1719,14 +1743,14 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - The codec is part of the wire format; both endpoints must agree on codec family.
 
 ### journal
-[github.com/Kronuz/journal](https://github.com/Kronuz/journal) &middot; depends on: `completion`, `allocators` (resources only), `hashes` (the `hashes::crc32c` leaf only)
+[github.com/Kronuz/journal](https://github.com/Kronuz/journal) &middot; depends on: `completion`, `allocators` (resources only), `crc32c`
 - **What it is:** A durable journal of bounded opaque batches with a checksummed durable frontier, immutable checkpoint artifacts, resumable mutations, reclamation, and storage admission.
 - **Header / target:** `#include "journal/journal.h"` (also `journal/store.h`, `journal/artifact.h`, `journal/admission.h`); target `journal::journal`; header-only; C++20; no Asio or reactor.
 - **How it works:** One serialized executor owns a journal. `append_batch()` writes a complete batch, syncs it, and publishes a manifest by temporary file, sync, rename, and directory sync before returning the frontier. Recovery validates the frontier before discarding an incomplete tail. Any uncertain I/O fences the journal until it is closed and recovered. Checkpoints publish sealed artifacts and a new generation the same way.
 - **Key API:**
   - `kronuz::journal::Journal`: `create(identity)`, `recover(callback)`, `append_batch()`
   - `prepare_artifact()`, `publish_checkpoint(bundle, dependencies, covered_sequence)`
-  - `crc32c(bytes)` and `Checksum` forward to `hashes::crc32c` and `hashes::Crc32c`; the stored CRC-32C bytes are unchanged
+  - `crc32c(bytes)` and `Checksum` forward to `kronuz::crc32c::crc32c` and `kronuz::crc32c::Crc32c`; the stored CRC-32C bytes are unchanged
   - `Admission`, `StoragePermit` (storage accounting)
   - `Store::grow_replacement(id, minimum_bundle_cap)` and `Admission::grow_replacement(permit, minimum_peak)` grow the same protected checkpoint reservation without I/O; refusal leaves accounting unchanged. Growth waits for original preparation I/O and ends when bundle preparation starts.
 - **Use it when:**

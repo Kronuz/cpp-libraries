@@ -78,108 +78,111 @@ Linux and FreeBSD VMs, before a push.
 <td><a href="https://github.com/Kronuz/constexpr-phf/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/constexpr-phf/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/constexpr-phf">constexpr-phf</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/crc32c/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/crc32c/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/crc32c">crc32c</a></td>
 <td><a href="https://github.com/Kronuz/ctrie/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/ctrie/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/ctrie">ctrie</a></td>
 <td><a href="https://github.com/Kronuz/cuuid/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/cuuid/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/cuuid">cuuid</a></td>
-<td><a href="https://github.com/Kronuz/datetime/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/datetime/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/datetime">datetime</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/datetime/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/datetime/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/datetime">datetime</a></td>
 <td><a href="https://github.com/Kronuz/docset/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/docset/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/docset">docset</a></td>
 <td><a href="https://github.com/Kronuz/double-metaphone/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/double-metaphone/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/double-metaphone">double-metaphone</a></td>
-<td><a href="https://github.com/Kronuz/endian/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/endian/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/endian">endian</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/endian/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/endian/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/endian">endian</a></td>
 <td><a href="https://github.com/Kronuz/enum-reflection/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/enum-reflection/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/enum-reflection">enum-reflection</a></td>
 <td><a href="https://github.com/Kronuz/epoch/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/epoch/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/epoch">epoch</a></td>
-<td><a href="https://github.com/Kronuz/errno-names/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/errno-names/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/errno-names">errno-names</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/errno-names/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/errno-names/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/errno-names">errno-names</a></td>
 <td><a href="https://github.com/Kronuz/escape/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/escape/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/escape">escape</a></td>
 <td><a href="https://github.com/Kronuz/flume/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/flume/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/flume">flume</a></td>
-<td><a href="https://github.com/Kronuz/fs/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/fs/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/fs">fs</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/fs/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/fs/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/fs">fs</a></td>
 <td><a href="https://github.com/Kronuz/fst/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/fst/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/fst">fst</a></td>
 <td><a href="https://github.com/Kronuz/fusefilter/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/fusefilter/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/fusefilter">fusefilter</a></td>
-<td><a href="https://github.com/Kronuz/hashes/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/hashes/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/hashes">hashes</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/hashes/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/hashes/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/hashes">hashes</a></td>
 <td><a href="https://github.com/Kronuz/htm/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/htm/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/htm">htm</a></td>
 <td><a href="https://github.com/Kronuz/http/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/http/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/http">http</a></td>
-<td><a href="https://github.com/Kronuz/http-log/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/http-log/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/http-log">http-log</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/http-log/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/http-log/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/http-log">http-log</a></td>
 <td><a href="https://github.com/Kronuz/http-parser/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/http-parser/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/http-parser">http-parser</a></td>
 <td><a href="https://github.com/Kronuz/io/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/io/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/io">io</a></td>
-<td><a href="https://github.com/Kronuz/iterators/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/iterators/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/iterators">iterators</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/iterators/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/iterators/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/iterators">iterators</a></td>
 <td><a href="https://github.com/Kronuz/journal/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/journal/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/journal">journal</a></td>
 <td><a href="https://github.com/Kronuz/lazy/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/lazy/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/lazy">lazy</a></td>
-<td><a href="https://github.com/Kronuz/located-exception/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/located-exception/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/located-exception">located-exception</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/located-exception/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/located-exception/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/located-exception">located-exception</a></td>
 <td><a href="https://github.com/Kronuz/logger/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/logger/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/logger">logger</a></td>
 <td><a href="https://github.com/Kronuz/lru-cache/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/lru-cache/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/lru-cache">lru-cache</a></td>
-<td><a href="https://github.com/Kronuz/math/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/math/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/math">math</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/math/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/math/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/math">math</a></td>
 <td><a href="https://github.com/Kronuz/md5/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/md5/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/md5">md5</a></td>
 <td><a href="https://github.com/Kronuz/metrics/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/metrics/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/metrics">metrics</a></td>
-<td><a href="https://github.com/Kronuz/msgpack/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/msgpack/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/msgpack">msgpack</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/msgpack/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/msgpack/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/msgpack">msgpack</a></td>
 <td><a href="https://github.com/Kronuz/nanosleep/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/nanosleep/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/nanosleep">nanosleep</a></td>
 <td><a href="https://github.com/Kronuz/prism/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/prism/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/prism">prism</a></td>
-<td><a href="https://github.com/Kronuz/queue/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/queue/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/queue">queue</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/queue/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/queue/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/queue">queue</a></td>
 <td><a href="https://github.com/Kronuz/radix-router/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/radix-router/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/radix-router">radix-router</a></td>
 <td><a href="https://github.com/Kronuz/random/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/random/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/random">random</a></td>
-<td><a href="https://github.com/Kronuz/reactor/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/reactor/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/reactor">reactor</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/reactor/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/reactor/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/reactor">reactor</a></td>
 <td><a href="https://github.com/Kronuz/repr/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/repr/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/repr">repr</a></td>
 <td><a href="https://github.com/Kronuz/residency/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/residency/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/residency">residency</a></td>
-<td><a href="https://github.com/Kronuz/scheduler/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/scheduler/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/scheduler">scheduler</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/scheduler/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/scheduler/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/scheduler">scheduler</a></td>
 <td><a href="https://github.com/Kronuz/sha256/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/sha256/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/sha256">sha256</a></td>
 <td><a href="https://github.com/Kronuz/snowball/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/snowball/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/snowball">snowball</a></td>
-<td><a href="https://github.com/Kronuz/soundex/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/soundex/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/soundex">soundex</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/soundex/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/soundex/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/soundex">soundex</a></td>
 <td><a href="https://github.com/Kronuz/split/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/split/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/split">split</a></td>
 <td><a href="https://github.com/Kronuz/stash/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/stash/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/stash">stash</a></td>
-<td><a href="https://github.com/Kronuz/static-string/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/static-string/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/static-string">static-string</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/static-string/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/static-string/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/static-string">static-string</a></td>
 <td><a href="https://github.com/Kronuz/storage/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/storage/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/storage">storage</a></td>
 <td><a href="https://github.com/Kronuz/strict-stox/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/strict-stox/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/strict-stox">strict-stox</a></td>
-<td><a href="https://github.com/Kronuz/string-similarity/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/string-similarity/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/string-similarity">string-similarity</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/string-similarity/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/string-similarity/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/string-similarity">string-similarity</a></td>
 <td><a href="https://github.com/Kronuz/stringified/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/stringified/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/stringified">stringified</a></td>
 <td><a href="https://github.com/Kronuz/strings/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/strings/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/strings">strings</a></td>
-<td><a href="https://github.com/Kronuz/system/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/system/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/system">system</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/system/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/system/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/system">system</a></td>
 <td><a href="https://github.com/Kronuz/task/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/task/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/task">task</a></td>
 <td><a href="https://github.com/Kronuz/term-color/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/term-color/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/term-color">term-color</a></td>
-<td><a href="https://github.com/Kronuz/termdict/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/termdict/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/termdict">termdict</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/termdict/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/termdict/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/termdict">termdict</a></td>
 <td><a href="https://github.com/Kronuz/threadpool/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/threadpool/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/threadpool">threadpool</a></td>
 <td><a href="https://github.com/Kronuz/time-point/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/time-point/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/time-point">time-point</a></td>
-<td><a href="https://github.com/Kronuz/times/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/times/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/times">times</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/times/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/times/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/times">times</a></td>
 <td><a href="https://github.com/Kronuz/traceback/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/traceback/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/traceback">traceback</a></td>
 <td><a href="https://github.com/Kronuz/uinteger_t/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/uinteger_t/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/uinteger_t">uinteger_t</a></td>
-<td><a href="https://github.com/Kronuz/unicode/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/unicode/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/unicode">unicode</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/unicode/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/unicode/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/unicode">unicode</a></td>
 <td><a href="https://github.com/Kronuz/url-parser/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/url-parser/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/url-parser">url-parser</a></td>
 <td><a href="https://github.com/Kronuz/utype/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/utype/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/utype">utype</a></td>
+</tr>
+<tr>
 <td><a href="https://github.com/Kronuz/varint/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/varint/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/varint">varint</a></td>
 </tr>
 </table>
@@ -193,7 +196,7 @@ Three have no CI yet: `cpp-btree` (a script-driven test), `generation-cache`, an
 `split`, `repr`, `escape`, `stringified`, `strict-stox`, `utype`, `math`, `endian`,
 `iterators`, `lazy`
 
-**Compile time, hashing, identifiers, containers.** `constexpr-phf`, `ctrie`, `fst`, `termdict`, `hashes`,
+**Compile time, hashing, identifiers, containers.** `constexpr-phf`, `ctrie`, `fst`, `termdict`, `hashes`, `crc32c`,
 `enum-reflection`, `uinteger_t`, `base-x`, `cuuid`, `md5`, `sha256`, `random`,
 `bloom-filter`, `fusefilter`, `lru-cache`, `generation-cache`, `cpp-btree`
 
