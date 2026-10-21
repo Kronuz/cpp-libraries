@@ -1615,12 +1615,13 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 ### http-log
 [github.com/Kronuz/http-log](https://github.com/Kronuz/http-log) &middot; depends on: `http`, `logger`, `repr`, `strings`
 - **What it is:** An `http::HttpHandler` middleware that captures and renders HTTP request and response exchanges through Kronuz logger.
-- **Header / target:** `#include "http_log.h"`; target `http-log::http-log` if consumed through its CMake target; C++20; requires `http` and the Kronuz logger stack.
+- **Header / target:** `#include "http_log.h"`; target `http_log::http_log`; C++20; requires `http` and the Kronuz logger stack.
 - **How it works:** `AccessLog` wraps another `HttpHandler`, logs request metadata before dispatch, and wraps the response writer to capture status, headers, timing, and a bounded body preview. `Options` supplies body prettification, preview selection, capture limits, and per-status log levels. It recognizes text and structured content, can preview images in iTerm2, and logs handler exceptions while converting an unstarted response into a 500 response.
 - **Key API:**
   - `class AccessLog : public http::HttpHandler`
   - `AccessLog(http::HttpHandler&, Options = {})`
   - `struct Options`
+  - `Options::metadata_only`: bounded escaped method/path, status and body size, omitting headers, bodies, query values and exception descriptions; detailed rendering remains the default.
   - `using Prettify = std::function<std::optional<std::string>(std::string_view, std::string_view)>`
   - `using CanPreview = std::function<bool(std::string_view)>`
   - `method_palette(method)`, `status_palette(status)`
@@ -1639,6 +1640,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - Body capture is bounded and large or incomplete bodies are summarized.
   - Image previews require a compatible terminal and appropriate log level.
+  - Synchronous responses only: deferred replies and owned streams need transport completion observation. Handler-response logs do not confirm socket delivery.
 
 ### radix-router
 [github.com/Kronuz/radix-router](https://github.com/Kronuz/radix-router) &middot; depends on: none
