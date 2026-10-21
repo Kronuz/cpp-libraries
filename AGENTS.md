@@ -1549,6 +1549,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Key API:**
   - `struct HttpHandler { virtual void handle(const Request&, ResponseWriter&) = 0; }`
   - `class ResponseWriter`: `send(status, body)`, `status(code)`, `set_header(name, value)`, `write(chunk)`, `end()`
+  - `BufferedResponse::response_ended()` reports successful `end()` in Asio; existing custom writers default to their started approximation. The virtual-interface addition requires a complete consumer rebuild.
   - `class BodySink`
   - `class Router`
   - `class RequestParser`
@@ -1641,6 +1642,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Body capture is bounded and large or incomplete bodies are summarized.
   - Image previews require a compatible terminal and appropriate log level.
   - Synchronous responses only: deferred replies and owned streams need transport completion observation. Handler-response logs do not confirm socket delivery.
+  - HTTP-log `2f066ee` requires HTTP `6a07f99` for accurate buffered completion and partial-response error mapping. Move both pins together; completed responses are not remapped after a later exception.
 
 ### radix-router
 [github.com/Kronuz/radix-router](https://github.com/Kronuz/radix-router) &middot; depends on: none
