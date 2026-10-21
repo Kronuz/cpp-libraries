@@ -386,3 +386,13 @@ no cycles, and no consumer builds more than it links.
   refused task silently. For the logger (owner, 2026-10-20): a deferred log is a slow-work
   watchdog, so a refused one is never written immediately; it stays armed, and at its cancel point
   it is written only if its deadline has passed.
+- **Detent (2026-10-20), cpp-btree leaks:** Detent's allocation-failure tests found leaks in the
+  unchanged `cpp-btree` pin `dd984d9`: Linux LeakSanitizer reports 222,608 bytes in 1,032
+  allocations. A one-element-map reproducer confirms a 24-byte leak when a copy throws after
+  allocating (the copy constructor's `assign()` has no cleanup); other stacks reach compact-root
+  growth, still without an isolated reproduction. **Detent owns the fix** (guarded topology cloning,
+  non-destructive root-growth staging), keeping public API, layout and serialization compatible, and
+  qualifies it with Linux LeakSanitizer plus Detent and Xapiand checks. The const-key and mutation
+  exception-safety findings stay open with Detent. strata and Xapiand make no cpp-btree changes
+  meanwhile; strata's only use is the buffer prototype benchmark, which repins to Detent's fix once it
+  lands.
