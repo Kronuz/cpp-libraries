@@ -57,6 +57,8 @@ Read this section before changing anything.
    `examples/demo.cc`, and a CMakeLists with an explanatory comment on every dependency.
    Keep all four current when you change something.
 
+7. **Every active library has CI.** Use the shared CMake workflow on pushes, pull requests, manual dispatch and nightly runs. Register real tests with CTest, keep runtime checks active and qualify supported platforms plus relevant sanitizers. Document justified exclusions, such as TSan for a container without a concurrent API. Verify triggered CI to a terminal result before calling work ready. Archived prototypes are explicitly marked and point to maintained successors.
+
 ## Consuming a library
 
 The convention is uniform across the collection. Each repo exposes a CMake target named
@@ -81,7 +83,7 @@ Facts worth knowing before you wire anything up:
   `strings`, `htm`, `sha256`, `compressors`, `cartesian`, `traceback` and a few others.
   Either way, linking the target is the correct move.
 - **C++20 is the norm**, C++17 for a handful (`constexpr-phf`, `uinteger_t`, `base-x`,
-  `lru-cache`, `split`, `static-string`, `cpp-btree`, `located-exception`).
+  `lru-cache`, `split`, `static-string`, `btree`, `located-exception`).
 - **The include filename often differs from the repo name.** `char-classify` gives
   `chars.hh`, `constexpr-phf` gives `phf.hh`, `enum-reflection` gives `enum.h`,
   `lru-cache` gives `lru.h`, `errno-names` gives `errnos.h`, `iterators` gives
@@ -90,7 +92,7 @@ Facts worth knowing before you wire anything up:
 - **Tests and demos only build when the repo is the top-level project**, so pulling a
   library into your build does not build its test suite.
 - **`GIT_TAG main` tracks the tip.** For anything reproducible, pin a commit SHA.
-- **Licensing is MIT** across the collection, with `cpp-btree` under Apache 2.0 and
+- **Licensing is MIT** across the collection, with `btree` under Apache 2.0 and
   `static-string` under the Boost Software License 1.0. Bundled
   third-party code keeps its license: msgpack-c in `msgpack` (Boost 1.0), the generated
   stemmers in `snowball` (BSD 3-clause), and the UCD tables in `unicode` (Unicode License).
@@ -129,7 +131,7 @@ Facts worth knowing before you wire anything up:
 | Static key set, ~9 bits per key, three reads per lookup | `fusefilter` |
 | Bounded cache with LRU and TTL | `lru-cache` |
 | Cache invalidated wholesale on a write/version change, not per-entry | `generation-cache` |
-| Ordered map/set with better locality than `std::map` | `cpp-btree` |
+| Ordered map/set with better locality than `std::map` | `btree` |
 | Coroutine tasks on a host event loop: time slices, cancellation, when_all | `task` |
 | Make file ranges resident before an event loop reads them | `residency` |
 | Fixed-size worker pool | `threadpool` |
@@ -148,7 +150,7 @@ Facts worth knowing before you wire anything up:
 | mkdir -p, glob delete, directory copy | `fs` |
 | fd counts, RAM, disk and inode usage | `system` |
 | TCP/UDP reactor pool, graceful shutdown | `reactor` |
-| Generic connection server engine (legacy libev; prefer `reactor` + `http`) | `server` |
+| Historical libev connection engine (archived; use `reactor` + `http`) | `server` |
 | HTTP/1.1 application framework | `http` |
 | Streaming HTTP/1.x parser only | `http-parser` |
 | Access logging middleware | `http-log` |
@@ -989,10 +991,11 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - No built-in size cap; the natural bound comes from how many distinct keys the caller's own domain can reach (see its `ARCHITECTURE.md`).
   - One mutex guards the whole cache; not sharded, not lock-free.
 
-### cpp-btree
-[github.com/Kronuz/cpp-btree](https://github.com/Kronuz/cpp-btree) &middot; depends on: none
+### btree
+[github.com/Kronuz/btree](https://github.com/Kronuz/btree) &middot; depends on: none
 - **What it is:** Cache-friendly B-tree ordered containers, a near drop-in for `std::map` and `std::set`.
-- **Header / target:** `#include "btree/map.h"`, `#include "btree/set.h"`; target `cpp_btree::cpp_btree`, C++17/C++20. A modernized port of Google's cpp-btree, and the most widely used repo in the collection (280+ stars).
+- **Header / target:** `#include "btree/map.h"`, `#include "btree/set.h"`; target `btree::btree` (`cpp_btree::cpp_btree` remains an alias), C++17/C++20. A modernized port of Google's cpp-btree, and the most widely used repo in the collection (280+ stars).
+- **Repository rename:** `Kronuz/cpp-btree` redirects to `Kronuz/btree`; preserve that old name as a redirect. Header paths and existing CMake aliases remain compatible.
 - **How it works:** Each node stores many sorted values instead of one, so a lookup touches far fewer cache lines than the pointer-per-element red-black tree behind `std::map`, and the container uses substantially less memory per element. The trade is that mutation can move values between nodes.
 - **Key API:**
   - `btree::map<Key, T, Compare, Allocator, TargetNodeSize>`
@@ -1514,6 +1517,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### server
 [github.com/Kronuz/server](https://github.com/Kronuz/server) &middot; depends on: `compressors`, `queue`
+- **Status:** Archived prototype; use `reactor` + `http`, or `prism` for an assembled service. These successors have different APIs; existing pinned commits remain available.
 - **What it is:** A legacy libev TCP server engine with CRTP accept-loop and per-connection state-machine bases extracted from Xapiand.
 - **Header / target:** `#include "base_server.h"` and `#include "base_client.h"`; target is the server library target defined by the project; C++17; includes vendored libev and may use `Kronuz/queue` and `Kronuz/compressors`.
 - **How it works:** `MetaBaseServer<ServerImpl>` owns the accept loop, while `BaseClient<ClientImpl>` implements the connection read/write FSM. `worker.h` supplies the libev worker tree and lifecycle watchers, and `buffer.h` handles writes. Host-specific logging, fatal handling, client accounting, and compatibility types are injected through redirectable headers and hooks.

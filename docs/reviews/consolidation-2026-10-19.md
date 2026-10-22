@@ -406,3 +406,11 @@ no cycles, and no consumer builds more than it links.
 ### Detent: automate cpp-btree qualification, October 22
 
 cpp-btree `9d623cc` adds the dependency-free CMake target `cpp_btree::cpp_btree` and calls the shared CMake workflow. Twenty registered CTest fixtures reuse the existing C++17/C++20 release/debug layout and both-link-order mixed-mode sources. The initial local Release CMake run passes 20/20 in 6.48 seconds. The [first hosted run](https://github.com/Kronuz/cpp-btree/actions/runs/39769650414) is pending; no hosted result is claimed yet. Shared GCC/Clang, ARM64, both macOS architectures, FreeBSD and ASan/UBSan profiles apply; TSan is disabled because the containers provide no concurrent mutation API. Downstream allocation-failure sweeps and controlled cost measurements remain separate gates.
+
+### CI policy, repository naming and prototype retirement, October 22
+
+The owner requests CI for every active library. Rule 7 now requires the shared push/pull-request/manual/nightly workflow, real CTest cases, supported-platform qualification, justified sanitizer exclusions and terminal hosted results. The catalog adds the missing btree and generation-cache badges. Generation-cache `a047e92` enables the complete shared matrix, including TSan for its threaded invalidation race; its local test and demo build pass. Hosted runs are tracked to completion.
+
+GitHub renamed `Kronuz/cpp-btree` to `Kronuz/btree`, retaining 282 stars and 50 forks. Both old and new Git URLs resolve to the same published commit; the old name must remain unused to preserve redirection. The canonical CMake target becomes `btree::btree`, with `cpp_btree::cpp_btree` retained as an alias and header paths unchanged. The local checkout keeps its existing physical path while worktrees/builds use it; `~/code/Kronuz/btree` points to that checkout.
+
+`Kronuz/server` is archived after `51edda9` records its maintained successors, reactor/http/prism. It is the retired Leg-1 libev prototype, not an active CI exception. Archival preserves history and pinned consumers; successor APIs are explicitly not drop-in replacements.
