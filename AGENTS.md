@@ -1017,6 +1017,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - You want ordered iteration without `std::map`'s per-node allocation.
 - **Do not use it when / gotchas:**
   - Iterator invalidation is stricter than `std::map`: insert and erase can invalidate iterators, so it is not a blind drop-in.
+  - `cbc3576` prepares nonfull insertion before reconstructing actual const-key pairs. Full-node insertion, rebalance and erase safety remain open Detent release findings; this correction does not qualify those paths. [Evidence and scope](https://github.com/Kronuz/Detent/blob/main/docs/BTREE_RELEASE_RISK.md).
   - Tests build only as the top-level CMake project. CI uses the shared matrix with layout and both-link-order mixed-mode fixtures; downstream publication and cost gates remain separate.
 
 ## Concurrency, time, and the operating system
