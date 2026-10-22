@@ -992,7 +992,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 ### cpp-btree
 [github.com/Kronuz/cpp-btree](https://github.com/Kronuz/cpp-btree) &middot; depends on: none
 - **What it is:** Cache-friendly B-tree ordered containers, a near drop-in for `std::map` and `std::set`.
-- **Header / target:** `#include "btree/map.h"`, `#include "btree/set.h"`; C++17. A modernized port of Google's cpp-btree, and the most widely used repo in the collection (280+ stars).
+- **Header / target:** `#include "btree/map.h"`, `#include "btree/set.h"`; target `cpp_btree::cpp_btree`, C++17/C++20. A modernized port of Google's cpp-btree, and the most widely used repo in the collection (280+ stars).
 - **How it works:** Each node stores many sorted values instead of one, so a lookup touches far fewer cache lines than the pointer-per-element red-black tree behind `std::map`, and the container uses substantially less memory per element. The trade is that mutation can move values between nodes.
 - **Key API:**
   - `btree::map<Key, T, Compare, Allocator, TargetNodeSize>`
@@ -1012,7 +1012,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - You want ordered iteration without `std::map`'s per-node allocation.
 - **Do not use it when / gotchas:**
   - Iterator invalidation is stricter than `std::map`: insert and erase can invalidate iterators, so it is not a blind drop-in.
-  - No CMake target in the repo; add the include directory yourself.
+  - Tests build only as the top-level CMake project. CI uses the shared matrix with layout and both-link-order mixed-mode fixtures; downstream publication and cost gates remain separate.
 
 ## Concurrency, time, and the operating system
 
