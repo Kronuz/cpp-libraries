@@ -396,3 +396,5 @@ no cycles, and no consumer builds more than it links.
   exception-safety findings stay open with Detent. strata and Xapiand make no cpp-btree changes
   meanwhile; strata's only use is the buffer prototype benchmark, which repins to Detent's fix once it
   lands.
+
+- **Detent (2026-10-21), cpp-btree qualification:** the complete isolated repair passes three-platform native/sanitizer/mixed-mode profiles and composed Linux LeakSanitizer, but its transaction staging is rejected for approximately 5.75 times baseline mutation CPU and excessive allocation churn. Production remains pinned to `dd984d9`. Independent correctness fixes land separately on the original implementation; `13370b0` refreshes range-insertion end hints, with all four families tested and standalone native/sanitizer/mixed-mode gates passing. It does not repair the outstanding copy or general mutation failure paths. Xapiand has no cpp-btree dependency in the inspected source/build closure; its gate is N/A. Detent records the measured cost and extraction order in `docs/DEPENDENCY_UPGRADES.md`.
