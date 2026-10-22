@@ -1,0 +1,449 @@
+{
+  "date": "2026-10-22",
+  "readmes_verified": 81,
+  "missing_catalog_links_after": [],
+  "workflow_presence_verified": 81,
+  "license_files_present": 81,
+  "readme_commits": [
+    {
+      "repository": "allocators",
+      "already_linked": false,
+      "commit": "d1de304c80a9ee7b3bbaa964ccdbb9117e979149"
+    },
+    {
+      "repository": "analysis",
+      "already_linked": false,
+      "commit": "04bbdc84e31b87ae29f6985a500fd1c63a4394b2"
+    },
+    {
+      "repository": "atomic-shared-ptr",
+      "already_linked": false,
+      "commit": "695aea1af810fee43d6522b6dda2c45e58b8bbc2"
+    },
+    {
+      "repository": "base-x",
+      "already_linked": false,
+      "commit": "b27ef4532af943e37589f0ed49d9c43c64bc336b"
+    },
+    {
+      "repository": "bitpack",
+      "already_linked": false,
+      "commit": "cd13f36ac88da3e35bde622db706a2a24143e187"
+    },
+    {
+      "repository": "bkd",
+      "already_linked": false,
+      "commit": "4ddc2cf09d3fc9fbc7f1d7a81da20f238e3b419d"
+    },
+    {
+      "repository": "bloom-filter",
+      "already_linked": false,
+      "commit": "5b2152ebfe4e3f24d7fa406cf05f587cd22bdd8a"
+    },
+    {
+      "repository": "boolean-parser",
+      "already_linked": false,
+      "commit": "42aea89026f250217dc6607792ec1bdbcc94be00"
+    },
+    {
+      "repository": "btree",
+      "already_linked": false,
+      "commit": "fbeba8daf69edabe00a5857e9a6ef4b694162db6"
+    },
+    {
+      "repository": "cartesian",
+      "already_linked": false,
+      "commit": "4cbf36f39eb0892dc248556089464980178f56f7"
+    },
+    {
+      "repository": "char-classify",
+      "already_linked": false,
+      "commit": "563528c6234f0acd424bc12a76854289ecff9daa"
+    },
+    {
+      "repository": "cluster",
+      "already_linked": false,
+      "commit": "4d894db08879f474199d421738a0184dec939439"
+    },
+    {
+      "repository": "completion",
+      "already_linked": false,
+      "commit": "89613a7321c2c86836a08a817ee267b2a08bf9b7"
+    },
+    {
+      "repository": "compressors",
+      "already_linked": false,
+      "commit": "2a721d92f6b22a9ac9625ddcc06778314fc6c775"
+    },
+    {
+      "repository": "consensus",
+      "already_linked": false,
+      "commit": "a4c28e090434d3b823531a31c7b748afb85e96ef"
+    },
+    {
+      "repository": "constexpr-phf",
+      "already_linked": false,
+      "commit": "05d949d53cab2f130475d7253b5944487cd91079"
+    },
+    {
+      "repository": "crc32c",
+      "already_linked": false,
+      "commit": "b60a8e5fcda4cce04c5ea5b6e3eef1645c0da0b8"
+    },
+    {
+      "repository": "ctrie",
+      "already_linked": false,
+      "commit": "794596d93e8e28d0f856756a3de85e1f6cb215ed"
+    },
+    {
+      "repository": "cuuid",
+      "already_linked": false,
+      "commit": "359893a0de00f0cfcb57ac8c365a97427c726336"
+    },
+    {
+      "repository": "datetime",
+      "already_linked": false,
+      "commit": "b6a755d46f39a5975cd52a06ea07a1ada516c7a0"
+    },
+    {
+      "repository": "docset",
+      "already_linked": false,
+      "commit": "cd38597278bf2cd91a4f85d79247b856c3d77265"
+    },
+    {
+      "repository": "double-metaphone",
+      "already_linked": false,
+      "commit": "64fc3652bab9f0b56733d23761cf2f746a8ec034"
+    },
+    {
+      "repository": "endian",
+      "already_linked": false,
+      "commit": "7153aff5954961f354548c19b4799cbb1bf2c206"
+    },
+    {
+      "repository": "enum-reflection",
+      "already_linked": false,
+      "commit": "690c5fe24d54e972f6e2f25a8d650f726163e566"
+    },
+    {
+      "repository": "epoch",
+      "already_linked": false,
+      "commit": "70d7899cbcf86ac4b9451452b74d974accf9ff61"
+    },
+    {
+      "repository": "errno-names",
+      "already_linked": false,
+      "commit": "fc6b6b0440ea53939d4be19d2256bcbcdd13db5b"
+    },
+    {
+      "repository": "escape",
+      "already_linked": false,
+      "commit": "1c5b51bf7b3818f3a02ee80f799faaab50a85f90"
+    },
+    {
+      "repository": "flume",
+      "already_linked": false,
+      "commit": "7184cb4137aef0853001baea52ddc52731c3ab43"
+    },
+    {
+      "repository": "fs",
+      "already_linked": false,
+      "commit": "a710d986d42188236aa7a23ed3a204c5a3d53be5"
+    },
+    {
+      "repository": "fst",
+      "already_linked": false,
+      "commit": "12657aaaa1dc83db388f99df3eeb95d7cbc451bd"
+    },
+    {
+      "repository": "fusefilter",
+      "already_linked": false,
+      "commit": "f6eb8ba1307b79b5a98495296b003428c72ff08a"
+    },
+    {
+      "repository": "generation-cache",
+      "already_linked": false,
+      "commit": "00762bdde95e744bd589f83ffecc2d00f8fc16d0"
+    },
+    {
+      "repository": "hashes",
+      "already_linked": false,
+      "commit": "cddbef03689b9d43cdae552552b25e8a080c5188"
+    },
+    {
+      "repository": "htm",
+      "already_linked": false,
+      "commit": "a2f588c725dd7acb79d67cb31042633cfa5f247c"
+    },
+    {
+      "repository": "http",
+      "already_linked": false,
+      "commit": "5ac534453f1d55f7590c9d0af2cab8c2b1cd7a13"
+    },
+    {
+      "repository": "http-log",
+      "already_linked": false,
+      "commit": "a64f1cd123e6e2056b59a321d512c8c59c44ef62"
+    },
+    {
+      "repository": "http-parser",
+      "already_linked": false,
+      "commit": "19ee3835e4867a7ee75771a5b6d0e9743bd4cc48"
+    },
+    {
+      "repository": "io",
+      "already_linked": false,
+      "commit": "293326c65666b0790ff69247561fe89ec050578a"
+    },
+    {
+      "repository": "iterators",
+      "already_linked": false,
+      "commit": "a388924ab98a0693ec8736db63cdbe035935428e"
+    },
+    {
+      "repository": "journal",
+      "already_linked": false,
+      "commit": "d564dfea4ebbded1505c702ce11708548fda69f9"
+    },
+    {
+      "repository": "lazy",
+      "already_linked": false,
+      "commit": "afd2fcc10f5a691db396dd169316697c91cfba3b"
+    },
+    {
+      "repository": "located-exception",
+      "already_linked": false,
+      "commit": "4e73cbc48276fa1a18b9252de53b995891f364a2"
+    },
+    {
+      "repository": "logger",
+      "already_linked": false,
+      "commit": "3fedff39e59ba295651d2b379c7f415dfbecfec5"
+    },
+    {
+      "repository": "lru-cache",
+      "already_linked": false,
+      "commit": "6df7c47ffdfff21d44f1c7ce7a4489399d3bbae1"
+    },
+    {
+      "repository": "math",
+      "already_linked": false,
+      "commit": "8f6371a14af5717323b7f541a0cd8467e7821cc1"
+    },
+    {
+      "repository": "md5",
+      "already_linked": false,
+      "commit": "c05d5005e5b3ad541eb67042bc636b10e0d418e8"
+    },
+    {
+      "repository": "metrics",
+      "already_linked": false,
+      "commit": "645d72991f7cef30366be3bde69c4044b1e9a78b"
+    },
+    {
+      "repository": "msgpack",
+      "already_linked": false,
+      "commit": "bdbf4443302d54cc59c7de6ef4fa9a6924680132"
+    },
+    {
+      "repository": "nanosleep",
+      "already_linked": false,
+      "commit": "933bec9070b8960dc83c5dae2de0fdc55237cea7"
+    },
+    {
+      "repository": "prism",
+      "already_linked": false,
+      "commit": "17ce07e3ce1b217c84c202933ccc538a69e84a7f"
+    },
+    {
+      "repository": "queue",
+      "already_linked": false,
+      "commit": "c25c72eb59232c123b01ea805593bdf2ebd4642b"
+    },
+    {
+      "repository": "radix-router",
+      "already_linked": false,
+      "commit": "35aab1bb5b58c9ba1aaa0d299783be1b53343255"
+    },
+    {
+      "repository": "random",
+      "already_linked": false,
+      "commit": "50d3a9e76af67c648b5b2f451315a15b885d3b16"
+    },
+    {
+      "repository": "reactor",
+      "already_linked": false,
+      "commit": "ab4b5e2746051148cab05b4c0024b98b3e7dd7dc"
+    },
+    {
+      "repository": "repr",
+      "already_linked": false,
+      "commit": "2b1d500a035779dcf58adf9470824ba147564fcc"
+    },
+    {
+      "repository": "residency",
+      "already_linked": false,
+      "commit": "f4206c7679e0ea1e8f3d04a7b2a8a41df0fa02ad"
+    },
+    {
+      "repository": "scheduler",
+      "already_linked": false,
+      "commit": "0843e4c249cf4b83d171ebd97850c31c7fd05118"
+    },
+    {
+      "repository": "sha256",
+      "already_linked": false,
+      "commit": "c7e37644ff8dc76eee7520b28cc4a011cd24b762"
+    },
+    {
+      "repository": "snowball",
+      "already_linked": false,
+      "commit": "51582e32310f5b47d4ef6759d7b76c0169dd7ec9"
+    },
+    {
+      "repository": "soundex",
+      "already_linked": false,
+      "commit": "a392092cff79f44345dadcf62fa9f687ee54d024"
+    },
+    {
+      "repository": "split",
+      "already_linked": false,
+      "commit": "63890daa30383eb56189c32a8ad020652a9718c5"
+    },
+    {
+      "repository": "stash",
+      "already_linked": false,
+      "commit": "d12f548a3050829c7d03b190ac74b04d8d019295"
+    },
+    {
+      "repository": "static-string",
+      "already_linked": false,
+      "commit": "5ebef3d96a8c0fe5b3e6a7e02ba3c4936fd34547"
+    },
+    {
+      "repository": "storage",
+      "already_linked": false,
+      "commit": "5ab4e45f0ae2f1742a2d558874a7153ca8963c8f"
+    },
+    {
+      "repository": "strict-stox",
+      "already_linked": false,
+      "commit": "ab9542a6755c3de97b20cc8b9573ae35f9b372f8"
+    },
+    {
+      "repository": "string-similarity",
+      "already_linked": false,
+      "commit": "8527982614564f030d5abf23760295133e7fea40"
+    },
+    {
+      "repository": "stringified",
+      "already_linked": false,
+      "commit": "ed8373066c20af021f72fc10554f5d67cdd67015"
+    },
+    {
+      "repository": "strings",
+      "already_linked": false,
+      "commit": "81f11550784093ca61bec19658b721ef124485df"
+    },
+    {
+      "repository": "system",
+      "already_linked": false,
+      "commit": "fe0d66e0ab1cd8b18f622efbc7a7d445aa526e46"
+    },
+    {
+      "repository": "task",
+      "already_linked": false,
+      "commit": "4761ef30db170a6a3bd0cc9b38fee700ba5206a4"
+    },
+    {
+      "repository": "term-color",
+      "already_linked": false,
+      "commit": "57945de0597c2d87ba91a9c8b5ffaf7ab44cc02b"
+    },
+    {
+      "repository": "termdict",
+      "already_linked": false,
+      "commit": "5951e4bed6c6ef58f281d1238b7964cc014013d8"
+    },
+    {
+      "repository": "threadpool",
+      "already_linked": false,
+      "commit": "57e647487a01d3b2b3a9c304bc90b4b379460523"
+    },
+    {
+      "repository": "time-point",
+      "already_linked": false,
+      "commit": "614139dd824a20dbe1d623351f39e92854aba00a"
+    },
+    {
+      "repository": "times",
+      "already_linked": false,
+      "commit": "ad4d26ff128f15f974847dedc4a17c0433012088"
+    },
+    {
+      "repository": "traceback",
+      "already_linked": false,
+      "commit": "01009bae2042322ac56de0ef7a0050e770039d00"
+    },
+    {
+      "repository": "uinteger_t",
+      "already_linked": false,
+      "commit": "7270fb39181513ed296c966a8458788a09c536dc"
+    },
+    {
+      "repository": "unicode",
+      "already_linked": false,
+      "commit": "d80b6bb3d213e9adc2ecdd448c22dfdf12d82f44"
+    },
+    {
+      "repository": "url-parser",
+      "already_linked": false,
+      "commit": "4fa5692640206cdfef6e135ef0fcab9124ca2e74"
+    },
+    {
+      "repository": "utype",
+      "already_linked": false,
+      "commit": "466354e9d5850d1ad60bfa2fdc786f8639f67e9d"
+    },
+    {
+      "repository": "varint",
+      "already_linked": false,
+      "commit": "d9631ab7948a76196c67e7490ab2aebc3ca6473d"
+    }
+  ],
+  "notice_commits": [
+    {
+      "repository": "base-x",
+      "commit": "54a9326c086252935be484ed7b920e473f77e0f7"
+    },
+    {
+      "repository": "constexpr-phf",
+      "commit": "36857cba82b125083783056ac87f321abe5cc75b"
+    },
+    {
+      "repository": "ctrie",
+      "commit": "4b6eb1b48f121bb00f5df6113f991a7f62a88025"
+    },
+    {
+      "repository": "uinteger_t",
+      "commit": "85316dd4d700afe1f3974e210ec82e190ccd6e9d"
+    },
+    {
+      "repository": "static-string",
+      "commit": "e0a3d6e7fd3e9101bafab474aba458f3cdd37850"
+    }
+  ],
+  "btree_attribution_commit": "fbeba8daf69edabe00a5857e9a6ef4b694162db6",
+  "archived_server_readme_commit": "4f488c2",
+  "ci_runs": {
+    "btree_first": 39769650414,
+    "btree_guarded_growth": 39771138527,
+    "generation_cache": 39770440406
+  },
+  "limits": [
+    "Workflow presence does not establish that every repository latest run passes.",
+    "Metadata-only commits use skip ci; source/build qualification runs remain separate.",
+    "Historical third-party and corporate notices remain intact except the verified static-string component start date.",
+    "Local clones with unrelated ongoing work are not reset or rewritten."
+  ]
+}

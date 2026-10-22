@@ -32,7 +32,7 @@ target_link_libraries(my_app PRIVATE hashes::hashes)
 C++20 is the norm, C++17 for a handful. Tests and demos only build when a repo is the
 top-level project, so pulling a library in does not build its suite. `GIT_TAG main` tracks
 the tip; pin a SHA when you need reproducibility. Everything is MIT licensed except
-`btree` (Apache 2.0) and `static-string` (Boost 1.0). Some repos bundle third-party code under its own license:
+`btree` (Apache 2.0) and `static-string` (Boost 1.0, inherited from the [2017 Xapiand import](https://github.com/Kronuz/Xapiand/commit/085939b9fa7581256203bcf162ab27194cc66c31)). Some repos bundle third-party code under its own license:
 `msgpack` (Boost 1.0 for msgpack-c), `snowball` (BSD 3-clause for the generated
 stemmers), and `unicode` (the Unicode License for its tables).
 
@@ -46,8 +46,7 @@ Every library in the table below builds and runs its tests on Linux (x86_64 with
 macOS (arm64, x86_64), and FreeBSD, plus an ASan and UBSan build, through the shared
 workflow in [`.github/workflows/cmake.yml`](.github/workflows/cmake.yml).
 
-Assertions stay live in every build, the standard library's own checks are on, a
-ThreadSanitizer job runs where the library has a concurrent API, and active repositories run nightly.
+Test checks stay active, including in fixtures that deliberately compare debug/release translation units. Compiler jobs enable standard-library hardening; ThreadSanitizer runs where the library has a concurrent API. Active repositories run nightly.
 [`tools/preflight.sh`](tools/preflight.sh) runs the same matrix locally, on macOS and on
 Linux and FreeBSD VMs, before a push.
 

@@ -55,9 +55,11 @@ Read this section before changing anything.
    the caller instead, or in a new library.
 6. **Match the local conventions.** Each repo has a README, a test suite, usually an
    `examples/demo.cc`, and a CMakeLists with an explanatory comment on every dependency.
-   Keep all four current when you change something.
+   Keep all four current when you change something. Every library README links to this [catalog](https://github.com/Kronuz/cpp-libraries).
 
-7. **Every active library has CI.** Use the shared CMake workflow on pushes, pull requests, manual dispatch and nightly runs. Register real tests with CTest, keep runtime checks active and qualify supported platforms plus relevant sanitizers. Document justified exclusions, such as TSan for a container without a concurrent API. Verify triggered CI to a terminal result before calling work ready. Archived prototypes are explicitly marked and point to maintained successors.
+7. **Every active library has CI.** Use the shared CMake workflow on pushes, pull requests, manual dispatch and nightly runs. Register real tests with CTest, keep runtime checks active and qualify supported platforms plus relevant sanitizers. Document justified exclusions, such as TSan for a container without a concurrent API. Verify triggered CI to a terminal result before calling work ready. Archived prototypes are explicitly marked and point to maintained successors. Documentation/attribution-only commits may explicitly use `[skip ci]`; implementation and build changes require the relevant matrix.
+
+8. **Keep licenses and provenance accurate.** Preserve upstream and third-party notices and license terms. Record derivation with source/history links. Use the component’s actual contribution years rather than copying the parent project’s start date; update the maintained author’s notice without extending unrelated authors’ dates. A renamed or extracted repository does not acquire a new license automatically.
 
 ## Consuming a library
 
