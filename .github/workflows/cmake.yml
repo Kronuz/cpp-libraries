@@ -89,11 +89,13 @@ jobs:
         env: { CC: "${{ matrix.cc }}", CXX: "${{ matrix.cxx }}" }
         # RelWithDebInfo without NDEBUG: the tests' assert() calls must stay live.
         run: |
+          platform_args=()
           if [[ "${{ runner.os }}" == macOS && "${{ inputs.macos_llvm }}" == true ]]; then
             llvm_prefix=$(brew --prefix llvm)
             export CC="$llvm_prefix/bin/clang" CXX="$llvm_prefix/bin/clang++"
+            platform_args+=("-DCMAKE_OSX_SYSROOT=$(xcrun --sdk macosx --show-sdk-path)")
           fi
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -g" "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -g ${{ matrix.hardening }}" ${{ inputs.cmake_args }}
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -g" "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -g ${{ matrix.hardening }}" "${platform_args[@]}" ${{ inputs.cmake_args }}
       - name: Build
         run: cmake --build build --parallel 4
       - name: Test
