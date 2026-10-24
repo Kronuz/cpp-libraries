@@ -186,6 +186,10 @@ Linux and FreeBSD VMs, before a push.
 <td><a href="https://github.com/Kronuz/utype/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/utype/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/utype">utype</a></td>
 <td><a href="https://github.com/Kronuz/varint/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/varint/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/varint">varint</a></td>
 </tr>
+<tr>
+<td><a href="https://github.com/Kronuz/flat-map/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/flat-map/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/flat-map">flat-map</a></td>
+<td></td><td></td>
+</tr>
 </table>
 
 Every active library must provide CI, real CTest cases and the supported platform/sanitizer matrix, following [AGENTS.md, Rules of engagement](AGENTS.md#rules-of-engagement). Pushes, pull requests, manual dispatch and nightly runs use the shared workflow; justified sanitizer exclusions are documented by the library. A local pass does not replace checking the hosted result.
@@ -204,7 +208,7 @@ The shared CMake workflow accepts `macos_llvm: true` for consumers that require 
 
 **Compile time, hashing, identifiers, containers.** `constexpr-phf`, `ctrie`, `fst`, `termdict`, `hashes`, `crc32c`,
 `enum-reflection`, `uinteger_t`, `base-x`, `cuuid`, `md5`, `sha256`, `random`,
-`bloom-filter`, `fusefilter`, `lru-cache`, `generation-cache`, `btree`
+`bloom-filter`, `fusefilter`, `lru-cache`, `generation-cache`, `btree`, `flat-map`
 
 **Concurrency, time, and the operating system.** `task`, `threadpool`, `queue`, `stash`,
 `scheduler`, `atomic-shared-ptr`, `allocators`, `nanosleep`, `epoch`, `time-point`,
@@ -241,3 +245,5 @@ It is written for coding agents, but it is the same reference a person wants.
 The design notes behind each library are being written up as the *Familiars* series on
 [kronuz.github.io](https://kronuz.github.io/blog/), still in draft, alongside the story of
 the search engine they all came out of.
+
+`flat-map` provides `kronuz::flat_map`, a C++20 sorted-vector map, plus a bulk builder and linear merge traversal. Include `flat_map.hh` and link `flat_map::flat_map`; it has no external dependencies. Value moves must not throw, keys remain mutable, and mutation invalidates borrowed entries. Use bulk construction and `erase_if` to avoid repeated shifts.

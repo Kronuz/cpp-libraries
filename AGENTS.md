@@ -122,6 +122,7 @@ Facts worth knowing before you wire anything up:
 | O(1) dispatch over a fixed integer key set | `constexpr-phf` |
 | Fixed word set to index, no hashing | `ctrie` |
 | Compact sorted string map, prefix/range/automaton queries | `fst` |
+| C++20 sorted-vector map with bulk build and linear merge | `flat-map` (`flat_map.hh`, `flat_map::flat_map`), no dependencies |
 | Term dictionary: sorted keys to value bytes in prefix-compressed blocks | `termdict` |
 | Enum to string and back, generated | `enum-reflection` |
 | Integers wider than 64 bits | `uinteger_t` |
