@@ -190,6 +190,8 @@ Linux and FreeBSD VMs, before a push.
 
 Every active library must provide CI, real CTest cases and the supported platform/sanitizer matrix, following [AGENTS.md, Rules of engagement](AGENTS.md#rules-of-engagement). Pushes, pull requests, manual dispatch and nightly runs use the shared workflow; justified sanitizer exclusions are documented by the library. A local pass does not replace checking the hosted result.
 
+The shared CMake workflow accepts `macos_llvm: true` for consumers that require standard-library features absent from the runner’s Apple toolchain. It installs Homebrew LLVM and selects its compiler and libc++; the default remains the Apple toolchain.
+
 `server` is an archived libev prototype superseded architecturally by `reactor` and `http` (or `prism` for an assembled service). Its existing commits remain available; the successors are not drop-in CRTP API replacements.
 
 `btree` is the renamed `cpp-btree` repository. GitHub redirects the old repository and clone URLs, preserving the project and its stars. Keep the old name unused so the redirect survives. Header paths and the compatibility CMake alias remain available.

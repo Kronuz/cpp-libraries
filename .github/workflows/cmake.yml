@@ -14,6 +14,10 @@ on:
         description: Extra arguments for the configure step
         type: string
         default: ""
+      macos_llvm:
+        description: Use Homebrew LLVM and libc++ on macOS instead of the runner's Apple toolchain
+        type: boolean
+        default: false
       freebsd:
         description: Run the FreeBSD job
         type: boolean
@@ -78,10 +82,18 @@ jobs:
       - name: Packages (macOS)
         if: runner.os == 'macOS' && inputs.brew_packages != ''
         run: brew install ${{ inputs.brew_packages }}
+      - name: LLVM (macOS)
+        if: runner.os == 'macOS' && inputs.macos_llvm
+        run: brew install llvm
       - name: Configure
         env: { CC: "${{ matrix.cc }}", CXX: "${{ matrix.cxx }}" }
         # RelWithDebInfo without NDEBUG: the tests' assert() calls must stay live.
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -g" "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -g ${{ matrix.hardening }}" ${{ inputs.cmake_args }}
+        run: |
+          if [[ "${{ runner.os }}" == macOS && "${{ inputs.macos_llvm }}" == true ]]; then
+            llvm_prefix=$(brew --prefix llvm)
+            export CC="$llvm_prefix/bin/clang" CXX="$llvm_prefix/bin/clang++"
+          fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -g" "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -g ${{ matrix.hardening }}" ${{ inputs.cmake_args }}
       - name: Build
         run: cmake --build build --parallel 4
       - name: Test
