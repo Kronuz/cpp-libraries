@@ -951,6 +951,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `emplace`, `insert`, `find`, `at`, `get`, `operator[]`
   - `find_and_leave`, `find_and_renew`, `find_and_relink`
   - `erase`, `clear`, `trim`, `exists`, `size`, `max_size`
+  - `erase(key)` reports the removed count independently of its successor; removing the final matching entry returns one.
 - **Example:**
   ```cpp
   #include "lru.h"
@@ -958,7 +959,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   lru::lru<int, std::string> cache(2);
   cache.emplace(1, "one");
   cache.emplace(2, "two");
-  cache.emplace(3, "three");   // evicts key 1
+  cache.emplace(3, "three");   // carries one overflow entry
+  cache.trim();                // evicts key 1
   ```
 - **Use it when:**
   - A bounded cache with predictable eviction.
