@@ -123,6 +123,7 @@ Facts worth knowing before you wire anything up:
 | Fixed word set to index, no hashing | `ctrie` |
 | Compact sorted string map, prefix/range/automaton queries | `fst` |
 | C++20 sorted-vector map with bulk build and linear merge | `flat-map` (`flat_map.hh`, `flat_map::flat_map`), no dependencies |
+| Immutable ordered versions with owner-driven node collection | `persistent-map` (`persistent_map.h`, `persistent_map::PersistentMap`; target `persistent_map::persistent_map`), no dependencies; single-executor ownership, potentially synchronous final release |
 | Term dictionary: sorted keys to value bytes in prefix-compressed blocks | `termdict` |
 | Enum to string and back, generated | `enum-reflection` |
 | Integers wider than 64 bits | `uinteger_t` |
