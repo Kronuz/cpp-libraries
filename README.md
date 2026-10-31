@@ -247,6 +247,6 @@ The design notes behind each library are being written up as the *Familiars* ser
 [kronuz.github.io](https://kronuz.github.io/blog/), still in draft, alongside the story of
 the search engine they all came out of.
 
-`flat-map` provides `kronuz::flat_map`, a C++20 sorted-vector map, plus a bulk builder and linear merge traversal. Include `flat_map.hh` and link `flat_map::flat_map`; it has no external dependencies. Value moves must not throw, keys remain mutable, and mutation invalidates borrowed entries. Use bulk construction and `erase_if` to avoid repeated shifts.
+`flat-map` provides `kronuz::flat_map`, a C++20 sorted-vector map, plus a bulk builder and linear merge traversal. Include `flat_map.hh` and link `flat_map::flat_map`; it has no external dependencies. Value moves must not throw, keys remain mutable, and mutation invalidates borrowed entries. Use bulk construction and `erase_if` to avoid repeated shifts. Integer keys under the default ordering search with a branchless lower bound, and trivially copyable entries shift with one `memmove` (`bench/bench.cc`).
 
 `persistent-map` provides `persistent_map::PersistentMap`, a C++20 immutable AVL map with shared historical roots, stored comparator and allocator policies, and owner-driven node collection. Include `persistent_map.h` and link `persistent_map::persistent_map`; it has no dependencies. All access and ownership changes use one serialized executor. Collection budgets count nodes; final arena release can reclaim the remaining graph synchronously.

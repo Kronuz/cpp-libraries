@@ -317,7 +317,10 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Rendering byte counts, durations or deltas for humans.
 - **Do not use it when / gotchas:**
   - `trim` returns a view; the source must outlive it.
-  - Most other helpers allocate, so avoid them on a hot path.
+  - Most other helpers allocate one result string. `lower`/`upper` are a vectorizable loop over one copy, `join` reserves its result once, and `replace` with several matches builds the result in one pass (`bench/bench.cc`); the cost is that one allocation.
+  - `indent` follows Python's `textwrap.indent`: blank lines and the trailing newline are kept, and blank or whitespace-only lines get no prefix.
+  - An empty search in `replace`/`inplace_replace` inserts the replacement at every position, as Python does (`replace("abc", "", "-")` is `"-a-b-c-"`).
+  - `hasupper` tests ASCII `A`-`Z` only; it does not consult the C locale.
   - It pulls `term-color` and `repr` transitively, which is heavier than it looks.
 
 ### split
@@ -349,7 +352,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/repr](https://github.com/Kronuz/repr) &middot; depends on: `char-classify`
 - **What it is:** Turns arbitrary bytes into a single-line printable representation for logs and diagnostics.
 - **Header / target:** `#include "repr.hh"`; target `repr::repr`; C++20. Compiled (`repr.cc`).
-- **How it works:** Overloads accept pointer plus size, pointer ranges, strings, string views, literals and byte arrays. Printable ASCII passes through, everything else is escaped, and the result is a freshly allocated `std::string`. Options control friendly formatting, the quote character, and a maximum size for truncating large buffers.
+- **How it works:** Overloads accept pointer plus size, pointer ranges, strings, string views, literals and byte arrays. Printable ASCII passes through, everything else is escaped. A 256-entry table gives each byte's output length, so the result is allocated once at its exact size; the writer then copies clean eight-byte blocks with one store and escapes the rest byte by byte. Options control friendly formatting, the quote character, and a maximum size: with `max_size` the middle is skipped by arithmetic and replaced by `...`, two-thirds of the budget for the head and one-third for the tail.
 - **Key API:**
   - `repr(const void*, size_t, bool friendly = true, char quote = '\'', size_t max_size = 0) -> string`
   - `repr(const void* begin, const void* end, ...) -> string`
@@ -366,7 +369,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Producing copy-pasteable diagnostics.
   - Truncating a large buffer for an error message.
 - **Do not use it when / gotchas:**
-  - Allocates on every call; not for hot paths.
+  - One exact-size allocation per call. Printable text copies at memory speed, and `max_size` makes the cost O(`max_size`) however large the input is (`bench/bench.cc`). Fine on a logging path; the result is a fresh `std::string`.
+  - `max_size = 1` returns just the two quotes, and `max_size = 2` the quotes around `...`.
   - It is a diagnostic representation, not a reversible encoding.
   - Use a size-aware overload for data with embedded NULs.
 
@@ -374,7 +378,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/escape](https://github.com/Kronuz/escape) &middot; depends on: `char-classify`
 - **What it is:** C-string style escaping of a byte buffer, with a configurable quote character.
 - **Header / target:** `#include "escape.hh"`; target `escape::escape`; C++20.
-- **How it works:** The raw overload walks the buffer and returns an escaped `std::string`; convenience overloads take `std::string`, `std::string_view` and char arrays. `repr` is the higher-level presentation layer built on the same idea, so prefer `repr` for logging and `escape` when you specifically want quoted C-style output.
+- **How it works:** The raw overload measures the output with a 256-entry length table, allocates the `std::string` once at its exact size, and writes it eight bytes at a time: a clean block is one 8-byte store, any other goes byte by byte through the table. Convenience overloads take `std::string`, `std::string_view` and char arrays. `repr` is the higher-level presentation layer built on the same idea, so prefer `repr` for logging and `escape` when you specifically want quoted C-style output.
 - **Key API:**
   - `escape(const void*, size_t, char quote = '\'') -> string`
   - `escape(string/string_view, char quote = '\'') -> string`
@@ -395,9 +399,10 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/stringified](https://github.com/Kronuz/stringified) &middot; depends on: none
 - **What it is:** A wrapper that turns any value into a `string_view`, owning the buffer when it has to.
 - **Header / target:** `#include "stringified.hh"`; target `stringified::stringified`; C++20.
-- **How it works:** The constructor converts its argument to a string representation and exposes it as a `string_view`. When the source is already a string or view it borrows; otherwise it materializes and owns storage, which is what lets a single function parameter type accept both without an allocation in the common case.
+- **How it works:** The constructor converts its argument to a string representation and exposes it as a `string_view`. When the source is already a string or view it borrows; otherwise it materializes and owns storage, which is what lets a single function parameter type accept both without an allocation in the common case. Copy and move rebind a view of the source's own storage to the destination's, so a copied or moved `stringified` never dangles. `c_str()` never reads past the view: it aliases a whole `std::string`, a `const char*` or literal, or its own storage, and copies anything else once.
 - **Key API:**
-  - `class stringified`, constructed from a value
+  - `class stringified`, constructed from a value; `stringified(const char*)` takes C strings and literals as terminated
+  - `c_str()`: NUL-terminated, copied only for a `string_view`
   - `string_view` conversion and accessors
   - `std::formatter<stringified>`
 - **Example:**
@@ -413,13 +418,14 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Normalizing heterogeneous values to text at an API boundary.
 - **Do not use it when / gotchas:**
   - Materializes eagerly; it is not lazy.
-  - The view is valid only while the `stringified` object is alive.
+  - The view is valid only while the `stringified` object is alive. Copying and moving are safe.
+  - A bare `string_view` costs one copy on its first `c_str()`, because the byte after it is unknown. Pass a `std::string` or a `const char*` to avoid it.
 
 ### strict-stox
 [github.com/Kronuz/strict-stox](https://github.com/Kronuz/strict-stox) &middot; depends on: none
 - **What it is:** Whole-string numeric parsing that rejects trailing junk, overflow and partial consumption, unlike `std::stoi`.
 - **Header / target:** `#include "strict_stox.hh"`; target `strict_stox::strict_stox`; C++20.
-- **How it works:** `Stox<F>` wraps the C conversion functions and centralizes the three checks people forget: `errno`, the end pointer, and the range. Each `strict_*` function takes a `std::string_view`, optionally reports the consumed index, and has a `noexcept` overload that writes the saved `errno` instead of throwing. Integer overloads take an explicit base.
+- **How it works:** `Stox<F>` wraps the C conversion functions and centralizes the three checks people forget: `errno`, the end pointer, and the range. Each `strict_*` function takes a `std::string_view`, optionally reports the consumed index, and has a `noexcept` overload that writes the saved `errno` instead of throwing. Integer overloads take an explicit base. Clean input (an optional `-` and digits, or a short decimal that one correctly rounded multiply or divide can produce) is parsed directly with no buffer copy and no `errno` traffic; everything else is copied whole into a NUL-terminated buffer (128 bytes on the stack, heap above that) and handed to `strto*`. Both paths give identical values, `errno`, `idx` and exceptions.
 - **Key API:**
   - `strict_stoi`, `strict_stou`, `strict_stol`, `strict_stoul`, `strict_stoll`, `strict_stoull`, `strict_stoz`
   - `strict_stof`, `strict_stod`, `strict_stold`
@@ -439,6 +445,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - Input is a `string_view`; the caller owns the storage.
   - Strictness is the point: whitespace and trailing characters are rejected, not skipped.
+  - Input of any length parses like libc `strto*` on the same bytes; an embedded NUL ends the number there.
+  - `stold` and full-precision 17-digit doubles always take the `strto*` path; the fast path covers short clean input (`bench/bench.cc`).
 
 ### utype
 [github.com/Kronuz/utype](https://github.com/Kronuz/utype) &middot; depends on: none
@@ -667,7 +675,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/fst](https://github.com/Kronuz/fst) &middot; depends on: none
 - **What it is:** Minimal acyclic finite state transducers: an ordered map from byte strings to `uint64` values, built from sorted keys and read in place from bytes (a string or a memory-mapped file).
 - **Header / target:** `#include "fst.hh"`; target `fst::fst`; header-only; C++20.
-- **How it works:** The builder minimizes incrementally (Daciuk et al.), sharing equal suffixes through a node registry and pushing outputs toward the root, so a value is the sum of outputs along its path. Nodes are written children first with delta targets; single-transition chains take a few bytes and wider nodes keep their labels contiguous for SSE2 search. On a 236k-word dictionary it uses 6.2 bytes per key, a tenth of a hash map, with lookups at about twice the hash map's latency.
+- **How it works:** The builder minimizes incrementally (Daciuk et al.), sharing equal suffixes through a node registry and pushing outputs toward the root, so a value is the sum of outputs along its path. Nodes are written children first with delta targets; single-transition chains take a few bytes and wider nodes keep their labels contiguous for SSE2 search. On a 236k-word dictionary it uses 6.2 bytes per key, a tenth of a hash map, with lookups at about twice the hash map's latency. The builder deduplicates nodes through a flat table of (hash, address) verified against the bytes already written, with no allocation per node, and `range` decodes a transition only when it takes it (`bench/cmp_bench.cc`).
 - **Key API:**
   - `fst::builder`: `insert(key, value)` in strictly increasing order, `finish()` returning the bytes
   - `fst::map(bytes)`: `get`, `contains`, `floor`, `floor_value` (allocation-free), `range(lo, hi, f)`, `for_each(f)`, `intersect(automaton, f)`
@@ -723,7 +731,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Key API:**
   - `ENUM_CLASS(Name, Underlying, members...)`, `ENUM(Name, members...)`
   - `enum_name(Enum) -> std::string_view`
-  - `enum_type<Enum>(std::string_view) -> Enum`
+  - `enum_type<Enum>(std::string_view) -> Enum` (case-insensitive; throws on a miss)
+  - `enum_try_type<Enum>(std::string_view) -> std::optional<Enum>` (`std::nullopt` on a miss)
   - `enum_find(Enum)`, `enum_find<Enum>(std::string_view)`
 - **Example:**
   ```cpp
@@ -738,7 +747,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - You would otherwise hand-maintain a parallel name array that drifts.
 - **Do not use it when / gotchas:**
   - It generates the enum; it cannot reflect an enum declared elsewhere.
-  - `enum_type` throws `std::out_of_range` on an unknown name, while `enum_name` returns an empty view on an unknown value. The asymmetry is easy to miss.
+  - `enum_type` throws `std::out_of_range` on an unknown name, while `enum_name` returns an empty view on an unknown value. The asymmetry is easy to miss. Where misses are expected (user input, config keys), call `enum_try_type`: it shares the same switch and never throws.
 
 ### uinteger_t
 [github.com/Kronuz/uinteger_t](https://github.com/Kronuz/uinteger_t) &middot; depends on: none
@@ -794,7 +803,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/cuuid](https://github.com/Kronuz/cuuid) &middot; depends on: `char-classify`, `endian`
 - **What it is:** A condensed UUID value type: generate, parse, format, and serialize UUIDs in a compact wire form.
 - **Header / target:** `#include "cuuid.hh"`, plus `#include "cuuid_v1.hh"` for v1 fields; target `cuuid::cuuid`; C++20.
-- **How it works:** `UUID` wraps the 16 bytes and `UUIDGenerator` produces new ones through the platform backend. The interesting part is serialization: the full form is a `0x01` tag byte followed by 16 bytes, but RFC 4122 v1 values that fit the expected shape are packed into a much shorter condensed encoding, which is what "condensed" means in the name. The v1 header exposes node, timestamp, clock sequence, variant and version.
+- **How it works:** `UUID` wraps the 16 bytes and `UUIDGenerator` produces new ones through the platform backend. The interesting part is serialization: the full form is a `0x01` tag byte followed by 16 bytes, but RFC 4122 v1 values that fit the expected shape are packed into a much shorter condensed encoding, which is what "condensed" means in the name. The v1 header exposes node, timestamp, clock sequence, variant and version. A compact v1 node is the first two outputs of `std::mt19937(seed)`; the expander computes only the 399 state words those depend on, and a small thread-local cache keyed by seed makes `generate()` followed by `serialise()` of the same id pay that once (`benchmarks/v1_bench.cc`). v6 `generate()` keeps its monotonic time with a lock-free CAS.
 - **Key API:**
   - `UUID`, `UUIDGenerator`
   - `serialise()`, `unserialise(...)`
@@ -820,7 +829,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/md5](https://github.com/Kronuz/md5) &middot; depends on: `endian`
 - **What it is:** MD5 digests for content fingerprinting and compatibility with existing MD5-based formats.
 - **Header / target:** `#include "md5.h"`; target `md5::md5`; C++20.
-- **How it works:** A standard MD5 compression implementation supporting both one-shot buffers and incremental `add()` calls, holding the digest state internally and producing a 32-character lowercase hex string.
+- **How it works:** A standard MD5 compression implementation supporting both one-shot buffers and incremental `add()` calls, holding the digest state internally and producing a 32-character lowercase hex string, sized once and filled two characters per byte.
 - **Key API:**
   - `class MD5`, constructed from a buffer or string view
   - `operator()(const void*, size_t)` / `operator()(string_view)` -> 32 hex chars
@@ -845,7 +854,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/sha256](https://github.com/Kronuz/sha256) &middot; depends on: `endian`
 - **What it is:** SHA-256 digests, 32 bytes or 64 hex characters, for integrity checks and content ids, on the CPU's SHA instructions when it has them.
 - **Header / target:** `#include "sha256.h"`; target `sha256::sha256`; C++20. Compiled, not header-only (three `.cc` files).
-- **How it works:** One buffering and padding path feeds 64-byte blocks to one of three kernels: x86_64 SHA-NI (CPUID leaf 7 EBX bit 29, plus SSSE3/SSE4.1), arm64 SHA2 (`HWCAP_SHA2`, or always on Apple silicon), or the portable unrolled rounds. Detection runs once and caches an atomic function pointer; one binary is correct on CPUs with and without the instructions. `-DSHA256_HARDWARE=OFF` builds the portable kernel only.
+- **How it works:** One buffering and padding path feeds 64-byte blocks to one of three kernels: x86_64 SHA-NI (CPUID leaf 7 EBX bit 29, plus SSSE3/SSE4.1), arm64 SHA2 (`HWCAP_SHA2`, or always on Apple silicon), or the portable unrolled rounds. Detection runs once and caches an atomic function pointer; one binary is correct on CPUs with and without the instructions. `-DSHA256_HARDWARE=OFF` builds the portable kernel only. The legacy class and `to_hex` write the 64-character hex string into one sized buffer, two characters per byte (`bench/hex_bench.cc`).
 - **Key API:**
   - `kronuz::sha256::hasher`: `init()`, `update(const void*, size_t)` / `update(string_view)`, `final()` -> `digest_type` (`std::array<unsigned char, 32>`); `final()` leaves the stream appendable
   - `kronuz::sha256::digest(data, size)` / `digest(string_view)`, `to_hex(digest_type)`
@@ -876,7 +885,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/random](https://github.com/Kronuz/random) &middot; depends on: none
 - **What it is:** Four small helpers for random reals, integers, durations and strings.
 - **Header / target:** `#include "random.hh"`; target `random::random`; C++20.
-- **How it works:** Thin wrappers over `<random>` with inclusive ranges, plus a random string generator. The duration helper returns `std::chrono::milliseconds`, which is the form you want for jitter and backoff.
+- **How it works:** Every helper draws from one xoshiro256++ generator per thread (32 bytes of `thread_local` state), seeded on first use with 256 bits from `std::random_device`. Integer and duration ranges use Lemire's multiply-shift with a rejection step, so they are exactly uniform and divide only on the rare reject path. `random_real` scales 53 bits onto the range. `random_string` cuts each 64-bit draw into ten 6-bit fields and keeps those below 62, so every symbol of `0-9a-zA-Z` has probability 1/62. The duration helper returns `std::chrono::milliseconds`, which is the form you want for jitter and backoff.
 - **Key API:**
   - `double random_real(double initial, double last)`
   - `std::uint64_t random_int(std::uint64_t initial, std::uint64_t last)`
@@ -894,15 +903,16 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - You want one call instead of engine plus distribution boilerplate.
 - **Do not use it when / gotchas:**
   - Not cryptographic; do not generate secrets, tokens or keys with it.
-  - Uses global state and is not documented as thread-safe or reproducible.
+  - Thread-safe with no lock (one generator per thread), but not reproducible: there is no seed API.
 
 ### bloom-filter
 [github.com/Kronuz/bloom-filter](https://github.com/Kronuz/bloom-filter) &middot; depends on: `hashes`
 - **What it is:** A fixed-size Bloom filter: no false negatives, bounded memory, no allocation.
 - **Header / target:** `#include "bloom_filter.hh"`; target `bloom_filter::bloom_filter`; C++20.
-- **How it works:** `BloomFilter<N>` holds an inline `std::bitset<N * 32>` and sets 20 probe bits derived from the hashes library, so memory is about `4 * N` bytes and entirely inline. A non-zero salt selects an independent view of the same bit array, letting one filter serve several logical sets.
+- **How it works:** `BloomFilter<N>` holds an inline `std::bitset<N * 32>` and sets 20 probe bits derived from an xxh64 pass and a byte-at-a-time FNV-1a pass, so memory is about `4 * N` bytes and entirely inline, and lookup cost grows with key length. A non-zero salt selects an independent view of the same bit array, letting one filter serve several logical sets. `FastBloomFilter<N>` and `BlockedBloomFilter<N>` have the same API and size but derive every probe from one xxh64 pass; the blocked variant also confines each key to one cache line.
 - **Key API:**
   - `template <size_t N = 131072> class BloomFilter`
+  - `FastBloomFilter<N>`, `BlockedBloomFilter<N>`: opt-in, same API
   - `void add(const char*, size_t, uint64_t salt = 1)`
   - `bool contains(const char*, size_t, uint64_t salt = 1) const`
 - **Example:**
@@ -920,6 +930,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `true` means probably present; only `false` is definitive.
   - No removal, and no resizing. Large `N` must not go on the stack.
   - The salt must be non-zero and must match between `add` and `contains`.
+  - The three types set different bits. Never load a bitset persisted from one into another; `BloomFilter<N>` keeps its original layout for that reason.
+  - Prefer `FastBloomFilter` for new filters: same false-positive rate as `BloomFilter`, and its cost does not scale with key length. `BlockedBloomFilter` is faster still but pays about 1.3e-3 false positives where the others measure 0 (32 bits per key, `bench/bloom_bench.cc`).
 
 ### fusefilter
 [github.com/Kronuz/fusefilter](https://github.com/Kronuz/fusefilter) &middot; depends on: none
@@ -974,7 +986,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/generation-cache](https://github.com/Kronuz/generation-cache) &middot; depends on: none
 - **What it is:** A thread-safe cache invalidated as a whole group by a generation bump, not individually by LRU/TTL.
 - **Header / target:** `#include "generation_cache.hh"`; target `generation_cache`; header-only; C++17.
-- **How it works:** A `std::map` and a generation counter behind one mutex. `clear()` erases every entry and bumps the generation. A reader captures the generation alongside its lookup (`get_with_generation`); `try_insert` only commits if that generation still matches current, so a value computed before a concurrent `clear()` but inserted after it is silently dropped instead of resurrecting stale data.
+- **How it works:** A table and a generation counter behind one `std::shared_mutex`: readers (`get`, `get_with_generation`, `generation`, `size`) take it shared, `try_insert` and `clear` exclusively. A key with `std::hash` and `==` lives in a small open-addressing table (linear probing, load at most 0.5, a per-cache random seed mixed into the stored hash); a key with only `operator<` falls back to `std::map`. `clear()` erases every entry and bumps the generation. A reader captures the generation alongside its lookup (`get_with_generation`); `try_insert` only commits if that generation still matches current, so a value computed before a concurrent `clear()` but inserted after it is silently dropped instead of resurrecting stale data. `try_insert` has the strong exception guarantee.
 - **Key API:**
   - `generation_cache::Cache<Key, Value>`
   - `get`, `get_with_generation`, `try_insert`, `clear`, `size`, `generation`
@@ -995,14 +1007,14 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - You want size-bounded or recency-bounded eviction instead -- use `lru-cache`.
   - No built-in size cap; the natural bound comes from how many distinct keys the caller's own domain can reach (see its `ARCHITECTURE.md`).
-  - One mutex guards the whole cache; not sharded, not lock-free.
+  - One reader/writer lock guards the whole cache; not sharded, not lock-free. Readers run in parallel (`bench/bench.cc`), but `std::shared_mutex` has no fairness policy, so readers that never let go can delay `try_insert` and `clear`. Shard it if a workload saturates it with readers.
 
 ### btree
 [github.com/Kronuz/btree](https://github.com/Kronuz/btree) &middot; depends on: none
 - **What it is:** Cache-friendly B-tree ordered containers, a near drop-in for `std::map` and `std::set`.
 - **Header / target:** `#include "btree/map.h"`, `#include "btree/set.h"`; target `btree::btree` (`cpp_btree::cpp_btree` remains an alias), C++17/C++20. A modernized port of Google's cpp-btree, and the most widely used repo in the collection (280+ stars).
 - **Repository rename:** `Kronuz/cpp-btree` redirects to `Kronuz/btree`; preserve that old name as a redirect. Header paths and existing CMake aliases remain compatible.
-- **How it works:** Each node stores many sorted values instead of one, so a lookup touches far fewer cache lines than the pointer-per-element red-black tree behind `std::map`, and the container uses substantially less memory per element. The trade is that mutation can move values between nodes.
+- **How it works:** Each node stores many sorted values instead of one, so a lookup touches far fewer cache lines than the pointer-per-element red-black tree behind `std::map`, and the container uses substantially less memory per element. The trade is that mutation can move values between nodes. When the key and mapped type are nothrow move constructible, those moves relocate the key by move, so a `map<std::string, T>` does not allocate a string per shifted slot (`benchmarks/string_insert_bench.cc`); otherwise keys are copied.
 - **Key API:**
   - `btree::map<Key, T, Compare, Allocator, TargetNodeSize>`
   - `btree::set<Key, ...>`, plus multimap and multiset variants
@@ -1098,7 +1110,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/queue](https://github.com/Kronuz/queue) &middot; depends on: none
 - **What it is:** A header-only, bounded, blocking, double-ended MPMC queue.
 - **Header / target:** `#include "queue.h"`; CMake target `queue::queue`; C++20.
-- **How it works:** `queue::Queue<T, Container>` wraps a `std::deque` with one mutex, separate producer and consumer condition variables, and an atomic item count. Pushes and pops can block forever, return immediately, or wait for a specified number of seconds. `end()` rejects new pushes while allowing consumers to drain; `finish()` rejects all operations and wakes waiters. `QueueSet<Key>` adds uniqueness using a list and hash map.
+- **How it works:** `queue::Queue<T, Container>` wraps a `std::deque` with one mutex, separate producer and consumer condition variables, and an atomic item count. The mutex also guards counts of blocked poppers and pushers, and a push or pop calls `notify_one` only when the matching count is non-zero, so an unbounded queue never touches its push-side condition variable. Pushes and pops can block forever, return immediately, or wait for a specified number of seconds; an untimed wait is a plain predicate wait with no polling and no clock read. `end()` rejects new pushes while allowing consumers to drain; `finish()` rejects all operations and wakes waiters. `QueueSet<Key>` adds uniqueness using a list and hash map.
 - **Key API:**
   - `queue::Queue<T, Container = std::deque<T>>`
   - `Queue(hard_limit = -1, soft_limit = -1, threshold = -1)`
@@ -1126,7 +1138,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Consumers need FIFO and LIFO access or per-operation timeouts.
   - Shutdown must distinguish draining from immediate termination.
 - **Do not use it when / gotchas:**
-  - All queue mutation is mutex-serialized; it is not a lock-free throughput queue.
+  - All queue mutation is mutex-serialized; it is not a lock-free queue. It is on par with or faster than a plain mutex, condition variable and deque from 1x1 to 8x8 producers and consumers (`benchmark/bench.cc`).
   - Timeout values are seconds as `double`: negative blocks forever, zero is non-blocking.
   - `end()` rejects pushes but still permits pops until the queue is empty.
 
@@ -1195,7 +1207,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Tasks scheduled beyond the wheel horizon are silently discarded unless trace hooks are enabled.
   - The wheel requires the `stash` single-consumer traversal model.
   - `clear()` is one CAS and costs the walk nothing, but the entry and the task stay in the wheel until its slot drains. Replacing a deadline (the debouncer does it on every touch) is `clear()`, a new task, and an `add`; a task that holds a large payload or a `shared_ptr` to a closing object is pinned until then. Keep one wheel per host, not per object; the geometry (24 h, 1 ms) is fixed in `SchedulerQueue`.
-  - `add` takes the scheduler's mutex and notifies when the new task is due before the thread's current wakeup. Each `add` and `clear` also reads the clock.
+  - `add` places the task without a lock and takes the scheduler's mutex only to signal: when the worker is sleeping and the new task is due before its published wakeup. While the worker is awake no signal is sent. The worker looks at the wheel once more under the mutex after it announces its sleep, so a task added between its last look and its wait is never missed. Each `add` and `clear` also reads the clock.
   - Scheduler execution and task callbacks can allocate through `shared_ptr` and the thread pool.
 
 ### atomic-shared-ptr
@@ -1230,7 +1242,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/allocators](https://github.com/Kronuz/allocators) &middot; depends on: none
 - **What it is:** Allocation tracking and single-object pooling, plus independent owning resource accounts, reservation bookkeeping and optional deferred cleanup.
 - **Header / target:** `#include "allocators.h"`, target `allocators::allocators`; resource headers under `allocators/`, target `allocators::resources`; optional POSIX `allocators/retirement.h`, target `allocators::retirement`; C++20.
-- **How it works:** `vanilla_allocator` delegates allocation and deallocation to the library implementation without tracking. `tracked_allocator` records allocation totals, exposed through `total_allocated()` and `local_allocated()`. `allocator<T, Allocator>` adapts either backend to the standard allocator interface. `memory_pool_allocator<T>` stores blocks in a `std::deque`, reuses freed single-object blocks through an intrusive free list, and rejects allocations other than exactly one object.
+- **How it works:** `vanilla_allocator` delegates allocation and deallocation to the library implementation without tracking. `tracked_allocator` records allocation totals, exposed through `total_allocated()` and `local_allocated()`. `allocator<T, Allocator>` adapts either backend to the standard allocator interface. `memory_pool_allocator<T>` holds a `shared_ptr` to a pool family with one size class per block size: chunked storage, a bump pointer and a LIFO free list. It rejects allocations other than exactly one object. Every copy and rebind shares the family, so `A<T>(A<U>(a)) == a`, the converting constructor is `noexcept` and allocation-free, and container assignment and swap propagate the pool (`propagate_on_container_*` are `true_type`, `is_always_equal` is `false_type`). A container copy gets a new pool.
 - **Key API:**
   - `allocators::vanilla_allocator::{allocate, deallocate}`
   - `allocators::tracked_allocator::{allocate, deallocate}`
@@ -1255,8 +1267,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - A container repeatedly allocates and frees one fixed-size object type.
   - Explicitly admitted allocations must survive their initiating account facade, or final owner release must enqueue bounded cleanup.
 - **Do not use it when / gotchas:**
-  - `memory_pool_allocator<T>` only accepts `allocate(1)` and is not thread-safe.
-  - The pool retains its backing `std::deque` storage until allocator destruction.
+  - `memory_pool_allocator<T>` only accepts `allocate(1)` and is not thread-safe: use all allocators of one pool from one thread at a time, with a happens-before edge at each hand-over. Copying a container to another thread is safe; sharing an allocator is not. Builds without `NDEBUG` (or with `ALLOCATORS_POOL_CHECK`) detect overlapping use and call `allocators::set_pool_misuse_handler` (abort by default); it finds overlap in time, not a missing hand-over, so run such code under TSan too.
+  - The pool keeps its chunks until the last allocator copy or rebind of its family is gone.
   - `tracked_allocator` counters are instrumentation, not a synchronization mechanism.
   - Resource-only targets do not build or link the legacy allocation overrides. Independent byte-account construction allocates fixed shared state outside its own payload quota; successful steady admission allocates no bookkeeping.
   - Reservation books are single-executor and outlive their capabilities. Unresolved destruction preserves debt; durable proofs and protected-pool policy remain in the caller.
@@ -1359,7 +1371,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/datetime](https://github.com/Kronuz/datetime) &middot; depends on: `strict-stox`
 - **What it is:** A C++17 parser and formatter for ISO-8601 dates, times, time zones, date math, and numeric timestamps.
 - **Header / target:** `#include "datetime.h"`; CMake target `datetime::datetime`; C++17.
-- **How it works:** The compiled implementation validates and parses date/time strings with regular expressions, converts between calendar structures, `time_t`, system-clock points, and floating-point timestamps, and formats ISO-8601 output. `Datetime::tm_t` represents calendar fields with fractional seconds and UTC state; `clk_t` represents time or durations with a signed zone offset. It uses exceptions derived from `std::runtime_error` for invalid input and performs no concurrency synchronization.
+- **How it works:** The compiled implementation parses ISO-8601 with one hand-written scanner template shared by the filling and the validating overload, so `Iso8601Parser(str, tm)`, `Iso8601Parser(str)`, `isDatetime` and `DatetimeParser` agree on every input. Fixed-width fields are read as plain digits; looser forms (`/` or space separators, 1-digit hours, `,` fractions) and the `|| date math` suffix go through a second hand scanner. Date math is 64-bit, a UTC offset is one integer add, and `to_tm_t` uses integer civil-from-days with no libc time-zone state. It converts between calendar structures, `time_t`, system-clock points, and floating-point timestamps, and formats ISO-8601 output into a stack buffer. `Datetime::tm_t` represents calendar fields with fractional seconds and UTC state; `clk_t` represents time or durations with a signed zone offset. It uses exceptions derived from `std::runtime_error` for invalid input and performs no concurrency synchronization.
 - **Key API:**
   - `Datetime::DatetimeParser`, `Iso8601Parser`
   - `Datetime::processDateMath`, `computeDateMath`, `computeTimeZone`
@@ -1383,6 +1395,10 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Invalid input can throw `DatetimeError` subclasses; callers must handle it.
   - `tm_t` and `clk_t` are value structures, not synchronized shared state.
   - Floating-point timestamps have microsecond-oriented precision and are not arbitrary-precision time values.
+  - A negative or out-of-range hour, minute or second is `OUT_OF_RANGE`; a fraction needs 1 to 62 digits after the dot, else `ERROR`.
+  - A trailing `Z` is UTC in the loose formats too (`2020/01/02 03:04:05Z` sets `is_utc`).
+  - Supported years are 1 to `INT_MAX`. A date-math result outside them, or year 1 with an offset that reaches before 0001-01-01, throws `DatetimeError("Year is out of range")`. `+12M` from December throws `Month must be in 1..12`.
+  - `date_re` and `date_math_re` are exported for compatibility, unused by the library, and pay their static-initialization cost.
 
 ### residency
 [github.com/Kronuz/residency](https://github.com/Kronuz/residency) &middot; depends on: `task`, `crc32c`
@@ -1470,6 +1486,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - `normalize_path` is lexical and does not resolve symlinks or verify path existence.
   - Recursive operations can allocate and perform many syscalls; they are not atomic transactions.
+  - `copy_file` returns `0` only when every byte was written and the destination closed cleanly. A short write (full disk, `RLIMIT_FSIZE`, a quota reported at `close`) returns `-1` and leaves the partial destination in place; `EINTR` is retried.
   - Logging is a no-op unless `FS_TRACE_HEADER` is supplied, so failures must be checked through return values or exceptions.
 
 ### completion
@@ -1685,9 +1702,9 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### url-parser
 [github.com/Kronuz/url-parser](https://github.com/Kronuz/url-parser) &middot; depends on: `char-classify`
-- **What it is:** A header-only URL path and query parser with percent decoding and reusable cursor-based parsers.
-- **Header / target:** `#include "url_parser.h"`; target `url-parser::url-parser`; C++20; requires `char-classify`.
-- **How it works:** `urldecode()` decodes a byte buffer with configurable separators and plus handling. `QueryParser` walks key/value pairs while `PathParser` performs a backward pass to peel off the path, final ID, optional command, host, and slice components. The parsers return `std::string_view` slices into the input and can be rewound and reused.
+- **What it is:** A URL path and query parser with percent decoding and reusable cursor-based parsers.
+- **Header / target:** `#include "url_parser.h"`; target `url_parser::url_parser`; C++20. Compiled (`url_parser.cc`). It links `char-classify` publicly for include-path compatibility; the decoder itself does not use it.
+- **How it works:** `urldecode()` decodes a byte buffer with configurable separators and plus handling. It scans 16 bytes at a time (NEON, SSE2, or a 64-bit SWAR fallback) for the bytes that need work, stores each block as it scans, and advances the output only past the clean bytes, so input with nothing to decode is one bulk copy. `%XX` goes through a 256-entry nibble table; a `%` without two hex digits stays literal. `QueryParser` walks key/value pairs while `PathParser` performs a backward pass to peel off the path, final ID, optional command, host, and slice components; both `init()` calls fill their delimiter-mapped and plain buffers in one pass (`bench/bench_url.cc`). The parsers return `std::string_view` slices into the input and can be rewound and reused.
 - **Key API:**
   - `urldecode(input, plus, amp, colon, eq, encoded)`
   - `QueryParser::init(std::string_view)`, `next(...)`, `get()`, `rewind()`
@@ -1713,7 +1730,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/compressors](https://github.com/Kronuz/compressors) &middot; depends on: none
 - **What it is:** A C++20 static library exposing interchangeable deflate, LZ4, and Zstandard buffer codecs plus deflate/LZ4 file-descriptor streaming.
 - **Header / target:** `#include "compressor_deflate.h"`, `#include "compressor_lz4.h"`, or `#include "compressor_zstd.h"`; target `compressors::compressors`; C++20; requires zlib, lz4, and zstd.
-- **How it works:** Each codec has a CRTP block-streaming base and matching data classes, while free functions cover whole-buffer use. Deflate can emit raw deflate or gzip; LZ4 uses a sequence of length-prefixed blocks; Zstd emits standard frames. Deflate and LZ4 also stream file descriptors through EINTR-safe I/O helpers. Reusable data objects support `reset()` to reuse scratch buffers.
+- **How it works:** Each codec has a CRTP block-streaming base and matching data classes, while free functions cover whole-buffer use. Deflate can emit raw deflate or gzip; LZ4 uses a sequence of length-prefixed blocks; Zstd emits standard frames. Deflate and LZ4 also stream file descriptors through EINTR-safe I/O helpers. Reusable data objects support `reset()` to reuse scratch buffers. `compress_lz4` and `decompress_lz4` emit and accept the same bytes as the streaming classes but run their own loop: no zeroed 256 KB ring, per-block string or digest per call, and the first 256 KB go straight from (or into) the caller's buffer (`bench/bench_lz4.cc`). `decompress_lz4` sizes its buffers by what the blocks decode to, never by what the headers claim, so hostile input cannot reserve memory out of proportion to its size.
 - **Key API:**
   - `compress_deflate(std::string_view)`, `decompress_deflate(std::string_view)`
   - `compress_lz4(std::string_view)`, `decompress_lz4(std::string_view)`
@@ -1900,7 +1917,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/docset](https://github.com/Kronuz/docset) &middot; depends on: none
 - **What it is:** Sets of 32-bit document ordinals (a dense `bitset`, a `sorted_set`, and a chunked `set`) plus the `doc_iterator` concept that search-engine posting lists, scorers, and filters share.
 - **Header / target:** `#include "docset.hh"`; target `docset::docset`; header-only; C++20.
-- **How it works:** `set` splits ids into 64Ki chunks, each a sorted array of 16-bit low halves (up to 4096) or an 8 KiB bitmap, with cached cardinality. Array intersection and difference walk 8-lane blocks with SSE4.2 `pcmpestrm`, union is a bitonic vectorized merge, and bitmap operations fuse with popcount (AVX2 behind a runtime check). Against CRoaring the median ratio stays at or below 1.14 from density 1e-6 to 0.5.
+- **How it works:** `set` splits ids into 64Ki chunks, each a sorted array of 16-bit low halves (up to 4096) or an 8 KiB bitmap, with cached cardinality. Array intersection and difference walk 8-lane blocks with SSE4.2 `pcmpestrm`, union is a bitonic vectorized merge, and bitmap operations fuse with popcount (AVX2 behind a runtime check). Against CRoaring the median ratio stays at or below 1.14 from density 1e-6 to 0.5. Point `test()` is a branchless lower bound, and a small bitmap AND/ANDNOT result extracts two bits per word without a data-dependent branch (`bench/cmp_bench.cc`).
 - **Key API:**
   - `set::from_sorted(universe, docs)`, `a & b`, `a | b`, `a - b`, `count()`, `test(d)`, `for_each(f)`
   - `begin_iteration()` returning a `doc_iterator`: `doc()`, `next()`, `advance(target)`, `cost()`, ending at `no_more_docs`
@@ -2044,7 +2061,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/cartesian](https://github.com/Kronuz/cartesian) &middot; depends on: none
 - **What it is:** C++ geodesy and 3-vector library converting latitude, longitude, and ellipsoid height to geocentric Cartesian coordinates on WGS84.
 - **Header / target:** `#include "cartesian.h"`; CMake target `cartesian::cartesian`; C++20.
-- **How it works:** Compiled, not header-only, with datum and ellipsoid tables in `cartesian.cc`. Geodetic inputs are converted to geocentric coordinates and non-WGS84 inputs are transformed to WGS84 with a seven-parameter Helmert transform. `Cartesian` also supplies vector algebra, normalization, angular distance, formatting, and `std::hash`; operations use `double`.
+- **How it works:** Compiled, not header-only, with datum and ellipsoid tables in `cartesian.cc`. Geodetic inputs are converted to geocentric coordinates and non-WGS84 inputs are transformed to WGS84 with a seven-parameter Helmert transform. `Cartesian` also supplies vector algebra, normalization, angular distance, formatting, and `std::hash`; operations use `double`. `std::hash<Cartesian>` mixes the bits of the scaled coordinates and the SRID (0.0 and -0.0 hash alike) with no string formatting (`bench/bench.cc`).
 - **Key API:**
   - `Cartesian(double lat, double lon, double height, Units units, int SRID = WGS84)`
   - `Cartesian(double x, double y, double z, int SRID = WGS84)`
@@ -2071,12 +2088,13 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - It models a unit-sphere direction for some operations, not full ellipsoidal geodesics.
   - Only the built-in SRIDs are supported: WGS84, NAD83/27, OSGB36, TM75, TM65, ED79, ED50, TOYA, DHDN, OEG, AGD84, SAD69, PUL42, MGI1901, GGRS87, and WGS72.
   - Unsupported SRIDs, latitude outside ±90 degrees, and zero-norm normalization throw `CartesianError`.
+  - `std::hash<Cartesian>` values are not stable across versions; do not persist them.
 
 ### htm
 [github.com/Kronuz/htm](https://github.com/Kronuz/htm) &middot; depends on: `cartesian`
 - **What it is:** C++ implementation of Hierarchical Triangular Mesh spatial indexing over the unit sphere.
 - **Header / target:** `#include "htm.h"`; CMake target `htm::htm`; C++20.
-- **How it works:** HTM recursively subdivides eight spherical root triangles into four children per level. A trixel has an `N` or `S` name followed by base-4 digits and a corresponding 64-bit ID; ancestor names are prefixes and ancestor ID ranges cover descendant trixels. The compiled implementation also provides spherical-cap constraints, corner geometry, range conversion, and boolean set operations over sorted trixels or ranges.
+- **How it works:** HTM recursively subdivides eight spherical root triangles into four children per level. A trixel has an `N` or `S` name followed by base-4 digits and a corresponding 64-bit ID; ancestor names are prefixes and ancestor ID ranges cover descendant trixels. The compiled implementation also provides spherical-cap constraints, corner geometry, range conversion, and boolean set operations over sorted trixels or ranges. `getId(Cartesian)` runs its 25-level descent on plain three-double vectors with the same operation order as `Cartesian`, so ids are bit-identical without building an object per midpoint (`bench/bench.cc`).
 - **Key API:**
   - `HTM::getTrixelName(const Cartesian&)`, `getTrixelName(uint64_t)`
   - `HTM::getId(const Cartesian&)`, `getId(std::string_view)`
@@ -2138,7 +2156,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/soundex](https://github.com/Kronuz/soundex) &middot; depends on: `strings`
 - **What it is:** Header-only C++20 CRTP library providing refined language-specific Soundex encoders.
 - **Header / target:** `#include "english_soundex.h"`, `#include "french_soundex.h"`, `#include "german_soundex.h"`, or `#include "spanish_soundex.h"`; CMake target `soundex::soundex`; C++20.
-- **How it works:** `Soundex<Impl>` supplies the common cached-code API and each language subclass supplies its phonetic rules inline. The variants are refined encoders, not classic four-character Soundex: vowels are retained and codes are not truncated. The supported algorithms are refined English Soundex, Soundex 2 for French, Kölner Phonetik for German, and the PostgreSQL Spanish Soundex variant.
+- **How it works:** `Soundex<Impl>` supplies the common cached-code API and each language subclass supplies its phonetic rules inline. The variants are refined encoders, not classic four-character Soundex: vowels are retained and codes are not truncated. The supported algorithms are refined English Soundex, Soundex 2 for French, Kölner Phonetik for German, and the PostgreSQL Spanish Soundex variant. `SoundexEnglish` encodes in one pass through a 256-entry class table (`bench/bench.cc`).
 - **Key API:**
   - `Soundex<Impl>`
   - `SoundexEnglish`, `SoundexFrench`, `SoundexGerman`, `SoundexSpanish`
@@ -2167,7 +2185,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/string-similarity](https://github.com/Kronuz/string-similarity) &middot; depends on: `soundex`, `strings`
 - **What it is:** Header-only C++20 collection of normalized string similarity and distance metrics.
 - **Header / target:** Include the specific metric header, such as `#include "levenshtein.h"`, `#include "jaro.h"`, `#include "jaro_winkler.h"`, `#include "lcsubstr.h"`, `#include "lcsubsequence.h"`, `#include "jaccard.h"`, `#include "sorensen_dice.h"`, or `#include "phonetic_metric.h"`; CMake target `string_similarity::string_similarity`; C++20.
-- **How it works:** `StringMetric<Impl>` provides a common bound-or-unbound interface with `distance()` and `similarity()` in `[0,1]`. Levenshtein uses normalized edit distance, Jaro uses matched characters and transpositions, Jaro-Winkler adds a common-prefix boost, LCSubstr and LCSubsequence compute longest contiguous and non-contiguous matches, Jaccard compares character sets, and Sørensen-Dice compares character bigrams. `PhoneticMetric<Encoder, Metric>` encodes both inputs before delegating to another metric; the metrics are inline templates.
+- **How it works:** `StringMetric<Impl>` provides a common bound-or-unbound interface with `distance()` and `similarity()` in `[0,1]`. Levenshtein uses normalized edit distance: with unit costs it trims the common prefix and suffix and runs Myers' bit-vector algorithm, 64 cells per word operation; other costs use the weighted dynamic program. Jaro is the standard algorithm (window `floor(max(|a|, |b|) / 2) - 1`, transpositions `floor(out-of-order / 2)`), with the window search done as a mask operation. Jaro-Winkler is its own metric over `Jaro::jaro` and adds the shared-prefix boost `jd + l * p * (1 - jd)` above the threshold `bt`. LCSubstr and LCSubsequence compute longest contiguous and non-contiguous matches, Jaccard compares character sets, and Sørensen-Dice compares character bigrams as multisets. `PhoneticMetric<Encoder, Metric>` encodes both inputs before delegating to another metric. Up to 64 characters nothing is allocated per call; longer strings reuse thread-local scratch (`bench/bench.cc`).
 - **Key API:**
   - `StringMetric<Impl>`
   - `Metric(std::string_view fixed = {}, bool icase = true)`
@@ -2190,7 +2208,9 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Comparing names using Jaro-Winkler or phonetic encodings.
   - Measuring set, bigram, substring, subsequence, or edit similarity.
 - **Do not use it when / gotchas:**
-  - Metrics default to case-insensitive comparison by upper-casing inputs; pass `false` when case matters.
+  - Metrics default to case-insensitive comparison (ASCII upper-case folding); pass `false` when case matters.
+  - A derived metric does not inherit dispatch: the CRTP base calls the kernel of the class named in `StringMetric<...>`. A new metric that derives from another must name itself there, as `Jaro_Winkler` does.
+  - Levenshtein with both costs 0 returns distance 0.
   - Empty inputs produce distance `1` and similarity `0`, including the identical-empty case according to the documented behavior.
   - Jaccard operates on character sets and Sørensen-Dice on character bigrams, not word tokens.
 
@@ -2280,7 +2300,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/boolean-parser](https://github.com/Kronuz/boolean-parser) &middot; depends on: none
 - **What it is:** C++17 lexer and parser that converts boolean query text into an RPN token stream and optionally an AST.
 - **Header / target:** `#include "BooleanParser.h"`; CMake target `boolean_parser::boolean_parser`; C++17.
-- **How it works:** The constructor lexes input with a byte-oriented lexer and applies Dijkstra's shunting-yard algorithm to produce a `std::list<Token>` RPN queue. `Parse()` consumes the queue to build typed AST nodes. Operators are precedence-ordered as `NOT > AND > MAYBE > XOR > OR`, and adjacent terms receive an implicit `OR`.
+- **How it works:** The constructor copies the input, lexes it by pointer (each lexeme is built once when its token is returned), and applies Dijkstra's shunting-yard algorithm to produce an RPN queue held in a vector with a head index. `Parse()` consumes the queue to build typed AST nodes. Operators are precedence-ordered as `NOT > AND > MAYBE > XOR > OR`, and every binary operator is left associative. Two operands with no operator between them (a term or `)`, then a term, `(` or `NOT`) are joined by an implicit `OR` with the same loosest precedence as an explicit one: `a & b c` is `(a AND b) OR c`, and `NOT a b` is `(NOT a) OR b`.
 - **Key API:**
   - `explicit BooleanTree(std::string_view input)`
   - `Parse()`
@@ -2306,7 +2326,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - Constructing or consuming the RPN queue mutates the tree; call `Parse()` before consuming it if you need the AST.
   - Quoted phrases and bracket lists are single `Id` tokens with delimiters preserved.
-  - Malformed input throws `LexicalException` or `SyntacticException`; oversized tokens and unclosed delimiters are rejected.
+  - Malformed input throws `LexicalException` or `SyntacticException`; oversized tokens, unclosed delimiters and operands missing around an operator (`a NOT`, `a ()`) are rejected.
+  - Each term and operator is one heap-allocated `unique_ptr<BaseNode>` in the AST, which is most of what `Parse()` costs (`bench/bench_bool.cc`).
 
 ### logger
 [github.com/Kronuz/logger](https://github.com/Kronuz/logger) &middot; depends on: `scheduler`, `term-color`
@@ -2339,6 +2360,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - It is not a general structured logging framework with arbitrary sinks and routing.
   - A delayed message must be cleared or unlogged according to the intended macro behavior before the operation completes.
   - Call `Logging::finish()` during orderly shutdown to drain and stop the logging thread.
+  - A routine, deferred or `clears` line due within 1 ms of the call is written 1 ms after it, so producers rarely signal the LOG thread (`bench/lg.cc`). A hard crash inside that millisecond loses the line. Lines due in the order they were logged are written in that order.
+  - The timestamp's local time is cached per thread per whole second and keyed on `TZ`, so a `TZ` change takes effect at the next line.
 
 ### metrics
 [github.com/Kronuz/metrics](https://github.com/Kronuz/metrics) &middot; depends on: nothing first-party
@@ -2359,6 +2382,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Counting events and timing operations in a library without a metrics framework.
 - **Do not use it when / gotchas:**
   - Bucket bounds are fixed; it is not a general-purpose histogram.
+  - `AtomicCounter::add` is one `fetch_add` while the counter is below 2^63 and the amount below 2^32, with a clamping CAS loop otherwise, so contended adds cost about what a bare `fetch_add` costs (`bench/counter_bench.cc`). Saturation is exact. Use a counter either with `add` or with `observe_max`, not both concurrently.
 
 ### term-color
 [github.com/Kronuz/term-color](https://github.com/Kronuz/term-color) &middot; depends on: `static-string`
