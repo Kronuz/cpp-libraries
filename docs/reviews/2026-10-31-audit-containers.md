@@ -24,7 +24,7 @@
 | CA9 metrics: "1 and 2 threads were unchanged" is false | closed | `metrics:8c8ad90` | - (documentation) |
 | CA10 queue: x86 below the naive baseline at 2+ threads | closed | `queue:44211ce` | - (performance; re-check CA1) |
 | CA11 hygiene: local merged branches | closed | - | - (origin has only `main` in all five repos) |
-| RC1 catalog still carries the withdrawn `AtomicCounter` claim | open | - | - (`cpp-libraries:AGENTS.md:2390` unchanged; no `ContendedCounter` in the Key API) |
+| RC1 catalog still carries the withdrawn `AtomicCounter` claim | closed (docs; the metrics entry describes both counters) | `cpp-libraries:455fae2` | - |
 | RC2 two proof steps checked only at 8 bits or one schedule | open | - | - (`metrics` main is still `50d8bb8`, the re-checked head) |
 
 CA9, CA10 and CA11 are documentation, timing and hygiene findings: no test can fail on them, and they count as closed

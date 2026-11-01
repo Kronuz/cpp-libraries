@@ -2624,7 +2624,12 @@ Working rules, in priority order.
 4. **Prove performance claims.** Several of these libraries exist specifically because a
    generic answer was too slow, and some carry benchmarks (`hashes` has one comparing hash
    families for perfect-hash dispatch). If you optimize, measure before and after on a
-   realistic workload and put the numbers in the commit message.
+   realistic workload and put the numbers in the commit message. The method (frozen-copy
+   differential, oracles, mutants, A/A, both instruction sets, the machines) is in
+   [docs/PERFORMANCE.md](docs/PERFORMANCE.md); the conventions are in "Benchmarks, SIMD and
+   verification" below; past surveys and audits, each with its open findings, are in
+   [docs/reviews/](docs/reviews/), and the lessons they taught in
+   [docs/LESSONS.md](docs/LESSONS.md).
 5. **Preserve the constexpr property.** `char-classify`, `hashes`, `constexpr-phf`,
    `ctrie`, `static-string` and `enum-reflection` are valuable precisely because they work
    during constant evaluation. An innocuous-looking change can quietly push a function to
@@ -2632,6 +2637,62 @@ Working rules, in priority order.
 6. **Respect the stated non-goals.** Several READMEs say plainly what a library is not:
    `hashes` is not cryptographic, `repr` is not reversible, `split` is not a CSV parser,
    `bloom-filter` cannot remove. Do not fix these by expanding scope. Write a new library.
+
+## Benchmarks, SIMD and verification
+
+The conventions a performance or behavior change follows. [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
+has the method behind them.
+
+1. **Bench option and layout.** Benchmarks live in `bench/` and build only with
+   `<LIB>_BUILD_BENCH=ON`, the form allocators, datetime, double-metaphone, escape, http, logger,
+   md5, random, repr, strict-stox, string-similarity, strings, term-color and threadpool use. A
+   comparator that is not commonly installed is fetched (FetchContent at a pinned tag) or found
+   (`find_package`) by the bench target alone, under `<LIB>_BENCH_REFERENCE=ON` (bitpack and docset
+   use it); neither option touches the library target, and no comparator is vendored. A library
+   with another spelling renames it on its next change and keeps the old name as an alias for one
+   cycle: `BOOLEAN_PARSER_BENCH`, `COMPRESSORS_BENCH`, `ENUM_REFLECTION_BENCH`, `SCHEDULER_BENCH`,
+   `URL_PARSER_BENCH` (and `URL_PARSER_BENCH_ADA` to `URL_PARSER_BENCH_REFERENCE`),
+   `CRC32C_BUILD_BENCHMARKS`, `SHA256_BUILD_BENCHMARKS`. A bench that builds by target name only
+   (bloom-filter, flat-map, generation-cache, metrics, queue and others) gains the option on its
+   next change, and queue's vendored concurrentqueue becomes a bench-only fetch. Existing
+   `benchmarks/` directories stay where they are.
+2. **SIMD knob.** Every SIMD path has a scalar or SWAR fallback selected by `<LIB>_NO_SIMD`
+   (`CHARS_NO_SIMD`, `BITPACK_NO_SIMD`, `DOCSET_NO_SIMD`, `URL_PARSER_NO_SIMD`,
+   `HTTP_PARSER_NO_SIMD`), and a CTest target reruns the SIMD-covering tests with it, named
+   `<test>_portable` (the existing `_swar` names stay). Guards name each architecture
+   (`__aarch64__`, `__SSE2__`); a feature above SSE2 is chosen at run time. A change to an
+   architecture-sensitive path reports arm64 and x86-64 numbers, and none of its rows may be more
+   than 3% slower on either.
+3. **Differential test.** A frozen copy of the old code in `test/` (namespace or symbols renamed,
+   a "never edit" comment), CTest `<lib>_diff`, random and edge inputs, every byte value at every
+   position, sizes around every block boundary. An independent oracle test sits beside it
+   (`<lib>_oracle` or `correctness`): the differential shows nothing else changed, the oracle
+   shows the answer is right. `tools/mutants.py` lists the mutants the tests must kill.
+4. **Behavior fixes.** A change of results is a fix, never a side effect of a speedup. The correct
+   behavior comes from an independent oracle (a spec, a reference library, a brute-force
+   reference in the test, the library's own documentation), named in the commit body. The
+   differential lists the exact input classes that change and asserts old != new and
+   new == oracle inside them, old == new everywhere else. The fix adds an exhaustive (small
+   domain) or property test, a CTest test that fails with the fix reverted (the commit body says
+   the revert was run) and a mutant for it, and costs no bench row more than 3%. The README and
+   AGENTS.md describe the new behavior; the CHANGELOG gives the old one; consumers get a line in
+   the catalog's upgrade note.
+5. **Fuzz.** `fuzz/fuzz_<what>.cc` under `<LIB>_FUZZ`, plus a replay CTest test over a committed
+   corpus.
+6. **C++ standard and headers.** A library that declares C++17 builds its tests at C++17 in CI
+   (`CMAKE_CXX_STANDARD=17`), and every public header compiles alone in its own translation unit
+   at the target's standard.
+7. **CHANGELOG and README.** CHANGELOG.md in Keep a Changelog form, newest first, dated; each
+   entry has the old and new behavior, the oracle, the changed input classes, the numbers with
+   machine and A/A spread, and the commit. README is present tense: what the library does now,
+   its contract and costs, gotchas as facts; its "Performance" section gives the current numbers,
+   the bench command and both machines, and no history. Method and rejected variants go to
+   `docs/perf/<topic>.md`. Code comments are present tense and one or two lines.
+8. **Delivery.** Never commit a build directory (`.gitignore` covers `build*/`); `[skip ci]` only
+   for commits that change docs or comments alone, never CMake or code; work lands on the default
+   branch (`master` for btree and constexpr-phf) with CI green on every job, and side branches
+   are deleted; consumers' pins move in waves, each green before the next, with the catalog's
+   upgrade note.
 
 ## Provenance
 
