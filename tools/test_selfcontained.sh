@@ -46,5 +46,14 @@ has "no public headers"; check "a tree with no headers is not an error" $((statu
 out="$(CXX=no-such-compiler "$tool" -s 20 "$fixture" 2>&1)"; status=$?
 check "an unusable compiler fails" $((status == 1 ? 0 : 1))
 
+# CI downloads the script without the executable bit and runs it with bash.
+copy="$(mktemp -d)"
+cp "$tool" "$copy/selfcontained.sh"
+chmod -x "$copy/selfcontained.sh"
+out="$(bash "$copy/selfcontained.sh" -q -s 20 -x 'no_guard*' -x 'needs_*' "$fixture" 2>&1)"; status=$?
+rm -rf "$copy"
+check "a copy without the executable bit runs" $status
+hasf "selfcontained: 3 ok, 0 failed"; check "... and checks the headers" $?
+
 echo "$failures failed"
 [ $failures -eq 0 ]

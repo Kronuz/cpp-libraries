@@ -141,7 +141,7 @@ export SC_CXX SC_OUT SC_INC SC_FLAGS
 
 for std in "${stds[@]}"; do
 	for header in "${headers[@]}"; do printf '%s\0%s\0' "$std" "$header"; done
-done | xargs -0 -n 2 -P "$jobs" "$self" --one
+done | xargs -0 -n 2 -P "$jobs" bash "$self" --one
 
 ok=0 failed=0
 for std in "${stds[@]}"; do
