@@ -36,7 +36,8 @@ inline limbs and 33,000 at 1.
 
 **Done.** Both libraries are on `master` with CI green on every job, the README tables are measured on
 two machines, and the open work is written down in each repository. uinteger_t takes 1.2 to 2.3 times
-GMP 6.3.0's time on most operations and prints decimal faster than GMP up to 4,096 bits; base-x encodes
+GMP 6.3.0's time on most operations and prints decimal faster than GMP up to 4,096 bits (GMP is faster
+from 16,384 bits); base-x encodes
 a 32-byte base58 key in 74 ns and decodes it in 72 on an Apple M1 Pro. Xapiand's `xapiand` branch pins
 both heads (`Xapiand:c9c6fa77`); its `master` still pins the commits from before the campaign.
 
@@ -118,10 +119,11 @@ quotient-only division) against the original header (`85316dd`), Apple M1 Pro, A
 
 Against GMP 6.3.0 and Boost.Multiprecision 1.92's `cpp_int` (Apple M1 Pro; the README's table at
 `6ba8ffa`, its division rows at `afdded1`): uinteger_t takes 1.2 to 2.3 times GMP's time on most rows,
-prints decimal faster than GMP up to 4,096 bits (2.83 against 4.05 us at 4,096), and takes 3.4 times
+prints decimal faster than GMP up to 4,096 bits (2.83 against 4.05 us at 4,096; GMP is faster from 16,384
+bits, 291 against 207 us at 65,536; nothing between was measured), and takes 3.4 times
 GMP's time for a new 4,096-bit sum, where allocating the result costs more than the addition. Boost takes
 2 to 4 times uinteger_t's time at 256 bits and 3 (sums) to 118 (decimal printing) times at a million bits,
-but parses decimal faster up to 4,096 bits. The Intel Core i9-9980HK (Apple clang 17) shows the same
+but parses decimal faster up to 4,096 bits (uinteger_t is faster from 16,384). The Intel Core i9-9980HK (Apple clang 17) shows the same
 pattern.
 
 base-x, base58 in ns per call (Apple M1 Pro, Apple clang 21; Intel Core i9-9980HK, Apple clang 17; best
