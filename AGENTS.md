@@ -586,14 +586,15 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Key API:**
   - `template <typename ItemType, size_t NumItems> class phf`
   - `make_phf(const ItemType (&items)[NumItems])`
-  - lookup via `operator()` returning a slot, `phf::npos` when absent
+  - `find(key)` returns the key's index in the list given to `make_phf`, or `phf::npos` when absent; `count(key)` is 0 or 1; `at(key)` and `operator[]` throw `std::out_of_range` when absent
 - **Example:**
   ```cpp
   #include "phf.hh"
 
   constexpr int keys[] = {11, 42, 99};
   constexpr auto table = phf::make_phf(keys);
-  static_assert(table(42) < 3);
+  static_assert(table.find(42) < 3);
+  static_assert(table.find(7) == phf::npos);
   ```
 - **Use it when:**
   - Dispatching on a fixed set of integer ids, opcodes or hashed strings.
