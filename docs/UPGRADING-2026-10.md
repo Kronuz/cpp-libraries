@@ -18,11 +18,11 @@ numbers and oracles, are in each library's `CHANGELOG.md`.
 
 **Two changes need an owner decision when Xapiand's pins move, because Xapiand's users see
 them:** boolean-parser regroups queries and rejects some it accepted, and datetime changes which
-strings parse as dates, and so how schema detection types a new field. Two more change what
-Xapiand returns or stores: string-similarity changes the order of similarity-sorted results, and
-htm changes the id of a point near a cell edge on builds that fuse multiply-adds (arm64, x86 with
-FMA), so an index written by such a build needs those points reindexed. The other changes fix
-crashes, hangs, wrong answers and timing.
+strings parse as dates, and so how schema detection types a new field. Three more change what
+Xapiand returns or stores: string-similarity changes the order of similarity-sorted results, htm
+changes the id of a point near a cell edge on builds that fuse multiply-adds (arm64, x86 with
+FMA), so an index written by such a build needs those points reindexed, and msgpack merges a
+document's repeated keys. The other changes fix crashes, hangs, wrong answers and timing.
 
 ## Summary
 
@@ -32,6 +32,7 @@ crashes, hangs, wrong answers and timing.
 | [datetime](#datetime) | `fce3d4d` | `fe618d8`, `03f36fa`, `773205b` | Which strings parse; `+12M`; `is_utc`; fractions before 1970 | Xapiand: **owner decision** |
 | [string-similarity](#string-similarity) | `ddfb8d1` | `efba168`, `0939c0c`, `c0825ff` | Jaro, Jaro-Winkler, Dice, weighted Levenshtein, phonetic scores | Xapiand sort keys |
 | [htm](#htm) | `a0321ab` | `cf5177b`, `9006a84` | Ids of points near a cell edge on fusing builds | Xapiand geo index: reindex |
+| [msgpack](#msgpack) | `3c408cf` | `d054ea1`, `c913966` | Maps that repeat a key; growing arrays of maps | Xapiand documents |
 | [strict-stox](#strict-stox) | `f0f7374` | `7d7f5dd` | Input of 64 bytes or more parses | datetime, msgpack, storage, Detent, Xapiand |
 | [strings](#strings) | `62fb121` | `bb85615` | `indent`, empty-search `replace`, `hasupper` | fs, soundex, string-similarity, system, traceback, Detent, Xapiand |
 | [stringified](#stringified) | `c8c9033` | `1c1fb3e` | Copies no longer dangle; `c_str()` stays in bounds | fs, storage, Xapiand |
@@ -181,6 +182,27 @@ points to reindex are the ones whose id differs between the old and the new buil
 
 Detect: `test/golden.h` holds 396 points with their ids, 96 of them points a fusing build gets
 wrong; run the old and new `getId` over stored points on the build that wrote the index.
+
+## msgpack
+
+Start `3c408cf`, fixes `d054ea1` and `c913966`. Xapiand stores its documents as `MsgPack`.
+
+- A map that repeats a key is merged when it is first filled (a lookup, a walk, `hash()`,
+  `erase`): the last value wins in the position of the first occurrence, so
+  `{"a":1,"a":2,"b":3,"c":4}` is `{"a":2,"b":3,"c":4}`. It was `{"a":2,"b":3,"b":3}`: `c` was
+  lost, `b` repeated, and a later `erase(key)` dereferenced the end iterator. `hash()`,
+  `serialise()` and copies after the first fill follow the merged map; a map nothing has filled
+  serializes as it came. Documents without a repeated key are unchanged.
+- Pushing onto an array of maps after writing through one of its elements read freed memory: a
+  growing `std::vector<MsgPack>` copied its elements, because the move constructor was not
+  `noexcept`. It moves them.
+
+`unserialise`, `hash()` and `to_string()` are faster with identical results (`ca77ada`,
+`f2f9f78`, `987c111`). The CHANGELOG lists three known problems left for an owner decision: a
+fill that throws on a key that is not a string leaves the map half indexed, and `at(size_t)` and
+`to_string()` read such a key as a string.
+
+Detect: documents that repeat a key, and code that grows an array of maps after writing into it.
 
 ## strict-stox
 
@@ -402,7 +424,7 @@ These libraries changed between start and head with results identical to start, 
 differential test against a frozen copy of the old code: bitpack, char-classify (its new block
 scanners and escaping kernel serve escape and repr, whose output is unchanged), cuuid (wire bytes),
 docset, double-metaphone, enum-reflection (`enum_try_type` is new), escape, flat-map, fst, md5,
-msgpack, sha256, soundex, storage (the on-disk format), term-color, threadpool, unicode and
+sha256, soundex, storage (the on-disk format), term-color, threadpool, unicode and
 url-parser. metrics' `AtomicCounter` is start's compare-exchange loop again, and
 `ContendedCounter` is a new type. bloom-filter keeps `BloomFilter<N>` bit for bit;
 `FastBloomFilter<N>` and `BlockedBloomFilter<N>` are new and set different bits, so a bitset
