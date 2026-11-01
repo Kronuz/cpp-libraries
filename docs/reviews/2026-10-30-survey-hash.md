@@ -132,7 +132,7 @@ The 1 KiB and larger rows, and everything at 100 ns or more, are sound.
 ## LESSONS
 
 The lessons of this cluster are in [LESSONS.md](../LESSONS.md): [random](../LESSONS.md#random),
-[cuuid](../LESSONS.md#cuuid), [sha256](../LESSONS.md#sha256), [md5](../LESSONS.md#md5). Two are recorded only here:
+[cuuid](../LESSONS.md#cuuid), [sha256](../LESSONS.md#sha256), [md5](../LESSONS.md#md5). Two more are also under [hashes](../LESSONS.md#hashes):
 
 - Serial hash designs (one running multiply, FNV, wordwise) cannot use the multiplier throughput; wide lanes give 6-10x
   on long inputs but change the output, so decide the lane structure before the hash value is frozen in tables or on

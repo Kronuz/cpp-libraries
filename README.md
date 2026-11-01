@@ -243,6 +243,10 @@ in front of you.
 
 It is written for coding agents, but it is the same reference a person wants.
 
+How the libraries are measured and verified is in [docs/PERFORMANCE.md](docs/PERFORMANCE.md);
+the dated surveys and audits, each with the status of its findings, are in
+[docs/reviews/](docs/reviews/); what they taught is in [docs/LESSONS.md](docs/LESSONS.md).
+
 ## Background
 
 The design notes behind each library are being written up as the *Familiars* series on

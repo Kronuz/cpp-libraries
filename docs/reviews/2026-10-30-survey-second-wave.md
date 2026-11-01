@@ -110,7 +110,7 @@ deterministic count (a type that counts constructions, 1000 push_backs; probe no
 ## LESSONS
 
 The lessons for these libraries are in [bitpack](../LESSONS.md#bitpack), [hashes](../LESSONS.md#hashes) and
-[allocators](../LESSONS.md#allocators). Two from this survey are not recorded there:
+[allocators](../LESSONS.md#allocators). Two from this survey, also under [hashes](../LESSONS.md#hashes):
 
 - **One serial dependency chain caps a hash at latency / word.** A multiply-xorshift chain is ~6 cycles per 8 B (5 GB/s) no matter how simple; throughput comes from independent lanes (4-8), not from a lighter mix.
 - **"Fast on short keys" does not transfer to long ones, and vice versa.** A hash tuned for 4-8 B keyword dispatch ties XXH3 there and loses 8x at 4 KB; document the length range or provide both.
