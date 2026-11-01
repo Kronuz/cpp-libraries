@@ -2131,7 +2131,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/double-metaphone](https://github.com/Kronuz/double-metaphone) &middot; depends on: none
 - **What it is:** Compiled C++20 implementation of Lawrence Philips' Double Metaphone phonetic encoder.
 - **Header / target:** `#include "double_metaphone.h"`; CMake target `double_metaphone::double_metaphone`; C++20.
-- **How it works:** The implementation applies rule-based pronunciation handling for English spellings and common foreign readings. It emits a primary and alternate key using the phonetic alphabet `A B F H J K L M N P R S T W X 0`, where `0` represents the “th” sound. The implementation is compiled because the rule set is large; encoding is linear in the input length.
+- **How it works:** The implementation applies rule-based pronunciation handling for English spellings and common foreign readings. It emits a primary and alternate key using the phonetic alphabet `A B F H J K L M N P R S T W X 0`, where `0` represents the “th” sound. The implementation is compiled because the rule set is large; encoding is linear in the input length. `encode()` builds only the primary key and `encode_alternate()` only the alternate; the word is cleaned in one pass into a stack buffer (up to 118 bytes), so a dictionary word takes 61 ns on an Apple M4 Pro (`bench/bench.cc`).
 - **Key API:**
   - `DoubleMetaphone()`
   - `DoubleMetaphone(std::string_view word)`
@@ -2223,7 +2223,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/unicode](https://github.com/Kronuz/unicode) &middot; depends on: none
 - **What it is:** Unicode general categories, simple lowercase mappings, and lenient UTF-8 decoding and encoding (Unicode 17.0.0).
 - **Header / target:** `#include "unicode.hh"`; target `unicode::unicode`; header-only; C++20.
-- **How it works:** `tools/gen_tables.py` turns `UnicodeData.txt` into two-stage tables of 256-code-point blocks with identical blocks shared (75.8 KB), so every lookup is two constexpr array reads. Invalid or overlong UTF-8 decodes one byte at a time as Latin-1. The tables match Xapian 2.1.0's on all 1,114,112 code points, with the same category numbering.
+- **How it works:** `tools/gen_tables.py` turns `UnicodeData.txt` into two-stage tables of 256-code-point blocks with identical blocks shared (75.8 KB), so every lookup is two constexpr array reads. Invalid or overlong UTF-8 decodes one byte at a time as Latin-1. `next_utf8` decides ASCII with one inline comparison: English text decodes at 0.27 ns per code point on an Apple M4 Pro, random binary bytes at 4.1 ns (`bench/bench.cc`). The tables match Xapian 2.1.0's on all 1,114,112 code points, with the same category numbering.
 - **Key API:**
   - `category_of(c)` returning `unicode::category`, `tolower(c)`, `is_letter`, `is_mark`, `is_number`
   - `next_utf8(p, end)` (advances `p`), `append_utf8(out, c)`
@@ -2393,13 +2393,14 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/term-color](https://github.com/Kronuz/term-color) &middot; depends on: `static-string`
 - **What it is:** Header-only C++20 library for compile-time ANSI colors with runtime terminal-depth resolution.
 - **Header / target:** `#include "colors.h"` for named colors and `rgb()`/`brgb()`, `#include "color_tools.hh"` for runtime colors, and `#include "collapse.hh"` for resolution; CMake target `term_color::term_color`; C++20.
-- **How it works:** Named colors are `static_string` constants containing stacked ANSI 16-color, 256-color, and 24-bit truecolor escapes in that order. Compile-time concatenation makes expressions such as `RED + "text" + CLEAR_COLOR` constants. `collapse()` reduces stacked escapes to one depth, while `apply()` also handles TTY gating, `NO_COLOR`, and automatic/always/never policy; `color_tools.hh` supplies runtime HSV-to-RGB conversion and a runtime `color` class.
+- **How it works:** Named colors are `static_string` constants containing stacked ANSI 16-color, 256-color, and 24-bit truecolor escapes in that order. Compile-time concatenation makes expressions such as `RED + "text" + CLEAR_COLOR` constants. `collapse()` reduces stacked escapes to one depth in one pass (a 478-byte log line in 144 to 173 ns on an Apple M4 Pro), while `apply()` also handles TTY gating, `NO_COLOR`, and automatic/always/never policy; `resolve()` decides that policy once, so a sink that writes many lines does not read `NO_COLOR`, `COLORTERM` and `TERM` on every line (`bench/bench.cc`). `color_tools.hh` supplies runtime HSV-to-RGB conversion and a runtime `color` class.
 - **Key API:**
   - Named constants such as `RED`, `STEEL_BLUE`, `CLEAR_COLOR`, `NO_COLOR`
   - `rgb(r, g, b)`, `brgb(r, g, b)`, `rgba(...)`, `brgba(...)`
   - `hsv2rgb(h, s, v, r, g, b)`
   - `color::ansi()`, `color::ansi(bool bold)`
   - `collapse(std::string_view, depth)`, `apply(std::string_view, mode, target, bool isatty)`
+  - `resolve(mode, target, bool isatty)` returning a `policy`; `policy::apply(std::string_view)`
   - `detect_depth()`
 - **Example:**
   ```cpp
