@@ -29,3 +29,19 @@ jobs:
         run: pyrefly check --config tools/pyrefly.toml
       - name: Test
         run: python -m unittest discover -s tools -p 'test_*.py' -v
+
+  shell:
+    name: shell-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck tools/selfcontained.sh tools/test_selfcontained.sh
+      - name: Header check
+        run: bash tools/test_selfcontained.sh

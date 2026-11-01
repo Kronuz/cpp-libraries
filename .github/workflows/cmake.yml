@@ -30,6 +30,14 @@ on:
         description: Run the ThreadSanitizer job
         type: boolean
         default: true
+      headers:
+        description: Check that every public header compiles alone (tools/selfcontained.sh, GCC and Clang)
+        type: boolean
+        default: false
+      headers_skip:
+        description: Space-separated globs of headers to leave out of the headers check (.selfcontained-skip lists more)
+        type: string
+        default: ""
       asan_timeout_minutes:
         description: Timeout in minutes for the ASan and UBSan job
         type: number
@@ -161,3 +169,26 @@ jobs:
             cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -g" "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -g" ${{ inputs.cmake_args }}
             cmake --build build --parallel 4
             ctest --test-dir build --output-on-failure --no-tests=ignore --parallel ${{ inputs.test_parallel }}
+
+  headers:
+    name: headers-${{ matrix.cxx }}
+    if: inputs.headers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        cxx: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Packages
+        if: inputs.apt_packages != ''
+        run: sudo apt-get update -q && sudo apt-get install -y -q ${{ inputs.apt_packages }}
+      - name: Check
+        env: { CXX: "${{ matrix.cxx }}", CMAKE_ARGS: "${{ inputs.cmake_args }}" }
+        # The build tree is only configured: FetchContent puts the first-party dependencies in it.
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Kronuz/cpp-libraries/main/tools/selfcontained.sh -o "$RUNNER_TEMP/selfcontained.sh"
+          skip=()
+          for glob in ${{ inputs.headers_skip }}; do skip+=(-x "$glob"); done
+          bash "$RUNNER_TEMP/selfcontained.sh" -b "$RUNNER_TEMP/headers-build" -C "$CMAKE_ARGS" "${skip[@]}" .
