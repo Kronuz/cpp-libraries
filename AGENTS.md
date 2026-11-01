@@ -1343,11 +1343,13 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### time-point
 [github.com/Kronuz/time-point](https://github.com/Kronuz/time-point) &middot; depends on: `nanosleep`
-- **What it is:** Header-only C++20 conversion helpers between chrono time points and unsigned nanosecond values.
+- **What it is:** Header-only C++20 conversion helpers between chrono time points and signed or unsigned nanosecond counts.
 - **Header / target:** `#include "time_point.hh"`; `time_point::time_point`; C++20.
-- **How it works:** `time_point_to_ullong` duration-casts any `std::chrono::time_point` to nanoseconds since that clock's epoch. `time_point_from_ullong` constructs a time point from an unsigned nanosecond count, defaulting to `std::chrono::steady_clock`. The header re-exports the nanosleep library's EINTR-safe `nanosleep(unsigned long long)` and performs no dynamic allocation.
+- **How it works:** `time_point_to_llong` converts any `std::chrono::time_point<Clock, Duration>` to nanoseconds since that clock's epoch, negative before it. `time_point_to_ullong` returns the same count as its two's complement image. `time_point_from_llong` and `time_point_from_ullong` build a time point on a clock, defaulting to `std::chrono::steady_clock`; on a clock that ticks coarser than a nanosecond (libc++'s `system_clock`) the instant rounds down to the tick. The header re-exports the nanosleep library's EINTR-safe `nanosleep(unsigned long long)` and performs no dynamic allocation.
 - **Key API:**
-  - `time_point_to_ullong(std::chrono::time_point<Clock>) -> unsigned long long`
+  - `time_point_to_llong(std::chrono::time_point<Clock, Duration>) -> long long`
+  - `time_point_from_llong<Clock = std::chrono::steady_clock>(long long)`
+  - `time_point_to_ullong(std::chrono::time_point<Clock, Duration>) -> unsigned long long`
   - `time_point_from_ullong<Clock = std::chrono::steady_clock>(unsigned long long)`
   - `nanosleep(unsigned long long)`
 - **Example:**
@@ -1362,7 +1364,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - A timer-wheel key needs a compact chrono conversion.
 - **Do not use it when / gotchas:**
   - The integer is meaningful only with the same clock epoch and clock type.
-  - Unsigned conversion is unsuitable for negative time points or durations.
+  - An instant before the epoch is `2^63` or more as an unsigned value and sorts after every later instant; store and compare the signed count.
+  - The count is a 64-bit number of nanoseconds, about 292 years either side of the epoch.
   - Do not confuse steady-clock values with Unix epoch timestamps.
 
 ### times
