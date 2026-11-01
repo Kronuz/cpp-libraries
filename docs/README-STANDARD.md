@@ -87,8 +87,10 @@ reader would otherwise use. Its shape is the same in every repository:
 
 Draw one only when a picture explains the mechanism faster than the pitch paragraph. A
 dependency list, a file list or a single arrow does not need one. Diagrams are D2,
-rendered with ELK, the Origami theme (id 302) and sketch mode, with the `.d2` source
-committed beside the image. Size: landscape, 4:3 to 16:9, about 800 to 1,100 px wide and at
+rendered with ELK, sketch mode, the Origami theme (id 302) for light and Dark Mauve (id 200)
+for dark, on a transparent background (`style.fill: transparent` at the root, `--dark-theme
+200`), so the one SVG follows the reader's light or dark mode. The `.d2` source is committed
+beside the image, with its render command in the header comment. Size: landscape, 4:3 to 16:9, about 800 to 1,100 px wide and at
 most about 600 px tall at 1x; four to eight nodes; labels of two to four words, readable at
 page width; pale fills; nothing touching. A diagram outside those limits is fixed (direction,
 grid, fewer nodes, shorter labels) or split; one that a sentence replaces is removed.
