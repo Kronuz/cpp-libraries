@@ -24,7 +24,11 @@ results is a behavior fix and follows its own rules (section 3).
   fusefilter, completion, task, journal, consensus, storage, cluster) take internal or additive
   changes only, start from the latest `main`, and name every compatibility hazard.
 - **Not covered:** vendored third-party code (msgpack-c inside msgpack, the generated Snowball
-  stemmers, the UCD tables in unicode), and `uinteger_t` and `base-x`.
+  stemmers, the UCD tables in unicode).
+- **uinteger_t and base-x** were measured in a campaign of their own, with A/A and interleaved A/B
+  runs on quiet machines and GMP, Boost and the base58 codecs as comparators
+  ([record](reviews/2026-10-31-uinteger_t-base-x.md)). Their benches are `bench/bench.cc`, built by
+  hand or with `bench/run.sh`, with no CMake option.
 
 ## 2. Machines
 
@@ -72,6 +76,8 @@ does not share the implementation's reasoning:
 | msgpack | a `std::map` model of the merged document (`test/model.h`, `merge_test.cc`, `growth_test.cc`) |
 | metrics | a model atomic run over every interleaving at 8 bits (`test/model.cc`) |
 | unicode | Xapian 2.1.0's tables on all 1,114,112 code points |
+| uinteger_t | GMP's `mpz_*` through `test/fuzz_gmp.cc` (local, conversions up to 64K limbs, not in CTest); an independent base-4 model of the quotient-only division (`test/divq_model.cc`); a naive DFT for the transform (`test/ntt_kernel.cc`); all 2^31 divisors at 16-bit limbs (`test/recip16.cc`) |
+| base-x | Python's `base64` module for the `rfc4648*` presets and Bitcoin Core's and the XRP Ledger's base58 vectors (`test/test.cc`); a decode model in the fuzz target (`test/fuzz_decode.cc`); the text of every preset in `test/golden/encode.txt` |
 
 **Deliberate behavior changes** are listed input classes in the differential test: inside a
 class the test asserts old != new and new == oracle, everywhere else old == new. The commit body
@@ -253,6 +259,13 @@ before the next.
 To be filled from each repo's README and CHANGELOG once the repo benches land: one row per
 library with its comparators, CMake options, bench target, and arm64 and x86-64 numbers.
 
+uinteger_t and base-x, from their READMEs' Performance sections and `bench/results/`:
+
+| library | comparators | bench | arm64 (Apple M1 Pro, Apple clang 21) | x86-64 (Intel Core i9-9980HK, Apple clang 17) |
+|---|---|---|---|---|
+| [uinteger_t](https://github.com/Kronuz/uinteger_t/blob/master/README.md#-performance) | GMP 6.3.0, Boost.Multiprecision 1.92 `cpp_int` | `bench/bench.cc` with `-DHAVE_GMP -lgmp -DHAVE_BOOST`, or `bench/run.sh` | 1.2 to 2.3 times GMP's time on most rows; decimal `str()` faster than GMP up to 4,096 bits; a million-bit product 2,818 us (GMP 2,120, Boost 23,571) | the same pattern; a million-bit product 5,354 us (GMP 3,051, Boost 24,251; versions not recorded) |
+| [base-x](https://github.com/Kronuz/base-x/blob/master/README.md#-performance) | Firedancer's fixed-size base58 (32 and 64 bytes), libbase58 | `bench/bench.cc` with `-DHAVE_FD_BASE58 -DHAVE_LIBBASE58` | 32-byte base58 encode 74.3 ns (Firedancer 48.5, libbase58 2,086), decode 71.6 (63.3, 496); 64-byte decode 98.2 (198) | 32-byte encode 143.5 ns (Firedancer 69.6), decode 186.7 (88.5); 64-byte decode 277.2 (287.1) |
+
 ## 8. Open gaps
 
 The findings of the 2026-10-31 audits and system review that remain open or partly closed on the
@@ -273,6 +286,16 @@ default branches as of 2026-11-01, one line each. The linked Resolution tables c
 - datetime: `TimeParser` reads each field through `strict_stoul`; `time_to_string` is a chain of `std::format` calls.
 - datetime: no old-against-new ratio on x86-64 for `iso8601` formatting and `to_tm_t`.
 - strings: no x86-64 numbers for `lower`/`upper`.
+
+**Big integers and base conversion** ([record](reviews/2026-10-31-uinteger_t-base-x.md#open), [uinteger_t open work](https://github.com/Kronuz/uinteger_t/blob/master/docs/OPEN-WORK.md), [base-x open work](https://github.com/Kronuz/base-x/blob/master/docs/OPEN-WORK.md))
+- uinteger_t: 1.2 to 2.3 times GMP's time on most rows of the [README table](https://github.com/Kronuz/uinteger_t/blob/master/README.md#-performance); addition takes 0.43 ns per limb against GMP's 0.31 on the Apple M1 Pro, and the rest needs assembly.
+- uinteger_t: decimal parsing up to 4,096 bits takes 1.1 to 1.5 times Boost `cpp_int`'s time on the Apple M1 Pro and 1.4 to 2.0 on the Intel Core i9-9980HK.
+- uinteger_t: a 4-limb quotient by a 2,048-limb divisor takes 1.3 us against GMP's 0.09 (Intel Core i9-9980HK).
+- uinteger_t: no modular arithmetic and no constant-time type; every kernel's time depends on its values.
+- uinteger_t: no test forces the quotient-only kernel's fallback; no build has a 32-bit `size_t`, so the size guards' call sites are untested; no CI job builds MSVC.
+- base-x: the table paths are AArch64 only; a 32-byte base58 encode takes 143.5 ns against Firedancer's 69.6 on the Intel Core i9-9980HK ([README](https://github.com/Kronuz/base-x/blob/master/README.md#-performance)).
+- base-x: a 1 KiB base64 decode costs 3.0 ns per byte against 1.1 to encode (Apple M1 Pro).
+- base-x: `test/test.cc` pins 13 of Bitcoin Core's 21 base58 vectors, and a Release CTest build compiles out its asserts.
 
 **Containers** ([audit](reviews/2026-10-31-audit-containers.md#resolution))
 - flat-map CA5: nothing tests the hint that keeps the search branchless; `<i8,u64>` find at n=100 on the i9 is 6.4 ns against 5.0 for `std::lower_bound`.
