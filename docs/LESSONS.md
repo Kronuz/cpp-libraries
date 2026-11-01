@@ -453,6 +453,192 @@ See also [repr](#repr), item 2 (the empty search in `replace`, found by the diff
    regression on a tiny call as real, diff the assembly, time the sources in more than one build (a trimmed bench, an
    aligned build), and report the spread across builds. The rows that do work (strings) were within 5% throughout.
 
+### uinteger_t
+
+[CHANGELOG](https://github.com/Kronuz/uinteger_t/blob/master/CHANGELOG.md), [docs/design/](https://github.com/Kronuz/uinteger_t/tree/master/docs/design), [campaign record](reviews/2026-10-31-uinteger_t-base-x.md)
+
+A separate campaign (2026-10-30 to 2026-11-01) covered uinteger_t and base-x; its record has the reviews and every number.
+
+1. A whole-number operation in a per-digit loop is quadratic, with a heap allocation per digit. The original `str(base)`
+   divided the whole value by the base once per digit (`divmod`, two temporaries), and the parser ran `x = x * base + d`.
+   Converting a limb's worth of digits per pass on raw limbs (divide in place by base^k, the largest power that fits a
+   limb; multiply-add in place) made decimal `str()` 15 to 39 times faster and parsing 76 times at 4 to 1,024 limbs
+   (Apple M4 Pro). With the later kernels, `str(10)` ends 43x (2 limbs) to 530x (4,096 limbs) faster than the original
+   header and parsing 57x to 121x (Apple M1 Pro). The same loop hid a library call: `unsigned __int128 / uint64_t` is
+   `__udivti3`, so a divisor used for every limb takes its reciprocal once (Moller and Granlund, 2011) and multiplies.
+2. Conversion is one pair of functions. `digits(out, base)` and `from_digits(src, n, base)` take digit values in bases 2
+   to 256; `str()`, the string constructors and base-x map characters around them, so a speedup reaches all three. The
+   first fix for base-x made the chunk primitives public so base-x could call them, which copied the loop's shape into a
+   second repository; they are private again. Power-of-two bases slice bits and are linear: a 1,024-limb hex parse went
+   from 5.0 ms to 32 us (Apple M4 Pro).
+3. Replace the division with multiplications. The chunked encoder divides by D = base^k once per chunk, and each
+   division is a chain of dependent 2-by-1 steps (about 14 cycles), so a pass runs at the chain's latency however wide
+   the core is. Bouvier and Zimmermann's fraction method (IEEE Trans. Computers, 2014) turns the conversion into
+   multiplications the core overlaps, and a reciprocal of D^K cached per base and size replaces their one initial
+   division. The research measured 2.8x at 32 bytes and 6.2x at 1 KiB over the chunked kernel, and beat GMP's
+   `mpn_get_str` up to 1 KiB (5.94 against 7.78 us); in the library base58 of 32 bytes went from 156 to 34 ns and of
+   1 KiB from 37.4 to 6.2 us (Apple M4 Pro). The research's verdict on novelty: none. The method is from 2014, the
+   digit-pair table is folklore and the fused passes are GMP's `addmul_2`; the cached reciprocal is engineering, worth a
+   blog post. Check the literature before calling a fast kernel new. The method's error bound needs a guard limb for some
+   bases, and the edge inputs (b^j and D^j plus and minus one, runs of 0xff) are what reach it: without the guard limb
+   they fail 37,691 times.
+4. Subquadratic above a size. Above 8,192 bits `digits()` and `from_digits()` run a tree of divisions and products
+   (Brent and Zimmermann, *Modern Computer Arithmetic*, 1.7), O(M(n) log n): decimal `str()` of 65,536 limbs went from
+   9.2 s to 145 ms (GMP 48 ms) and parsing 1,024 limbs from 234 to 132 us (GMP 76), on the Apple M4 Pro. A scaled
+   remainder tree would replace each division by a middle product, but with only full products a middle product costs
+   what the division does (2.1 M(n/2) measured): it needs a middle-product kernel first.
+5. Each multiplication tier stays only where a sweep shows it faster: Karatsuba from 24 limbs (the subtractive middle
+   term, 3 to 7% faster than the sum form), Toom-3 from 140, Toom-4 from 400, and a three-prime number-theoretic
+   transform from 1,400 (exact, with no rounding). On the Apple M4 Pro 1,024 limbs went from 383 to 127 us on the raw
+   kernels with Karatsuba and to 106 (GMP 57) with Toom-3, and 256K limbs from 372 to 52.7 ms (GMP 48.1) with the
+   transform. On a quiet Apple M1 Pro Toom-4 products gained 5.9% at 1,024 limbs, and Toom-4 squaring measured 0.6%
+   faster than Toom-3 against an A/A spread of 0.2%, short of the 3% a tier must earn: it was removed with its cutoff
+   and its macro. A cutoff belongs to a machine: 400 limbs is the M4 Pro's, and on the M1 Pro Toom-4 pays from about
+   700. A million-bit product ends at 2,818 us against GMP's 2,120 and Boost's 23,571 (Apple M1 Pro).
+6. The division ladder follows the products: Algorithm D with a 3-by-2 reciprocal estimate, recursive division
+   (Burnikel and Ziegler) from 32-limb divisors, and Newton's reciprocal from 1,400-limb divisors with a 5,000-limb
+   quotient. The recursion took 1,024 by 513 limbs from 162 to 75 us (GMP 39, Apple M4 Pro); Newton made `div n/2` 27%
+   faster at a 32,768-limb dividend and 38% at 131,072 (Apple M1 Pro). Newton's first numbers came from a loaded host
+   and stayed marked unconfirmed until the rerun on a quiet one.
+7. A quotient alone needs only the top of the divisor. The quotient-only kernel (`a / b`) skips the low part of every
+   digit's product, so its work stops growing with the divisor. It flags a digit whose remainder falls within the
+   truncation error of a decision edge, then subtracts the products it skipped and finishes exactly. The proof is five
+   lemmas in `docs/design/quotient-only-division.md`, checked by a base-4 model that shares no code with the header. An
+   exact multiple always flags and then costs a whole schoolbook division, so the cutoff is 64 limbs, where exact
+   multiples pay at most 15% more; 512 would have won more on random operands and cost exact multiples 86% at 1,024
+   limbs. Random operands gained 8 to 36% at 16 to 128 limbs, and a 4-limb quotient by a 2,048-limb divisor went from
+   11.7 to 1.3 us (GMP 0.09), on the Intel Core i9-9980HK. The first version redid a flagged division with the recursive
+   kernel; the repair came after the first review, and a second review scoped to the new commits checked it. A review
+   of a head does not cover what lands after it.
+8. Integer promotion disabled a guard at one limb width. The proof needs the quotient under B limbs, and the guard read
+   `qn > static_cast<std::size_t>(~static_cast<digit>(0))`. At 16-bit limbs the `uint16_t` promotes to `int` before `~`,
+   which gives -1, the cast gives `SIZE_MAX`, and the guard never fired. Its test divided random dividends, which never
+   flag, so it passed with the guard dead or deleted. A review found it by reading the expression. The fix is
+   `std::numeric_limits<digit>::max()` as a named limit that a test lowers to 6 limbs to reach the guard at 64-bit
+   limbs, plus exact multiples at 16-bit limbs, which always flag. A limb narrower than `int` promotes to signed `int`,
+   and a plain `if (digit_bits == 64)` (the header keeps C++14) compiles every branch at every width: give each width a
+   CTest target.
+9. Allocation was the cost of a small value (themes 2 and 6). A value was a `std::vector` plus an offset,
+   an end, a reference and a carry flag (56 bytes), and `uint_0()` and `uint_1()` returned copies, so every multiply,
+   divide and shift allocated to compare against 1. Removing the view and the flag (nothing built a view once the
+   kernels took raw pointers; nothing read the flag) took the object to 24 bytes and `a << 3` from 74 to 17 ns; an
+   inline buffer of 8 limbs (88 bytes) then took `a + b` on 1 to 8 limbs from 16-19 to 2-5 ns and `a * b` from 19-27 to
+   6-14 (Apple M4 Pro). base-x's 32-byte base58 key (4 limbs) went from 3.9 to 0.39 us mostly by losing temporaries
+   (Apple M4 Pro); it ends at 74 ns (Apple M1 Pro). Keep the data pointer a member: choosing the buffer or the block by
+   capacity made each operation read its operands' first limb and wait on the previous store to it.
+10. The carry chain sets the speed of addition. A one-limb-per-pass add carried through a register (`adds; cset; adds;
+    csinc` on arm64): two cycles per limb, 0.62 ns against GMP's 0.31 on the Apple M1 Pro. Eight limbs per pass keep
+    the carry in the flag: `a + b` 9% faster at 16 limbs, 20% at 64 and 30% from 256 (65,536 limbs: 40.9 to 28.5 us, GMP
+    20.4), 0.59 to 0.92 of the old time on the M1 Pro and the Intel Core i9-9980HK. The final benchmark table found
+    the gap (a new 4,096-bit sum took 3.4 times GMP's time); no plan had it. The 0.43 against 0.31 ns per limb that
+    remains needs assembly.
+11. The same chain in a multiply-add. `_multadd` computed `x * y + a + c` as one 128-bit sum; LLVM reassociated it as
+    `(a + c) + lo`, so the loop-carried carry went through three dependent operations per limb product. Adding `a`
+    first and `c` last leaves two. An explorer found it in the assembly, and the 12-line change made multiplication 8
+    to 11% faster from 16 to 1,024 limbs, squaring 6 to 10% and division 4 to 9% (Apple M4 Pro). GMP's basecase sits at
+    the carry flag's throughput bound (0.29 to 0.31 ns per product) and the new one at 0.33 to 0.35, which regrouping
+    the same operations cannot close.
+12. The security reviews rejected the same defect three times: size arithmetic that wraps a 32-bit `size_t`.
+    `digits()` and `from_digits()` computed limb and bit counts in `std::size_t`, and on a 32-bit one a 512 MiB input
+    wrapped the count to a short buffer that the packing loop wrote past (REJECT). The conversion tree, added a day
+    later, repeated it (a value of 2^32 bits gave silently wrong digits; REJECT), and base-x's RFC 4648 digit count
+    repeated it again (blocking). The fix is one set of guards, templated on the size type so a test runs them at 16
+    bits (`_limbs_for_digits`, `_digits_for_limbs`, `_tree_digits_for`, `_ntt_plan`, `_div_newton_plan`,
+    `toom4_max_limbs`), and a rule: a new path lists every size computation on it and sends each through a guard. No
+    CI host has a 32-bit `size_t`, so the guards' call sites stay untested.
+13. A failed allocation leaves the operand as it was. With the inline buffer, `x += y` and `++x` stored the low limbs
+    and then allocated the carry limb, so a `bad_alloc` there left `x` half written (REJECT; the old code did not). A sum
+    now makes room before its first store, and only when a carry can happen. `test/alloc.cc` fails each allocation of
+    every growing operation in turn: 0 invalid values and 0 leaks over 205,000 runs. It replaces the global
+    `operator new`, which bit twice in CI: ASan's `operator new[]` does not forward to a replaced scalar one, so the
+    ASan job counted 0 allocations until the test replaced every form, and the TSan runtime defines `operator new`
+    too, so the TSan job failed to link, again after a guard that missed one of three targets. Link every target with
+    each sanitizer CI runs, including one that does not run on your machine.
+14. Hunting behind the landings with independent oracles found what the reviews of the new kernels did not (themes 10
+    and 11). Python's `int` over 83,000 operator checks at 64-bit limbs (62,000 each at 32-bit limbs and on the
+    portable primitives) found two bugs of the original header: `x *= 1` after `x >>= 64` gave back the shifted-out
+    limbs (a self copy-assignment through the window's offset), and a moved-from value after a right shift had `size()`
+    2^64 - 1. The same hunt found three in base-x ([base-x](#base-x) item 7). A second hunt found that a base-256 parse
+    of zero bytes gave a zero that is not 0, which a division then divided by (`SIGFPE` on x86-64), and that `5 << big`
+    did not compile. The kernels review found the portable and MSVC multiply-adds computing wrong products, a path no
+    CI job built until `UINTEGER_T_NO_INT128` got a CTest target (MSVC still has none). A differential against the
+    original header would have reproduced every one of them.
+15. A test proves a property only if a mutant of the code fails it. The first kernels review ran 30 mutants: 24 died,
+    and two survivors were real gaps (an odd-split product into a dirty buffer, a reciprocal branch reached with
+    probability 3e-7). `tools/mutate.py` now holds 353 mutants in seven sets; 336 die and 17 are argued equivalent. A
+    test of random operands kills nothing on a path random operands never take (item 8).
+16. A tier stays only when a quiet A/A and an interleaved A/B say so: about 3% or more and outside the A/A spread, at
+    the sizes users hit, with base-x's 32-byte key timed as well. It removed Toom-4 squaring (item 5) and kept out an
+    inlined loop for sums under 8 limbs, which took 2 and 4 limbs from 5 to 4 and 7 to 5 ns on the Apple M1 Pro and
+    cost 1 to 2 ns at 4 to 16 limbs on the Intel Core i9-9980HK. A result that wins on one instruction set and loses on
+    the other is not landed (theme 12). A row of a 1- to 8-limb operation needs a compiler barrier on the result's data
+    pointer; without one the compiler drops the copies and the row reads about 0.2 ns.
+17. A merge can drop tests without an error. A rebase took one side of `CMakeLists.txt`, and 39 targets lost the Debug
+    arguments that keep the sanitizer job short; nothing failed, and a review found it. After resolving a conflict
+    there, compare `ctest -N -V` per test name with `master`'s.
+
+See also the [themes](#the-themes) 1 and 6 (items 1 and 9), 8 (items 10 and 11), 10 and 11 (items 14 and 15), 12 (item
+16) and 14 (item 2); [hashes](#hashes) item 1 and [cuuid](#cuuid) item 1 (a serial chain is the floor); [base-x](#base-x);
+[Delivery](#delivery) item 11 (pins).
+
+### base-x
+
+[CHANGELOG](https://github.com/Kronuz/base-x/blob/master/CHANGELOG.md), [campaign record](reviews/2026-10-31-uinteger_t-base-x.md)
+
+1. A library that copies a hot loop keeps its cost. base-x carried its own per-digit conversion loops, so uinteger_t's
+   speedups missed it: base58 of a 32-byte key took 3.9 us to encode and 4.5 to decode (Apple M4 Pro). It now converts
+   through uinteger_t's `digits()` and `from_digits()` and only maps digits to characters (16 at a time with table
+   lookups on AArch64): 74 ns to encode and 72 to decode on the Apple M1 Pro, where Firedancer's fixed-size codec takes
+   48.5 and 63.3 and libbase58 2,086 and 496 (theme 14). Its benchmark of the short keys users encode showed what
+   uinteger_t's own rows did not (theme 7).
+2. A general kernel can beat a fixed-size codec, and the comparison has to be like for like. Firedancer's base58 handles
+   32 and 64 bytes with a precomputed matrix; uinteger_t's kernel takes any base and length and decodes 64 bytes in 98.2
+   ns against Firedancer's 198 (Apple M1 Pro). base-x's `encode` returns a new `std::string` where Firedancer writes into
+   the caller's buffer; into a string that keeps its capacity base-x encodes 32 bytes in 52.0 ns against 48.5, so the
+   README shows both. On the Intel Core i9-9980HK base-x takes about twice Firedancer's time to encode (143.5 against
+   69.6 ns at 32 bytes): the table map is AArch64 only, and the scalar map is 11 ns of a 142.5 ns encode there.
+3. The RFC 4648 presets promised standard output and encoded the input as one number. A mask wrapped from 32 bytes (148
+   of 240 random inputs differed from Python's `base64`), a small first byte lost its leading digit, and the leading zero
+   bytes kept depended on limb alignment (six zero bytes and `0x01` gave `AQ==`; Python writes `AAAAAAAAAQ==`). The
+   presets now encode the bytes, padded to blocks: 0 mismatches against Python, and the 35 other presets byte-identical
+   to before. `decode` also rejects text after the padding, so it agrees with `is_valid` on every text but a
+   `crockfordchk()` check character's value.
+4. A change of output is a change of stored format, so it goes behind a flag on the presets that need it. Bitcoin's
+   base58 writes each leading zero byte as a `1`; base-x's numeric encoding dropped them, so `bitcoin()` could not
+   round-trip a key that starts with zero bytes. The fix changes text users store, so the lead left it to the owner and
+   built it as a `leading_zeros` flag on `bitcoin()` and `ripple()` alone, which the owner landed: `00 00 61 62 63` is
+   `11ZiCa` there (it was `ZiCa`), every other preset keeps its text, `bitcoinchk()` and `ripplechk()` included, and the
+   flagged path costs 1 to 3 ns (Apple M1 Pro). A compatibility behavior is a preset of the one mechanism (rule of engagement 1).
+5. Pin the output itself. Nothing in base-x's CI failed when a preset's text changed, and Xapiand stores three of them
+   (`Base59::dubaluchk()` UUIDs, `Base62::inverted()` node ids, `Base64::rfc4648url_unpadded()` document ids).
+   `test/golden/encode.txt` holds the text of all 41 presets for a fixed set of inputs (empty, zero bytes, runs of 0xff,
+   powers of 256, leading zero bytes, random bytes from a generator written in the test, and inputs past the 8,192 bits
+   where the conversion changes algorithm), and `base_x_golden` compares every line on the SIMD and the scalar code. An
+   intended change regenerates the file, and its diff is the list of stored texts that change.
+6. A fix in the dependency changed a stored text. All-zero bytes encoded as `zN` in `Base59::dubaluchk()` and as the
+   empty text in `base16()` and `base64()`, because the old uinteger_t parsed them to an untrimmed zero limb; with the
+   trimmed parse they are `z`, `0` and `A`, the text of the value zero. Both texts decode to one zero byte, but the
+   stored text differs. Xapiand's identity check across the pin bump found it; base-x had no test of its texts. The
+   golden file would catch it now, and the CHANGELOG lists it.
+7. Three latent bugs came from an independent model of the alphabet rules (72,000 cases over the 41 presets); a
+   differential against the original would have kept them: `encode` into a non-empty result measured padding and
+   checksum over the whole buffer (after `xy`, `Base64::rfc4648()` wrote `xyYQ` for `a`), `is_valid` rejected every
+   padded RFC 4648 text and 50 of the first 399 `crockfordchk()` values (those whose check character is extended), and
+   `decode` stopped at a NUL byte in an alphabet without padding (`ab\0cd` decoded as `ab`). All three reproduce on the
+   original header.
+8. A speedup can make an old overflow reachable. Checksums were summed in an `int`, which overflows at about 34 million
+   base64 characters. The original decoder was quadratic and never finished such an input; the linear power-of-two
+   decode made it take seconds, and the security review rejected the branch on it (signed overflow is undefined
+   behavior). The sums are 64-bit.
+9. Every form of a call leaves its argument alone on failure. `decode(uinteger_t&, ...)` assigned the value before it
+   verified the check and checksum characters, so a rejected text left its digits in the argument, while the byte and
+   integral forms decoded into a local. It decodes into a temporary and assigns on success, and a test fails the old
+   code (`base-x:c599da0`).
+
+See also [uinteger_t](#uinteger_t) items 1 to 3 (the conversion it runs on), 9 (small values) and 12 (the size wrap
+that its RFC 4648 digit count repeated); the [themes](#the-themes) 7, 9, 11 and 14; [bloom-filter](#bloom-filter)
+item 2 (a bit layout is a format too); [Delivery](#delivery) item 11 (pins).
+
 ### cuuid
 
 [CHANGELOG](https://github.com/Kronuz/cuuid/blob/main/CHANGELOG.md)
@@ -2286,3 +2472,15 @@ What it takes for a fix to reach the code that runs, and the process mistakes th
     machine; keep each hold to minutes with only the timed command inside it; and time every
     instruction set a change touches while its machine is reachable (bitpack's SSE2 width-32 `memcpy`
     stayed out of `main` for lack of an x86 number: [bitpack](#bitpack) item 10).
+11. **A pin moves with the API it needs, and a consumer that pins both aligns them.** base-x pins uinteger_t by
+    commit, while its CMake comment and AGENTS.md said it tracked `master`, so the first base-x push that used a new
+    uinteger_t API went red until the pin moved. Bump base-x's pin in the series that starts using a uinteger_t API.
+    Xapiand pins both, and FetchContent keeps the first declaration, so Xapiand declares uinteger_t before base-x
+    and pins the commit base-x's own pin names (both heads since `Xapiand:c9c6fa77`); a base-x bump without the
+    uinteger_t one would compile base-x against Xapiand's older uinteger_t
+    ([uinteger_t and base-x record](reviews/2026-10-31-uinteger_t-base-x.md)).
+12. **A hold protects a timing only if every timer takes it.** The uinteger_t campaign's own lock ordered its own runs
+    and ignored the host's holds, so one final benchmark on the Intel Core i9-9980HK ran beside another session's
+    exclusive A/B and was discarded. Two exclusive holds under one name did not exclude each other either: an A/B of
+    addition on the same machine ran beside a division run and had to be repeated (it gave the same row). Check the
+    host's queue before timing, and give each hold its own name.
