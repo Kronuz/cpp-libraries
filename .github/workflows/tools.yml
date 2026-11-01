@@ -1,0 +1,31 @@
+# Checks of the scripts under tools/: formatting, types and tests of the Python, and shellcheck
+# and tests of the shell. The comparison, header and pin tools are described in AGENTS.md.
+name: tools
+
+on:
+  push:
+    branches: [main]
+    paths: ["tools/**", ".github/workflows/tools.yml"]
+  pull_request:
+    paths: ["tools/**", ".github/workflows/tools.yml"]
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: python
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install
+        run: pip install ruff==0.16.0 pyrefly==1.4.0
+      - name: Format
+        run: ruff format --check tools
+      - name: Lint
+        run: ruff check tools
+      - name: Types
+        run: pyrefly check --config tools/pyrefly.toml
+      - name: Test
+        run: python -m unittest discover -s tools -p 'test_*.py' -v
