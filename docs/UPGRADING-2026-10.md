@@ -1,7 +1,7 @@
 # Moving pins past October 30, 2026
 
 > Status: CURRENT (2026-11-01). Read from each library's `CHANGELOG.md` and default branch at
-> 2026-11-01 09:45 UTC.
+> 2026-11-01 12:00 UTC.
 
 Consumers pin these libraries by commit, so nothing here reaches a build until a pin moves. This
 note covers the libraries the October 30-31 performance campaign touched, and lists every change
@@ -51,6 +51,8 @@ document's repeated keys. The other changes fix crashes, hangs, wrong answers an
 | [btree](#btree) | `25f9494` | `d81f2a3`, `a56261d`, `512febb` | Allocation-failure behavior; slot layout | strata, Detent |
 | [cartesian](#cartesian) | `6eab8ed` | `79ed663`, `7066e9e` | `std::hash<Cartesian>` values | none found |
 | [random](#random) | `115f3f3` | `0667b61` | The sequence | scheduler, Detent, Xapiand |
+| [uinteger_t](#uinteger_t) | `85316dd` | `a39ede0`, `bd7bab1`, `6ff439f`, `10cf088`, `eb588dc` | Digits outside the base throw; base-256 leading zero bytes; `x *= 1` after a right shift; `sizeof` 88 and its own container | base-x, Xapiand |
+| [base-x](#base-x) | `54a9326` | `8935fe6`, `c3965ec`, `b8fc1a2`, `2507a82`, `d3d9f23`, `27be05e`, `c599da0` | RFC 4648 text and decoding; Bitcoin and Ripple leading zeros; all-zero bytes; stricter `decode` and `is_valid` | Xapiand (the ids it mints keep their text) |
 
 ## Commits not to pin
 
@@ -70,6 +72,12 @@ the second.
 | queue | `b1b38b0` | `e94be7d` | Waits block forever: two `Queue`s sharing one state, `clear()` with parked producers, `QueueSet::erase`, and a pop that leaves the size at or above the threshold. |
 | fs | `14932b9` | `d6d8bc2` | `copy_file` onto the same file (the same path, a hard link or a symlink to it) truncates the source to 0 bytes and returns 0. |
 | allocators | `2fc537f` | `e38f759` | Container copy assignment shares the source's pool, so the two containers used from two threads corrupt the heap. |
+| uinteger_t | `8f1345e` | `dabd824` | A refused allocation of the carry limb in `x += y` or `++x` leaves `x` half written, with a zero top limb. |
+| uinteger_t | `bd7bab1` | `819daa4` | On a 32-bit `size_t`, `digits()` or `from_digits()` of 512 MiB or more wraps a size and writes past its buffer. |
+| uinteger_t | `6e74834` | `b012716` | On a 32-bit `size_t`, `digits()` of a value of 2^32 bits or more wraps its bit count and returns wrong digits. |
+| base-x | `8572a00` | `fdee12d` | Does not compile: it calls uinteger_t's chunk primitives, which the uinteger_t it pins lacks. |
+| base-x | `1687e9a` | `8935fe6` | Does not compile: it calls `digits()` and `from_digits()`, which the uinteger_t it pins (`aeeeb67`) lacks. |
+| base-x | `2507a82` | `b468653` | On a 32-bit `size_t`, an RFC 4648 encode of 512 MiB or more wraps its digit count and writes wrong text. |
 
 ## boolean-parser
 
@@ -459,6 +467,141 @@ use Lemire's method, so every sequence differs. The API has no seed, so no seque
 reproducible before either; ranges, inclusiveness and the `random_string` alphabet are unchanged.
 
 Detect: tests that assert exact draws.
+
+## uinteger_t
+
+Start `85316dd`, fixes `a39ede0`, `bd7bab1`, `6ff439f`, `10cf088` and `eb588dc`. uinteger_t and
+base-x had a campaign of their own on the same days ([record](reviews/2026-10-31-uinteger_t-base-x.md)).
+base-x and Xapiand build on it, and FetchContent keeps the first declaration, so Xapiand's own
+uinteger_t pin decides which uinteger_t base-x gets. Xapiand's `xapiand` branch pins `a383e37`
+(`Xapiand:bc19f0c0`); `3fe13a2f` pins a commit from before the start.
+
+Inputs that change:
+
+- A character that is a digit but not below the base was folded into the value (`uinteger_t("9", 8)`
+  was 9, `uinteger_t("g", 16)` was 16); it throws `std::invalid_argument` (`Error: Not a digit in
+  base 8: '9' at 1`). So does a byte 0x80 or above, which indexed the digit table with a negative
+  value where `char` is signed (`"1é"` in base 16 parsed as 0x100) (`bd7bab1`).
+- A base-256 parse (`uinteger_t(bytes, 256)`) kept leading zero limbs. An all-zero buffer, or the
+  single `00` byte that `uinteger_t(0).str(256)` writes, gave a zero that compared unequal to 0 and
+  was true as a `bool`; with 8 or more leading zero bytes `==`, `<` and `bits()` were wrong (eight
+  zero bytes and `01` had 65 bits and was not 1); a division by a parsed zero divided by zero
+  (undefined behavior, `SIGFPE` on x86-64). The parse skips leading zero bytes, and the division
+  throws `std::domain_error` (`eb588dc`).
+- After an in-place right shift of 64 bits or more, `x *= 1` (and any self copy-assignment) gave
+  back the shifted-out limbs, and a value moved from had `size()` 2^64 - 1, so `bool`, `bits()` and
+  comparisons read out of bounds. They give the shifted value and zero (`6ff439f`).
+- A left shift of a nonzero value by a `uinteger_t` count of 2^64 bits or more threw `std::bad_alloc`;
+  it throws `std::length_error` ("Shift too large") (`6ff439f`; at 32- and 16-bit limbs `d50f9bd`).
+  A right shift by such a count gives zero, as before.
+- Targets without `unsigned __int128` and MSVC computed wrong products: the portable multiply-add
+  wrapped its middle sum, and the MSVC paths passed a full carry limb as a one-bit carry and left a
+  product's low limb unset (`a39ede0`). GCC and Clang on 64-bit targets are unchanged.
+- `str()` with a bad base says "Base must be in the range [2, 36] or 256" (it said "[2, 36]")
+  (`204eed1`). On a 32-bit `size_t`, a conversion whose bit or digit count does not fit (512 MiB of
+  base-256 digits) throws `std::length_error` before it allocates (`819daa4`, `b012716`).
+
+What changes for the build:
+
+- `uinteger_t::container` is the library's own small vector, not `std::vector<digit>`: its iterators
+  are `digit*`, and it has only the members the class uses (`8f1345e`). Code that treats it as a
+  `std::vector` does not compile.
+- `sizeof(uinteger_t)` is 88 on LP64 (56 at start, 24 from `6ff439f`, 80 at `8f1345e`, 88 from
+  `10cf088`). Up to 8 limbs live in the object, and the object points into itself while they do,
+  so `memcpy` or `realloc` of one leaves it pointing at the old storage. `UINTEGER_T_INLINE_LIMBS`
+  and every tuning macro must have one value in all the translation units of a program.
+- Moves are `noexcept` and leave the source zero; moving an inline value copies its limbs, so
+  pointers into the source do not follow the new owner (`6ff439f`, `8f1345e`).
+- `compare(lhs, rhs)` and `divmod(q, r, lhs, rhs)` are public (`compare` was documented, and a call
+  did not compile), and `mul(r, lhs, rhs)` is new (`d1be6ed`); so are `digits()` and `from_digits()`
+  (`bd7bab1`). A native integer on the left of a shift (`5 << big`) and `signed char` compound
+  assignments compile (`1d96eea`). `divmod_small`, `mul_add_small` and `base_chunk` were public only
+  from `aeeeb67` to `bd7bab1`; code written against those commits does not compile after them.
+
+Valid input gives the same values and text: `str()` and parsing match the original header byte for
+byte in bases 2 to 36, and the arithmetic matches GMP; the faster kernels return the same results.
+
+Detect: text that reaches a string constructor with characters outside its base or bytes 0x80 and
+above (it throws now); base-256 buffers with leading zero bytes, and divisions by a value parsed
+from bytes; left shifts by a `uinteger_t` count; code that treats `container` as a `std::vector`,
+copies a `uinteger_t` with `memcpy`, or sets `UINTEGER_T_*` macros per translation unit.
+
+## base-x
+
+Start `54a9326`, fixes `8935fe6`, `c3965ec`, `d1fda10`, `36dd216`, `712c643`, `f702d6d`, `b8fc1a2`,
+`2507a82`, `d3d9f23`, `27be05e` and `c599da0`. Its text also depends on the uinteger_t it is built
+with: the results below are each commit's with the uinteger_t its `CMakeLists.txt` pins, so a
+project that declares uinteger_t itself keeps that pin at or after base-x's (`919698e` pins
+`a383e37`). Xapiand's `xapiand` branch pins `919698e` (`Xapiand:bc19f0c0`); `3fe13a2f` pins a
+commit from before the start.
+
+Text that `encode` writes:
+
+- The RFC 4648 presets (`Base16::rfc4648()`, `Base32::rfc4648()` and `rfc4648hex()`,
+  `Base64::rfc4648()`, `rfc4648url()` and `rfc4648url_unpadded()`) write the bytes, as Python's
+  `base64` does. In base32 and base64, below 32 bytes the text changes when the first byte is below
+  0x08 or 0x04: `0x01` was `Q===` in base64, which decodes to `00`, and is `AQ==`. From 32 bytes on,
+  every base32 and base64 text changes; the old one was misaligned (`c3965ec`). Every leading zero
+  byte is kept (six zero bytes and `0x01` were `Q===` and are `AAAAAAAAAQ==`), `Base16::rfc4648()`
+  writes two digits per byte, so a first byte below 0x10 gains a digit (`0x01` was `1` and is `01`),
+  an empty buffer is the empty text (it threw), and a `uinteger_t` 0 is `AA==` (it was `A`)
+  (`2507a82`).
+- `Base58::bitcoin()` and `ripple()` write each leading zero byte as a leading zero digit:
+  `00 00 61 62 63` was `ZiCa` and is `11ZiCa`, two zero bytes were `1` and are `11`, and an empty
+  buffer is the empty text (it threw) (`27be05e`). `bitcoinchk()`, `ripplechk()` and the other
+  presets keep the numeric text.
+- Bytes that are all zero encode as one zero digit with no check character in every numeric
+  preset. The power-of-two presets wrote the empty text (`Base16::base16()` is `0`,
+  `Base64::base64()` is `A`) until `8935fe6`, and the check presets of the other bases wrote a check
+  character after the digit (`Base59::dubaluchk()` was `zN` and is `z`, `Base58::base58chk()` was
+  `0v` and is `0`) until `b8fc1a2`. Each of those texts decodes to one zero byte, as does the
+  digit and check character that `8935fe6` to `dd2124e` wrote in the power-of-two check presets
+  (`Base16::base16chk()` `0f`).
+- `encode` into a non-empty result pads and sums only the text it appends: after `xy`,
+  `Base64::rfc4648()` writes `xyYQ==` for `a` (it wrote `xyYQ`) (`d1fda10`).
+
+What `decode` and `is_valid` accept:
+
+- The RFC 4648 presets return the bytes their digits hold: each leading zero digit is a zero byte,
+  digits past the last whole byte are dropped (`ABC` in base64 was `10` and is `00 10`; one digit
+  `A` was one zero byte and is none), the empty text is no bytes (it was one zero byte), and
+  `Base16::rfc4648()` drops the last of an odd count of digits (`ABC` was `0A BC` and is `AB`)
+  (`2507a82`).
+- `Base58::bitcoin()` and `ripple()` return a zero byte for each leading zero digit: `11ZiCa` was
+  `61 62 63` and is `00 00 61 62 63`, `11` was one zero byte and is two, and the empty text was one
+  zero byte and is none (`27be05e`).
+- Text after the padding throws `std::invalid_argument` (`YWI=junk` decoded as `ab`), and a check or
+  checksum character after the padding is read after all of it (`d3d9f23`). A NUL byte in an
+  alphabet without padding throws (`ab\0cd` decoded as `ab`) (`36dd216`), and so does an unknown
+  byte in `Base32::crockfordchk()`'s check position (`10?` decoded as 32) (`712c643`). The empty
+  text in a `*chk` alphabet throws `std::invalid_argument` (it threw `std::bad_alloc`) (`10a5f0b`).
+- `decode` into a `uinteger_t` leaves it as it was when it throws: on a bad character from
+  `8935fe6`, and on a failed check or checksum character from `c599da0`. It held the digits before
+  the bad character, or the decoded value.
+- `is_valid` accepts `=` padding (`YWI=` was invalid) and `crockfordchk()`'s extended check
+  characters (`10*`), and rejects a digit after the padding; in six presets, `crockfordchk()` and
+  `dubaluchk()` among them, it answers differently for text that ends in an ignored character
+  (`f702d6d`).
+- Checksums are summed in 64 bits: the `int` sum overflowed (undefined behavior) at about 34
+  million base64 characters (`10a5f0b`). On a 32-bit `size_t` an RFC 4648 encode of 512 MiB or more
+  throws `std::length_error` (`b468653`).
+
+`encode` and `decode` call uinteger_t's `digits()` and `from_digits()` from `1687e9a` on, so a
+hand-copied `uinteger_t.hh` older than `bd7bab1` does not compile with them.
+
+Xapiand's `xapiand` branch keeps `Base59::dubaluchk()` UUID text (`src/serialise.cc:52`),
+`Base62::inverted()` node ids (`src/manager.h:73`) and `Base64::rfc4648url_unpadded()` `_id`s
+(`src/database/schema.cc:2856`).
+None of the ids it mints changes text: a compact cuuid wire never starts with a zero byte, and
+20,000 v6 and 20,000 v1 ids minted on 2026-11-01 were 8 bytes starting with 0x4c, which encode as
+before. An `_id` minted from a wire whose first byte is below 0x04, or of 32 bytes or more, would
+change. Its `is_valid` of a `~` UUID text (`src/serialise.cc:93`) answers differently for text that
+ends in an ignored character.
+
+Detect: `test/golden/encode.txt` holds every preset's text at head for a fixed set of inputs.
+Encode a sample of the stored inputs with the old and the new pin and compare, and decode stored
+texts with both: RFC 4648 text of bytes that start below 0x10 or run to 32 bytes, Bitcoin and
+Ripple base58 of bytes with leading zeros, and all-zero inputs are the classes that move.
 
 ## Unchanged results
 
