@@ -1014,7 +1014,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **What it is:** Cache-friendly B-tree ordered containers, a near drop-in for `std::map` and `std::set`.
 - **Header / target:** `#include "btree/map.h"`, `#include "btree/set.h"`; target `btree::btree` (`cpp_btree::cpp_btree` remains an alias), C++17/C++20. A modernized port of Google's cpp-btree, and the most widely used repo in the collection (280+ stars).
 - **Repository rename:** `Kronuz/cpp-btree` redirects to `Kronuz/btree`; preserve that old name as a redirect. Header paths and existing CMake aliases remain compatible.
-- **How it works:** Each node stores many sorted values instead of one, so a lookup touches far fewer cache lines than the pointer-per-element red-black tree behind `std::map`, and the container uses substantially less memory per element. The trade is that mutation can move values between nodes. When the key and mapped type are nothrow move constructible, those moves relocate the key by move, so a `map<std::string, T>` does not allocate a string per shifted slot (`benchmarks/string_insert_bench.cc`); otherwise keys are copied.
+- **How it works:** Each node stores many sorted values instead of one, so a lookup touches far fewer cache lines than the pointer-per-element red-black tree behind `std::map`, and the container uses substantially less memory per element. The trade is that mutation moves values between nodes. A map slot stores a mutable `std::pair<Key, T>` and hands it out as `std::pair<const Key, T>&` through a layout-checked union (Abseil's technique), so splits, rebalances, merges and erases move keys instead of copying them, and maps accept move-only keys.
 - **Key API:**
   - `btree::map<Key, T, Compare, Allocator, TargetNodeSize>`
   - `btree::set<Key, ...>`, plus multimap and multiset variants
@@ -1033,8 +1033,9 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - You want ordered iteration without `std::map`'s per-node allocation.
 - **Do not use it when / gotchas:**
   - Iterator invalidation is stricter than `std::map`: insert and erase can invalidate iterators, so it is not a blind drop-in.
-  - `cbc3576` prepares nonfull insertion before reconstructing actual const-key pairs. Full-node insertion, rebalance and erase safety remain open Detent release findings; this correction does not qualify those paths. [Evidence and scope](https://github.com/Kronuz/Detent/blob/main/docs/BTREE_RELEASE_RISK.md).
-  - `25f9494` adds genuine ownership moves through all wrappers. Sources become empty and reusable; comparator/allocator preparation precedes root transfer, and assignment preserves legacy source-allocator adoption. Reviewed source is published for qualification; Detent remains on its preceding pin until the full platform/product gates pass. Full structural mutation and erase findings remain open.
+  - Allocation failure: with nothrow-movable key and mapped types and a pair within the 256-byte target node size, insertion builds the value and allocates every node it needs before moving anything, so a refused allocation leaves the tree unchanged; erase allocates nothing. Larger pairs and types whose move may throw keep the contents, size and structure valid when the new value's construction fails, but a throw from a move in the middle of a split, rebalance or merge is not recovered.
+  - Maps require `std::pair<Key, T>` and `std::pair<const Key, T>` to have the same layout; a static assertion stops the build otherwise, with no fallback.
+  - Moves of whole containers transfer the root: the source becomes empty and reusable, comparator/allocator state is copied before the transfer, and assignment keeps the library's source-allocator adoption. Rebuild every consumer against the same header revision.
   - Tests build only as the top-level CMake project. CI uses the shared matrix with layout and both-link-order mixed-mode fixtures; downstream publication and cost gates remain separate.
 
 ## Concurrency, time, and the operating system
