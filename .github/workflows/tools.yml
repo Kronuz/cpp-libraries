@@ -42,6 +42,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Shellcheck
         if: runner.os == 'Linux'
-        run: shellcheck tools/selfcontained.sh tools/test_selfcontained.sh
+        run: shellcheck tools/selfcontained.sh tools/pins.sh tools/test_selfcontained.sh tools/test_pins.sh
       - name: Header check
         run: bash tools/test_selfcontained.sh
+      - name: Pins
+        run: bash tools/test_pins.sh
