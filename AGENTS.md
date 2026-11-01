@@ -86,7 +86,8 @@ Facts worth knowing before you wire anything up:
   Either way, linking the target is the correct move.
 - **C++20 is the norm.** Twelve targets request C++17: `base-x`, `boolean-parser`, `btree`,
   `constexpr-phf`, `ctrie`, `errno-names`, `generation-cache`, `lru-cache`, `split`, `stash`,
-  `uinteger_t` and `varint`. Each entry below states the standard its CMake target requests.
+  `uinteger_t` and `varint`; `namegen` requests C++14. Each entry below states the standard
+  its CMake target requests.
 - **The include filename often differs from the repo name.** `char-classify` gives
   `chars.hh`, `constexpr-phf` gives `phf.hh`, `enum-reflection` gives `enum.h`,
   `lru-cache` gives `lru.h`, `errno-names` gives `errnos.h`, `iterators` gives
@@ -98,8 +99,9 @@ Facts worth knowing before you wire anything up:
 - **Moving a pin past 2026-10-30 can change results.**
   [docs/UPGRADING-2026-10.md](docs/UPGRADING-2026-10.md) lists every such change with its start
   and fix commits, the inputs it changes, how to detect them, and the commits not to pin.
-- **Licensing is MIT** across the collection, with `btree` under Apache 2.0 and
-  `static-string` under the Boost Software License 1.0. Bundled
+- **Licensing is MIT** across the collection, with `btree` under Apache 2.0,
+  `static-string` under the Boost Software License 1.0, and `namegen` in the public domain
+  (Unlicense). Bundled
   third-party code keeps its license: msgpack-c in `msgpack` (Boost 1.0), the generated
   stemmers in `snowball` (BSD 3-clause), and the UCD tables in `unicode` (Unicode License).
 - **Third-party dependencies are rare and localized.** The networking stack wants
@@ -182,6 +184,7 @@ Facts worth knowing before you wire anything up:
 | Geodetic to geocentric coordinates | `cartesian` |
 | Spherical spatial index over the whole planet | `htm` |
 | Phonetic matching of names | `double-metaphone`, `soundex` |
+| Random fantasy names from a pattern (RinkWorks syntax), reproducible from a seed | `namegen` |
 | Edit distance, Jaro-Winkler, similarity | `string-similarity` |
 | Unicode categories, lowercase, lenient UTF-8 | `unicode` |
 | Stem words in 38 languages (Snowball) | `snowball` |
@@ -2269,6 +2272,36 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Levenshtein with both costs 0 returns distance 0.
   - Empty inputs produce distance `1` and similarity `0`, including the identical-empty case according to the documented behavior.
   - Jaccard operates on character sets and Sørensen-Dice on character bigrams, not word tokens.
+
+### namegen
+[github.com/Kronuz/namegen](https://github.com/Kronuz/namegen) &middot; depends on: none
+- **What it is:** A fantasy name generator: compiles a RinkWorks-style pattern such as `!sV'i` once, then draws names from it, from the thread's engine or a seeded `std::mt19937`.
+- **Header / target:** `#include "namegen.h"`; target `namegen::namegen` (`fantasyname::fantasyname` and `fantasyname` are aliases for the fork's CMakeLists); C++14. Compiled (`namegen.cc`). Public domain (Unlicense).
+- **How it works:** The constructor scans the pattern once into a tree: `Random` for a choice, `Sequence` for a group, internal nodes for a symbol (one node over its shared table among thirteen: syllables, vowels, consonants, insults, ...) and for a run of literal characters, `Capitalizer` and `Reverser` for `!` and `~`, and a `Collapser` at the root that thins runs of three letters. A name is one walk of the tree, every node appending to one string. Each choice takes one draw of two engine outputs and picks `floor(u * n)`, so alternatives are equally likely and a seed gives the same names with every compiler and standard library. ASCII text is capitalized, reversed and collapsed in place; other bytes go through `mbsrtowcs`/`wcsrtombs` in the current C locale. Each thread has its own engine. Drawing allocates nothing beyond the returned string; compiling shares the symbol tables (`bench/bench.cc`).
+- **Key API:**
+  - `NameGen::Generator(pattern, collapse_triples = true)`; throws `std::invalid_argument` on unbalanced brackets
+  - `toString()` (the thread's engine), `generate(std::mt19937&)` (the caller's)
+  - `NameGen::engine()`: the thread's `std::mt19937`, seedable
+  - `combinations()` (saturates at `SIZE_MAX`), `min()`, `max()`, `Generator::SymbolMap()`
+  - `Random`, `Sequence`, `Literal`, `Capitalizer`, `Reverser`, `Collapser` to build trees by hand
+  - Nineteen pattern macros: `MIDDLE_EARTH`, `GREEK_NAMES`, `JAPANESE_NAMES_DIVERSE`, `POKEMON`, `FANTASY_*`, ...
+- **Example:**
+  ```cpp
+  #include "namegen.h"
+
+  NameGen::Generator generator("!sV'i");
+  std::mt19937 engine(42);
+  auto name = generator.generate(engine);  // "Shyu'loaf"
+  auto other = generator.toString();       // from this thread's engine
+  ```
+- **Use it when:**
+  - Naming characters, places, items or nodes at random, or reproducibly from a seed.
+- **Do not use it when / gotchas:**
+  - Names are not unique; `combinations()` counts paths through the pattern, not distinct names.
+  - Drawing, counting and destroying recurse once per nesting level (about 110,000 levels exhaust an 8 MB stack): bound untrusted patterns.
+  - Non-ASCII text in `!`, `~` and collapsing decodes in the current C locale; in the C locale it is dropped (the name is empty).
+  - A seed does not reproduce the C or JavaScript ports' names: each has its own generator.
+  - Moving from the `Kronuz/fantasyname` fork: choices here are uniform (the fork's first and last alternatives came up half as often as the others), and `combinations()` saturates where the fork's wrapped around.
 
 ### unicode
 [github.com/Kronuz/unicode](https://github.com/Kronuz/unicode) &middot; depends on: none

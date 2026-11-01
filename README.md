@@ -137,6 +137,7 @@ the first-party pins that are behind (`pins.sh`); [AGENTS.md](AGENTS.md#tools) d
 </tr>
 <tr>
 <td><a href="https://github.com/Kronuz/msgpack/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/msgpack/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/msgpack">msgpack</a></td>
+<td><a href="https://github.com/Kronuz/namegen/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/namegen/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/namegen">namegen</a></td>
 <td><a href="https://github.com/Kronuz/nanosleep/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/nanosleep/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/nanosleep">nanosleep</a></td>
 <td><a href="https://github.com/Kronuz/persistent-map/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/persistent-map/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/persistent-map">persistent-map</a></td>
 </tr>
@@ -229,7 +230,7 @@ The shared CMake workflow accepts `macos_llvm: true` for consumers that require 
 `msgpack`, `journal`, `consensus`, `cluster`, `prism`
 
 **Domain: geospatial, text, diagnostics.** `cartesian`, `htm`, `double-metaphone`,
-`soundex`, `string-similarity`, `unicode`, `snowball`, `analysis`, `boolean-parser`, `queryparser`, `logger`, `term-color`, `traceback`,
+`soundex`, `string-similarity`, `namegen`, `unicode`, `snowball`, `analysis`, `boolean-parser`, `queryparser`, `logger`, `term-color`, `traceback`,
 `located-exception`, `errno-names`, `system`, `metrics`
 
 Dependencies run one way and stay shallow: more than half pull nothing first-party
