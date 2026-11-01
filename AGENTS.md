@@ -755,53 +755,73 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### uinteger_t
 [github.com/Kronuz/uinteger_t](https://github.com/Kronuz/uinteger_t) &middot; depends on: none
-- **What it is:** An arbitrary-precision unsigned integer in a single header, with base 2 to 36 parsing and rendering.
-- **Header / target:** `#include "uinteger_t.hh"`; target `uinteger_t`; C++17.
-- **How it works:** The value is stored in dynamically sized limbs, with full operator coverage (arithmetic, bitwise, shifts, comparison, stream output) so it behaves like a native integer where possible. Construction accepts integrals, strings in an explicit base, vectors and raw limbs. Conversions back to native types deliberately truncate to the low limb rather than throwing.
+- **What it is:** An arbitrary-precision unsigned integer in one header that behaves like a built-in one, with subquadratic multiplication, division and base conversion, and digit conversion in any base from 2 to 256.
+- **Header / target:** `#include "uinteger_t.hh"`; target `uinteger_t::uinteger_t`; header-only; C++17 (the header also compiles as C++14). The default branch is `master`.
+- **How it works:** A value is little-endian 64-bit limbs in a small vector, trimmed so that zero has no limbs. Up to 8 limbs (64 bytes) live inside the object, so `sizeof(uinteger_t)` is 88 and a small result allocates nothing; a longer value takes one heap block. Each operator sizes its result once and calls a raw-limb kernel (`k_*`, a pointer and a length) that carves its temporaries from one scratch buffer. Addition carries through the flag eight limbs per pass. Multiplication is schoolbook below 24 limbs, then Karatsuba, Toom-3 from 140, Toom-4 from 400 and a three-prime number-theoretic transform from 1,400 (exact, with no rounding); squares take their own kernels. Division is Algorithm D with a 3-by-2 reciprocal estimate, recursive (Burnikel-Ziegler) from 32-limb divisors, and Newton's reciprocal from 1,400-limb divisors with a 5,000-limb quotient; `a / b` with a short quotient takes a quotient-only kernel that skips the low products and repairs a flagged digit (proved in its `docs/design/quotient-only-division.md`). All conversion goes through `digits()` and `from_digits()`: power-of-two bases slice bits, other bases encode with no division (Bouvier and Zimmermann's fraction method with a reciprocal cached per base and size) and decode in SWAR chunks, and above 8,192 bits both take a tree of divisions and products, O(M(n) log n). The cutoffs are limb counts from sweeps.
 - **Key API:**
-  - `uinteger_t()`, `uinteger_t(value)`, `uinteger_t(string, base)`
-  - full arithmetic, bitwise and shift operators with compound forms
-  - `str(int base = 10)`, `bits()`, `divmod(rhs)`, `compare(lhs, rhs)`
+  - `uinteger_t()`, `uinteger_t(integral)`, `uinteger_t(string, base)`, `uinteger_t(const char*, size, base)`, `uinteger_t(std::vector<T>, base)`: bases 2 to 36 and 256 (raw big-endian bytes), no prefix
+  - `+ - * / %`, bitwise, shift and comparison operators with their compound forms; free overloads put a native integer on the left (`1 + big`, `5 << big`)
+  - `str(base = 10)` (2 to 36 and 256), `bin()`, `oct()`, `hex()`, `raw()`, `operator<<` (honors `std::oct`, `std::dec`, `std::hex`), `bits()`
+  - `digits(out, base)` and `static from_digits(src, n, base)`: digit values in bases 2 to 256, most significant first
+  - `divmod(rhs)` returns both; `static mul(r, a, b)` and `static divmod(q, r, a, b)` write into existing values (an output may be an operand; `q` and `r` must differ)
+  - `static compare(a, b)` returns -1, 0 or 1; `is_result`, `base_bits` and `base_size` serve libraries built on it
+  - macros: `UINTEGER_T_INLINE_LIMBS`, `UINTEGER_T_RADIX_UNROLL` (0 to 8, default 6), the cutoffs (`UINTEGER_T_MUL_KARATSUBA_THRESHOLD` and its siblings), `UINTEGER_T_NO_INT128`
 - **Example:**
   ```cpp
   #include "uinteger_t.hh"
 
-  uinteger_t a("beee", 16);
-  auto b = a * a;
-  auto text = b.str(16);
+  uinteger_t a("beee", 16);                       // base as the second argument
+  uinteger_t b = a * a;
+  auto text = b.str(16);                          // "8e662544"
+  uinteger_t q, r;
+  uinteger_t::divmod(q, r, b, uinteger_t(7));     // into existing values
+  std::vector<unsigned char> d;
+  b.digits(d, 58);                                // digit values 0..57
+  auto back = uinteger_t::from_digits(d.data(), d.size(), 58);
   ```
 - **Use it when:**
-  - Arithmetic wider than 64 bits without pulling in GMP or Boost.
-  - Base conversion of large values (this is what `base-x` uses it for).
+  - Exact unsigned arithmetic wider than 64 bits without GMP (LGPL) or Boost: big ids, hashes, keys, factorials.
+  - Converting large values between bases, any base from 2 to 256 through `digits()`; `base-x` runs on it.
+  - A loop that reuses its results: `mul` and `divmod` into the same values allocate only until they have grown, and not at all within the inline buffer.
 - **Do not use it when / gotchas:**
-  - No `0x`/`0b` prefix handling; pass the base explicitly. Bases outside 2 to 36 are rejected.
-  - Casting to a native type silently truncates to the low limb; division by zero throws `std::domain_error`.
-  - It specializes standard arithmetic type traits, which can trip diagnostics on some libc++ toolchains.
+  - Unsigned only: `small - large` wraps at the operands' width. There is no signed type, no rationals, no gcd and no modular arithmetic.
+  - Native conversions are explicit and keep the low limb; use `str()` for the whole value. There is no `0x` or `0b` prefix: pass the base. A character that is not a digit below the base throws `std::invalid_argument`, and division by zero throws `std::domain_error`.
+  - An operation's time depends on its values (every kernel branches on the data), so it is not for secrets such as private keys or exponents.
+  - It specializes `std::is_arithmetic`, `std::is_integral` and `std::is_unsigned` on purpose, which is technically undefined behavior; the header guards the diagnostic pragma for libc++.
+  - `sizeof` is 88 bytes, and an inline value points into itself, so it is not trivially relocatable (no `memcpy` or `realloc` of one). `UINTEGER_T_INLINE_LIMBS` and every tuning macro must have the same value in every translation unit.
+  - Speed: 1.2 to 2.3 times GMP 6.3.0's time on most operations and faster than GMP at printing decimal up to 4,096 bits; Boost's `cpp_int` takes 2 to 118 times uinteger_t's time but parses decimal faster up to 4,096 bits (Apple M1 Pro; the README's Performance table).
+  - A translation unit that prints or parses numbers costs the compiler about twice the work at -O2 with the default `UINTEGER_T_RADIX_UNROLL` (6) as with 0. The per-base conversion tables are built on first use and never freed (a few KiB per base in practice).
+  - The default branch is `master`, so `GIT_TAG main` does not resolve; pin a commit. Its `docs/API.md`, `ARCHITECTURE.md`, `docs/design/` and `docs/OPEN-WORK.md` have the detail.
 
 ### base-x
 [github.com/Kronuz/base-x](https://github.com/Kronuz/base-x) &middot; depends on: `uinteger_t`
-- **What it is:** BaseX encoding and decoding for any alphabet, with ready-made Base16/32/58/62/64/66 variants including checksums.
-- **Header / target:** `#include "base_x.hh"`; target `base_x`; C++17.
-- **How it works:** Encoding treats the input as one arbitrary-precision integer and repeatedly divides by the alphabet size, which is why it needs `uinteger_t` and why it handles alphabets that are not a power of two (Base58, Base62). Factory structs preconfigure the common alphabets, and modifiers add case folding, a check character, a checksum or block padding.
+- **What it is:** Encoding and decoding of bytes in any alphabet of 2 to 66 characters (Bitcoin, Ripple and Flickr base58, base62, Crockford base32, URL-safe base64 and dozens more), with optional check and checksum characters, and RFC 4648 presets that match Python's `base64` byte for byte.
+- **Header / target:** `#include "base_x.hh"`; target `base_x::base_x` (fetches `uinteger_t`, pinned by commit); header-only; C++17. The default branch is `master`.
+- **How it works:** The input bytes become one `uinteger_t`, and `uinteger_t::digits()` gives its digits in the alphabet's base (`from_digits()` decodes), so base-x runs uinteger_t's division-free kernels and conversion tree and only maps digits to characters, through tables its `constexpr` constructor builds. On AArch64, alphabets of up to 64 characters map 16 digits at a time with table lookups (`BASEX_NO_SIMD` builds the scalar path). Decode takes one table lookup and one comparison per character; case folding, look-alike translation (Crockford base32 reads `O` as `0`) and ignored characters (its `-`) live in the tables. Most presets write the numeric value; the `rfc4648*` presets (`block_padding`) encode the bytes block by block, as RFC 4648 does; `Base58::bitcoin()` and `ripple()` (`leading_zeros`) write each leading zero byte as a leading zero digit. `test/golden/encode.txt` pins the text of every preset.
 - **Key API:**
-  - `encode(...)`, `decode(...)`, `is_valid(...)`
-  - modifiers: `ignore_case`, `with_checksum`, `with_check`, `block_padding`
-  - factories: `Base16::base16()`, `Base32::crockford()`, `Base58::bitcoin()`, `Base62::base62()`, `Base64::url()`
+  - `encode(...)` of bytes, a `std::string_view`, a `uinteger_t` or an integer; `decode(...)` to bytes, an integral type or a `uinteger_t`; `is_valid(...)`
+  - flags: `ignore_case`, `with_check`, `with_checksum`, `block_padding`, `leading_zeros`
+  - presets: `Base16::rfc4648()`, `Base32::crockford()`, `Base32::rfc4648()`, `rfc4648hex()`, `Base58::bitcoin()`, `ripple()`, `flickr()`, `Base62::base62()`, `inverted()`, `Base64::url()`, `rfc4648()`, `rfc4648url()`, `rfc4648url_unpadded()`, `Base66::base66()`, and a `*chk()` twin of most
 - **Example:**
   ```cpp
   #include "base_x.hh"
 
-  auto encoded = Base58::bitcoin().encode("Hello world!");
-  auto decoded = Base58::bitcoin().decode(encoded);
-  bool ok = Base62::base62chk().is_valid(encoded);
+  auto id = Base62::base62().encode("Hello world!");      // "T8dgcjRGuYUueWht"
+  auto bytes = Base62::base62().decode(id);
+  bool ok = Base62::base62chk().is_valid(Base62::base62chk().encode("Hello world!"));
+  std::string_view key("\0\0abc", 5);                     // binary data with its size
+  auto b58 = Base58::bitcoin().encode(key);               // "11ZiCa": leading zero bytes kept
   ```
 - **Use it when:**
-  - Rendering a binary id as a compact, human-typeable string.
-  - You need a specific alphabet: Bitcoin Base58, Crockford Base32, URL-safe Base64.
+  - Compact, human-typeable ids, keys and hashes in the exact alphabet you choose.
+  - Bitcoin or XRP Ledger base58 of arbitrary bytes, or standard padded hex, base32 and base64 (`rfc4648*`).
 - **Do not use it when / gotchas:**
-  - `decode` throws `std::invalid_argument` on a bad character, check digit or checksum.
-  - Alphabets differ in ordering and case rules; pick the exact factory instead of assuming a standard.
-  - Big-integer division makes it slower than a table-driven Base64 for bulk data.
+  - The other presets encode the numeric value: leading zero bytes are dropped (`00 00 61 62 63` and `61 62 63` have one text), and `Base16::base16()` and `Base64::base64()` are not stock hex and base64. Use the `rfc4648*` presets for interchange. `bitcoinchk()` and `ripplechk()` keep the numeric text and are not Base58Check (one base-x checksum character, no double SHA-256).
+  - `decode` throws `std::invalid_argument` on a bad character, check or checksum character, or text after the padding, and leaves its result as it was. `is_valid` does not recompute a `with_check` character, so `decode` can still throw on `Base32::crockfordchk()` text it accepts.
+  - A string literal takes the `std::string_view` overload and stops at its first NUL: pass binary data with its size. `encode` into a `std::vector` does not compile.
+  - The text of every preset is a stored format (Xapiand stores three of them); an output change fails `base_x_golden` and needs a CHANGELOG entry.
+  - The whole input converts at once, with no streaming. A 32-byte base58 key encodes in 74 ns and decodes in 72 on an Apple M1 Pro, against 48.5 and 63.3 for Firedancer's fixed-size codec and 2,086 and 496 for libbase58; on an Intel Core i9-9980HK it takes about twice Firedancer's time to encode, since the table map is AArch64 only.
+  - It pins uinteger_t by commit. A project that pins both declares uinteger_t first, at base-x's pin or later: FetchContent keeps the first declaration.
 
 ### cuuid
 [github.com/Kronuz/cuuid](https://github.com/Kronuz/cuuid) &middot; depends on: `char-classify`, `endian`
@@ -2691,7 +2711,7 @@ has the method behind them.
    `docs/perf/<topic>.md`. Code comments are present tense and one or two lines.
 8. **Delivery.** Never commit a build directory (`.gitignore` covers `build*/`); `[skip ci]` only
    for commits that change docs or comments alone, never CMake or code; work lands on the default
-   branch (`master` for btree and constexpr-phf) with CI green on every job, and side branches
+   branch (`master` for btree, constexpr-phf, uinteger_t and base-x) with CI green on every job, and side branches
    are deleted; consumers' pins move in waves, each green before the next, with the catalog's
    upgrade note. `tools/pins.sh` lists the pins that are behind.
 
