@@ -2629,7 +2629,8 @@ Working rules, in priority order.
    [docs/PERFORMANCE.md](docs/PERFORMANCE.md); the conventions are in "Benchmarks, SIMD and
    verification" below; past surveys and audits, each with its open findings, are in
    [docs/reviews/](docs/reviews/), and the lessons they taught in
-   [docs/LESSONS.md](docs/LESSONS.md).
+   [docs/LESSONS.md](docs/LESSONS.md). `tools/ab_compare.py` runs and reports the paired
+   comparison (see "Tools" below).
 5. **Preserve the constexpr property.** `char-classify`, `hashes`, `constexpr-phf`,
    `ctrie`, `static-string` and `enum-reflection` are valuable precisely because they work
    during constant evaluation. An innocuous-looking change can quietly push a function to
@@ -2680,7 +2681,8 @@ has the method behind them.
    corpus.
 6. **C++ standard and headers.** A library that declares C++17 builds its tests at C++17 in CI
    (`CMAKE_CXX_STANDARD=17`), and every public header compiles alone in its own translation unit
-   at the target's standard.
+   at the target's standard: `tools/selfcontained.sh` checks it, and `headers: true` on the
+   shared workflow runs it with GCC and Clang.
 7. **CHANGELOG and README.** CHANGELOG.md in Keep a Changelog form, newest first, dated; each
    entry has the old and new behavior, the oracle, the changed input classes, the numbers with
    machine and A/A spread, and the commit. README is present tense: what the library does now,
@@ -2691,7 +2693,74 @@ has the method behind them.
    for commits that change docs or comments alone, never CMake or code; work lands on the default
    branch (`master` for btree and constexpr-phf) with CI green on every job, and side branches
    are deleted; consumers' pins move in waves, each green before the next, with the catalog's
-   upgrade note.
+   upgrade note. `tools/pins.sh` lists the pins that are behind.
+
+## Tools
+
+The scripts in [tools/](tools/). Each prints its usage with `-h` (the shell scripts) or `--help`
+(`ab_compare.py`), and has a test beside it that CI runs (`.github/workflows/tools.yml`).
+
+| tool | what it does |
+| --- | --- |
+| `tools/ab_compare.py` | Paired A/B comparison of benchmark runs: the per-row median of the paired ratios, their range, the A/A ratio, a verdict and the geomean. Reads Google Benchmark JSON and the repositories' plain-text bench output, and runs the two binaries itself, interleaved. |
+| `tools/selfcontained.sh` | Compiles every public header of a repository alone, twice in one translation unit, at the standard its CMake requests. |
+| `tools/pins.sh` | Lists the first-party `FetchContent` pins of the Kronuz repositories and how far each is behind its dependency's default branch. |
+| `tools/preflight.sh` | Builds and tests a working tree the way CI does, on this Mac and on the gate VMs. |
+
+**`ab_compare.py`** takes two binaries and runs them against each other:
+
+```sh
+tools/ab_compare.py run --rounds 7 --budget 3 --save runs/ build-old/bench build-new/bench -- --rows=all
+```
+
+Each round runs A, B and A again (the A/A control) with the same arguments, one after another, so
+a drift of the machine reaches all three. It parses what they print and reports one row per
+benchmark: A and B (the median over the rounds), the ratio, its range, A/A, the number of paired
+runs `n`, and a verdict. The ratio is A/B for times and B/A for throughputs (`--higher-better`,
+or a Google Benchmark counter such as `--metric items_per_second`), so a ratio above 1 always
+means B is faster. `--budget PCT` makes the exit status 1 when a row is slower than PCT percent
+beyond the A/A noise. Saved outputs are read back with `compare`:
+
+```sh
+tools/ab_compare.py compare --a runs/a-* --b runs/b-* --aa runs/aa-* --output markdown
+```
+
+The formats are `gbench` (JSON from `--benchmark_format=json` or `--benchmark_out`; repetitions
+are runs), `unit` (a label, then numbers followed by `ns`, `us`, `ms` or `s`), and `table` (a
+label and trailing columns, or a line of numbers whose first is the row, as in bitpack's
+`bits unpack delta`); `--column K` picks the K-th number of a row. `--regex` with named groups
+(`value`, `chk`, `run`, `variant`, and any others as the row name) reads anything else, and
+`--section`, `--split`, `--include` and `--exclude` shape the rows. A `chk HEX` on a row is its
+checksum: a row whose paired checksums differ is `VOID`, left out of the geomean, and the exit
+status is 1. `tools/ab_compare.py --help` has the details.
+
+**`selfcontained.sh`** takes a repository directory (default `.`):
+
+```sh
+tools/selfcontained.sh -b /tmp/headers-build ../hashes   # fetches the first-party deps
+tools/selfcontained.sh -s 17 -s 20 -x 'detail/*' .                  # two standards, one skip
+```
+
+A header that needs a platform or a macro its includer sets goes in `.selfcontained-skip`, one
+glob per line. A repository adopts the CI step with `headers: true` (and `headers_skip` for
+globs) in its call of the shared workflow.
+
+**`pins.sh`** reads GitHub with `gh`, or local clones with `-r DIR` (fetch them first):
+
+```sh
+tools/pins.sh -b                 # every pin that needs attention, across the owner's repositories
+tools/pins.sh -c storage datetime   # exit status 1 when one of these two has such a pin
+```
+
+A row gives the consumer, the file, the dependency, the pin, the dependency's default branch and
+the status: `current`, `behind N`, `tracks BRANCH`, `ahead`, `diverged`, `pin not found`,
+`unresolved` or `no GIT_TAG`. A pin on a SHA that is behind keeps the fixes made since out of the
+consumer; [docs/UPGRADING-2026-10.md](docs/UPGRADING-2026-10.md) says which of them change
+results.
+
+The Python is stdlib only, formatted with `ruff format`, linted with `ruff check` and
+type-checked with `pyrefly check --config tools/pyrefly.toml` (strict preset); every function has
+type annotations. The shell scripts pass `shellcheck`.
 
 ## Provenance
 

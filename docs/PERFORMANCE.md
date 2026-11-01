@@ -131,6 +131,34 @@ microarchitecture, so a change is still timed on the machines that matter.
 **Expiry.** A number names the commit, compiler, flags and machine it measured, and is
 re-measured when the code under it changes.
 
+**The paired comparison.** `tools/ab_compare.py` does the arithmetic of the screen and confirm
+stages. `run A B` runs the baseline, the candidate and the baseline again in every round, one
+after another with the same arguments, and reads what they print (Google Benchmark JSON or the
+repositories' plain-text rows). It takes no hold: the machine is held around the command, and
+the tool only orders the runs. Per row it reports:
+
+- **Ratio.** The median over the rounds of the ratio of round *i* of A to round *i* of B (B to A
+  for a throughput), so a drift of the machine inside a round cancels and a ratio above 1 always
+  means B is faster. A and B are the medians of the raw values.
+- **Range.** The lowest and highest paired ratio.
+- **A/A.** The same ratio between the two runs of A. Its largest distance from 1 over the rounds
+  is the row's noise band; without an A/A run the band is 3%.
+- **Verdict.** `faster` or `slower` when the ratio is outside the band, else `noise`: a gain
+  inside the noise is negligible and is reported so.
+- **Identity.** A `chk HEX` on a row (or a `chk` counter in Google Benchmark) is its result
+  checksum. A row whose paired checksums differ is `VOID`: it is left out of the geomean, and the
+  exit status is 1.
+
+The summary gives the geomean of the row ratios, the same geomean for each round (its minimum,
+median and maximum show whether one round carries the result) and the A/A geomean.
+`--budget 3` turns the 3% rule into an exit status: it fails when a row is more than 3% slower
+and outside its noise band. Fewer than three rounds print a warning, since the range and the
+A/A are then single draws. `--save DIR` keeps each run's output so that a confirm run in two
+holds, or on the second instruction set, reads back with `compare --a ... --b ... --aa ...`
+over the files of both holds; files pair by position after a natural sort of their names.
+A paired ratio means something only when the runs were interleaved: files from two separate
+holds still pair by position, but not in time, so their range and A/A are read with that in mind.
+
 ## 5. Both instruction sets
 
 - **Paths.** NEON on arm64, SSE2 on x86-64, and a SWAR or scalar fallback for every vector path.
@@ -198,6 +226,27 @@ first with `file:line` and a reproduction:
    history in CHANGELOG; the bench reproducible from the README command.
 6. **Bar.** Clearly better than at the start and at or near the best comparator; if not, the one
    change that would get it there, with evidence.
+
+### Catalog checks
+
+Two scripts check properties of the whole catalog rather than of one change.
+
+**Headers alone.** `tools/selfcontained.sh REPO_DIR` compiles each public header as the only
+content of a translation unit, included twice (the second include checks the guard), with
+`-fsyntax-only` at the standard the repository's CMake requests, and prints one line per header.
+`-b BUILD` puts the first-party dependencies of a configured build tree on the include path, `-s`
+adds a standard, and `-x GLOB` or `.selfcontained-skip` leaves out a header that needs a platform
+or a macro its includer sets. A repository runs it in CI with `headers: true` on the shared
+workflow, under GCC and Clang. Its result is the audit's "headers self-contained" check (item 3
+of the audit list above).
+
+**Pins.** `tools/pins.sh` lists every first-party `FetchContent_Declare` of the owner's
+repositories, read from each default branch, with the dependency's default branch, and the number
+of commits the pin is behind it (`current`, `behind N`, `tracks BRANCH`, `ahead`, `diverged`,
+`pin not found`, `unresolved`, `no GIT_TAG`). `-b` keeps the pins that need attention and `-c`
+turns them into an exit status. A consumer keeps whatever its pin predates: the fixes of
+[UPGRADING-2026-10.md](UPGRADING-2026-10.md) reach it when the pin moves, in waves, each green
+before the next.
 
 ## 7. Comparator matrix
 

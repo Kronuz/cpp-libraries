@@ -50,7 +50,9 @@ workflow in [`.github/workflows/cmake.yml`](.github/workflows/cmake.yml).
 
 Test checks stay active, including in fixtures that deliberately compare debug/release translation units. Compiler jobs enable standard-library hardening; ThreadSanitizer runs where the library has a concurrent API. Active repositories run nightly.
 [`tools/preflight.sh`](tools/preflight.sh) runs the same matrix locally, on macOS and on
-Linux and FreeBSD VMs, before a push.
+Linux and FreeBSD VMs, before a push. The other scripts in [`tools/`](tools/) compare benchmark
+runs (`ab_compare.py`), check that every public header compiles alone (`selfcontained.sh`) and list
+the first-party pins that are behind (`pins.sh`); [AGENTS.md](AGENTS.md#tools) describes them.
 
 <table>
 <tr>
