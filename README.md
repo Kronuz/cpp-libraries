@@ -139,36 +139,40 @@ the first-party pins that are behind (`pins.sh`); [AGENTS.md](AGENTS.md#tools) d
 <td><a href="https://github.com/Kronuz/msgpack/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/msgpack/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/msgpack">msgpack</a></td>
 <td><a href="https://github.com/Kronuz/namegen/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/namegen/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/namegen">namegen</a></td>
 <td><a href="https://github.com/Kronuz/nanosleep/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/nanosleep/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/nanosleep">nanosleep</a></td>
-<td><a href="https://github.com/Kronuz/persistent-map/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/persistent-map/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/persistent-map">persistent-map</a></td>
 </tr>
 <tr>
+<td><a href="https://github.com/Kronuz/persistent-map/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/persistent-map/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/persistent-map">persistent-map</a></td>
 <td><a href="https://github.com/Kronuz/prism/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/prism/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/prism">prism</a></td>
+<td><a href="https://github.com/Kronuz/prospect/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/prospect/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/prospect">prospect</a></td>
+</tr>
+<tr>
 <td><a href="https://github.com/Kronuz/queryparser/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/queryparser/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/queryparser">queryparser</a></td>
 <td><a href="https://github.com/Kronuz/queue/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/queue/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/queue">queue</a></td>
+<td><a href="https://github.com/Kronuz/radix-router/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/radix-router/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/radix-router">radix-router</a></td>
 </tr>
 <tr>
-<td><a href="https://github.com/Kronuz/radix-router/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/radix-router/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/radix-router">radix-router</a></td>
 <td><a href="https://github.com/Kronuz/random/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/random/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/random">random</a></td>
 <td><a href="https://github.com/Kronuz/reactor/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/reactor/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/reactor">reactor</a></td>
+<td><a href="https://github.com/Kronuz/repr/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/repr/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/repr">repr</a></td>
 </tr>
 <tr>
-<td><a href="https://github.com/Kronuz/repr/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/repr/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/repr">repr</a></td>
 <td><a href="https://github.com/Kronuz/residency/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/residency/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/residency">residency</a></td>
 <td><a href="https://github.com/Kronuz/scheduler/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/scheduler/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/scheduler">scheduler</a></td>
+<td><a href="https://github.com/Kronuz/sha256/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/sha256/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/sha256">sha256</a></td>
 </tr>
 <tr>
-<td><a href="https://github.com/Kronuz/sha256/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/sha256/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/sha256">sha256</a></td>
 <td><a href="https://github.com/Kronuz/snowball/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/snowball/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/snowball">snowball</a></td>
 <td><a href="https://github.com/Kronuz/sortable/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/sortable/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/sortable">sortable</a></td>
+<td><a href="https://github.com/Kronuz/soundex/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/soundex/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/soundex">soundex</a></td>
 </tr>
 <tr>
-<td><a href="https://github.com/Kronuz/soundex/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/soundex/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/soundex">soundex</a></td>
 <td><a href="https://github.com/Kronuz/split/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/split/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/split">split</a></td>
 <td><a href="https://github.com/Kronuz/stash/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/stash/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/stash">stash</a></td>
+<td><a href="https://github.com/Kronuz/static-string/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/static-string/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/static-string">static-string</a></td>
 </tr>
 <tr>
-<td><a href="https://github.com/Kronuz/static-string/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/static-string/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/static-string">static-string</a></td>
 <td><a href="https://github.com/Kronuz/storage/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/storage/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/storage">storage</a></td>
+<td><a href="https://github.com/Kronuz/strata/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/strata/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/strata">strata</a></td>
 <td><a href="https://github.com/Kronuz/strict-stox/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/strict-stox/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/strict-stox">strict-stox</a></td>
 </tr>
 <tr>
