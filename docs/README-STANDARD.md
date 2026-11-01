@@ -28,10 +28,7 @@ In this order. Omit a section that would be empty; never pad one.
    tip, the target name and the include line.
 9. `## 🎯 When to use it`: when it fits, then "Not for" bullets: the limits and gotchas
    as present-tense facts.
-10. `## ⚡ Performance`, only when the repository has a benchmark: one small table of
-    current numbers, the machines by hardware (Apple M4 Pro, Intel Core i9-9980HK, ...),
-    compiler and flags, and the exact command. Comparator rows name the comparator and its
-    version. No before/after; that is changelog material. Link `docs/perf/`.
+10. `## ⚡ Performance`, only when the repository has a benchmark (rules below).
 11. `## 📚 Documentation`: links to `docs/API.md`, `ARCHITECTURE.md`, `docs/perf/`,
     `CHANGELOG.md`, `AGENTS.md`, and the catalog entry.
 12. `## 🛠️ Building and testing`: configure, build, `ctest`, and the bench option
@@ -50,6 +47,31 @@ In this order. Omit a section that would be empty; never pad one.
   requirements sentence, the license line and the building commands read the same in
   every repository, changing only the names.
 - Code blocks carry a language tag. Shell blocks hold commands only.
+
+## Performance sections
+
+The section answers one question: how fast is this, and how does it compare with what a
+reader would otherwise use. Its shape is the same in every repository:
+
+- **One sentence above each table** says what is timed (the call, the input, the unit) and
+  what every column and row label means. A label that names a mode, a target or an option
+  (for example `none` and `truecolor` as term-color's output depths) is explained there,
+  so no reader mistakes it for a competing library.
+- **Comparators.** When the domain has a well-known alternative (the standard library, a
+  widely used library, the obvious hand-written loop), at least one is in the table. Each
+  comparator names its version (release tag or commit), links to its project, and is
+  built with the same compiler and flags. The sentence says the comparator returns the
+  same results on the bench inputs. When no fair comparator exists, one line says why.
+- **Columns** are implementations or machines; **rows** are workloads, smallest first.
+  Units are in the header (`ns`, `GB/s`, `Mitems/s`), and a ratio column says its
+  direction ("× faster than X").
+- **Machines** by hardware and OS (Apple M4 Pro, macOS; Intel Core i9-9980HK, macOS
+  x86-64; a Linux x86-64 VM when used), compiler and flags, then the exact commands to
+  rebuild and rerun the table.
+- **Current numbers only.** No before/after against older versions of the library: that
+  belongs in `CHANGELOG.md`. Losses against a comparator are shown, not hidden.
+- Depth (method, A/A spread, every row, other machines) goes in `docs/perf/`, linked from
+  the section.
 
 ## Repository description and topics
 
