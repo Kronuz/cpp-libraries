@@ -84,8 +84,9 @@ Facts worth knowing before you wire anything up:
 - **Most are header-only** (`INTERFACE` targets). A minority compile a `.cc`: `repr`,
   `strings`, `htm`, `sha256`, `compressors`, `cartesian`, `traceback` and a few others.
   Either way, linking the target is the correct move.
-- **C++20 is the norm**, C++17 for a handful (`constexpr-phf`, `uinteger_t`, `base-x`,
-  `lru-cache`, `split`, `static-string`, `btree`, `located-exception`).
+- **C++20 is the norm.** Twelve targets request C++17: `base-x`, `boolean-parser`, `btree`,
+  `constexpr-phf`, `ctrie`, `errno-names`, `generation-cache`, `lru-cache`, `split`, `stash`,
+  `uinteger_t` and `varint`. Each entry below states the standard its CMake target requests.
 - **The include filename often differs from the repo name.** `char-classify` gives
   `chars.hh`, `constexpr-phf` gives `phf.hh`, `enum-reflection` gives `enum.h`,
   `lru-cache` gives `lru.h`, `errno-names` gives `errnos.h`, `iterators` gives
@@ -94,6 +95,9 @@ Facts worth knowing before you wire anything up:
 - **Tests and demos only build when the repo is the top-level project**, so pulling a
   library into your build does not build its test suite.
 - **`GIT_TAG main` tracks the tip.** For anything reproducible, pin a commit SHA.
+- **Moving a pin past 2026-10-30 can change results.**
+  [docs/UPGRADING-2026-10.md](docs/UPGRADING-2026-10.md) lists every such change with its start
+  and fix commits, the inputs it changes, how to detect them, and the commits not to pin.
 - **Licensing is MIT** across the collection, with `btree` under Apache 2.0 and
   `static-string` under the Boost Software License 1.0. Bundled
   third-party code keeps its license: msgpack-c in `msgpack` (Boost 1.0), the generated
@@ -266,7 +270,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 ### static-string
 [github.com/Kronuz/static-string](https://github.com/Kronuz/static-string) &middot; depends on: none
 - **What it is:** A constexpr compile-time string type with concatenation and integer rendering, usable as a template argument.
-- **Header / target:** `#include "static_string.hh"`; target `static_string::static_string`; C++17 (optional `std::format` support).
+- **Header / target:** `#include "static_string.hh"`; target `static_string::static_string`; C++20 (`std::format` support where `<format>` exists, off with `STATIC_STRING_NO_FORMAT`).
 - **How it works:** `static_string<N, T>` stores characters in a template-selected literal or array representation, so size is part of the type. `string("...")`, `string(char)`, `to_string<N>()` and `char_to_string<c>()` build constexpr values, and `operator+` stays a `static_string` when both sides are compile-time. A `std::formatter` specialization integrates with `std::format`.
 - **Key API:**
   - `static_string::static_string<N, T>`
@@ -1278,7 +1282,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 ### nanosleep
 [github.com/Kronuz/nanosleep](https://github.com/Kronuz/nanosleep) &middot; depends on: none
 - **What it is:** A small EINTR-safe nanosecond sleep helper.
-- **Header / target:** `#include "nanosleep.h"`; CMake target `nanosleep::nanosleep` if discoverable; C++17.
+- **Header / target:** `#include "nanosleep.h"`; CMake target `nanosleep::nanosleep` if discoverable; C++20.
 - **How it works:** The inline overload converts an unsigned nanosecond count to `timespec` and calls POSIX `nanosleep`. If interrupted, it retries using the remaining duration in the modified `timespec`, so signals do not shorten the requested sleep. Zero returns immediately and no heap allocation occurs.
 - **Key API:**
   - `nanosleep(unsigned long long nsec)`
@@ -1298,7 +1302,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 ### epoch
 [github.com/Kronuz/epoch](https://github.com/Kronuz/epoch) &middot; depends on: none
 - **What it is:** A header-only helper returning the current system-clock Unix epoch in a selected duration unit.
-- **Header / target:** `#include "epoch.hh"`; CMake target `epoch::epoch` if discoverable; C++17.
+- **Header / target:** `#include "epoch.hh"`; CMake target `epoch::epoch` if discoverable; C++20.
 - **How it works:** `epoch::now<Period>()` obtains `std::chrono::system_clock::now()`, subtracts its epoch, casts to `Period`, and returns the integral duration count. It is inline, non-allocating, and not monotonic because it follows wall-clock time.
 - **Key API:**
   - `template<typename Period = std::chrono::seconds> epoch::now() noexcept`
@@ -1342,8 +1346,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### times
 [github.com/Kronuz/times](https://github.com/Kronuz/times) &middot; depends on: none
-- **What it is:** A C++17 `timespec` value type with normalization, arithmetic, comparisons, and current-wall-clock helpers.
-- **Header / target:** `#include "times.h"`; CMake target `times::times`; C++17.
+- **What it is:** A C++20 `timespec` value type with normalization, arithmetic, comparisons, and current-wall-clock helpers.
+- **Header / target:** `#include "times.h"`; CMake target `times::times`; C++20.
 - **How it works:** `timespec_t` derives from `timespec`, normalizes seconds and nanoseconds after arithmetic, and supports conversion to and from fractional seconds. `now()` reads `CLOCK_REALTIME`, using platform-specific `clock_gettime` support on macOS when needed. Operations are inline and allocation-free.
 - **Key API:**
   - `timespec_t(double seconds = 0)`
@@ -1370,8 +1374,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### datetime
 [github.com/Kronuz/datetime](https://github.com/Kronuz/datetime) &middot; depends on: `strict-stox`
-- **What it is:** A C++17 parser and formatter for ISO-8601 dates, times, time zones, date math, and numeric timestamps.
-- **Header / target:** `#include "datetime.h"`; CMake target `datetime::datetime`; C++17.
+- **What it is:** A C++20 parser and formatter for ISO-8601 dates, times, time zones, date math, and numeric timestamps.
+- **Header / target:** `#include "datetime.h"`; CMake target `datetime::datetime`; C++20.
 - **How it works:** The compiled implementation parses ISO-8601 with one hand-written scanner template shared by the filling and the validating overload, so `Iso8601Parser(str, tm)`, `Iso8601Parser(str)`, `isDatetime` and `DatetimeParser` agree on every input. Fixed-width fields are read as plain digits; looser forms (`/` or space separators, 1-digit hours, `,` fractions) and the `|| date math` suffix go through a second hand scanner. Date math is 64-bit, a UTC offset is one integer add, and `to_tm_t` uses integer civil-from-days with no libc time-zone state. It converts between calendar structures, `time_t`, system-clock points, and floating-point timestamps, and formats ISO-8601 output into a stack buffer. `Datetime::tm_t` represents calendar fields with fractional seconds and UTC state; `clk_t` represents time or durations with a signed zone offset. It uses exceptions derived from `std::runtime_error` for invalid input and performs no concurrency synchronization.
 - **Key API:**
   - `Datetime::DatetimeParser`, `Iso8601Parser`
@@ -1545,7 +1549,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/server](https://github.com/Kronuz/server) &middot; depends on: `compressors`, `queue`
 - **Status:** Archived prototype; use `reactor` + `http`, or `prism` for an assembled service. These successors have different APIs; existing pinned commits remain available.
 - **What it is:** A legacy libev TCP server engine with CRTP accept-loop and per-connection state-machine bases extracted from Xapiand.
-- **Header / target:** `#include "base_server.h"` and `#include "base_client.h"`; target is the server library target defined by the project; C++17; includes vendored libev and may use `Kronuz/queue` and `Kronuz/compressors`.
+- **Header / target:** `#include "base_server.h"` and `#include "base_client.h"`; target is the server library target defined by the project; C++20; includes vendored libev and may use `Kronuz/queue` and `Kronuz/compressors`.
 - **How it works:** `MetaBaseServer<ServerImpl>` owns the accept loop, while `BaseClient<ClientImpl>` implements the connection read/write FSM. `worker.h` supplies the libev worker tree and lifecycle watchers, and `buffer.h` handles writes. Host-specific logging, fatal handling, client accounting, and compatibility types are injected through redirectable headers and hooks.
 - **Key API:**
   - `server::MetaBaseServer<ServerImpl>`
@@ -1817,7 +1821,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 ### storage
 [github.com/Kronuz/storage](https://github.com/Kronuz/storage) &middot; depends on: `compressors`, `errno-names`, `strict-stox`, `stringified`
 - **What it is:** A header-only append-only compressed multi-volume blob store with stable record offsets.
-- **Header / target:** `#include "storage.h"`; target `storage::storage`; C++17; compression support requires `compressors`.
+- **Header / target:** `#include "storage.h"`; target `storage::storage`; C++20; compression support requires `compressors`.
 - **How it works:** `Storage<Header, BinHeader, Footer, IO>` appends opaque records into fixed-size blocks across volume files and returns an offset for later lookup. Record metadata selects compression per record, preserving compatibility with legacy LZ4 volumes while supporting Zstd and deflate. Header, binary header, footer, and POSIX I/O are policy/template seams; commit supports synchronous, full, no-sync, and host-provided asynchronous fsync. Optional footer policies validate checksums and raise `StorageCorruptVolume`.
 - **Key API:**
   - `template<class Header, class BinHeader, class Footer, class IO = storage::DefaultIO> class Storage`
@@ -1941,7 +1945,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 ### msgpack
 [github.com/Kronuz/msgpack](https://github.com/Kronuz/msgpack) &middot; depends on: `atomic-shared-ptr`, `constexpr-phf`, `enum-reflection`, `hashes`, `located-exception`, `repr`, `strict-stox`
 - **What it is:** A header-heavy MessagePack and JSON-like copy-on-write value library with serialization, adaptors, and RFC 6902 patching.
-- **Header / target:** `#include "msgpack.h"` and optionally `#include "msgpack.hpp"` or `#include "msgpack_patcher.h"`; target `msgpack::msgpack`; C++17; CMake fetches support libraries and RapidJSON.
+- **Header / target:** `#include "msgpack.h"` and optionally `#include "msgpack.hpp"` or `#include "msgpack_patcher.h"`; target `msgpack::msgpack`; C++20; CMake fetches support libraries and RapidJSON.
 - **How it works:** `MsgPack` provides JSON-like maps and arrays backed by copy-on-write storage, typed accessors, selectors, and MessagePack serialization. The bundled `msgpack-c` headers provide low-level pack/unpack and buffer types. `apply_patch()` implements add, remove, replace, move, copy, test, and Xapiand-specific increment/decrement operations over the DOM. RapidJSON and `std::string_view` adaptors are included.
 - **Key API:**
   - `class MsgPack`

@@ -31,7 +31,9 @@ target_link_libraries(my_app PRIVATE hashes::hashes)
 
 C++20 is the norm, C++17 for a handful. Tests and demos only build when a repo is the
 top-level project, so pulling a library in does not build its suite. `GIT_TAG main` tracks
-the tip; pin a SHA when you need reproducibility. Everything is MIT licensed except
+the tip; pin a SHA when you need reproducibility. Before moving a pin past 2026-10-30, read
+[docs/UPGRADING-2026-10.md](docs/UPGRADING-2026-10.md): it lists the fixes that change results
+and the commits not to pin. Everything is MIT licensed except
 `btree` (Apache 2.0) and `static-string` (Boost 1.0, inherited from the [2017 Xapiand import](https://github.com/Kronuz/Xapiand/commit/085939b9fa7581256203bcf162ab27194cc66c31)). Some repos bundle third-party code under its own license:
 `msgpack` (Boost 1.0 for msgpack-c), `snowball` (BSD 3-clause for the generated
 stemmers), and `unicode` (the Unicode License for its tables).
