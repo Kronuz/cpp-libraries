@@ -2372,10 +2372,10 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/metrics](https://github.com/Kronuz/metrics) &middot; depends on: nothing first-party
 - **What it is:** Saturating counters and nanosecond duration histograms.
 - **Header / target:** `#include "metrics.hh"`; target `metrics::metrics`; header-only; C++20.
-- **How it works:** `Counter` and `AtomicCounter` saturate at 2^64 - 1 instead of wrapping. `DurationHistogram` keeps 15 buckets with inclusive bounds from 1 µs to 64 s, growing by 4×, plus count, sum, and maximum; `snapshot()` copies them out. No allocation or locks on update.
+- **How it works:** `Counter`, `AtomicCounter` and `ContendedCounter` saturate at 2^64 - 1 instead of wrapping. `AtomicCounter` updates one word with a compare-exchange loop; `ContendedCounter` keeps two words (16 bytes), takes adds below 2^32 with one `fetch_add` on the first and every other update with a clamping compare-exchange on the second, and returns their saturating sum. `DurationHistogram` keeps 15 buckets with inclusive bounds from 1 µs to 64 s, growing by 4×, plus count, sum, and maximum; `snapshot()` copies them out. No allocation or locks on update.
 - **Key API:**
-  - `kronuz::metrics::Counter`, `AtomicCounter`: `add(n)`, `observe_max(v)`, `get()`
-  - `DurationHistogram<>`, `AtomicDurationHistogram`: `observe(ns)`, `snapshot()`
+  - `kronuz::metrics::Counter`, `AtomicCounter`, `ContendedCounter`: `add(n)`, `observe_max(v)`, `get()`
+  - `DurationHistogram<>`, `AtomicDurationHistogram`, `ContendedDurationHistogram`: `observe(ns)`, `snapshot()`
 - **Example:**
   ```cpp
   #include "metrics.hh"
@@ -2387,7 +2387,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Counting events and timing operations in a library without a metrics framework.
 - **Do not use it when / gotchas:**
   - Bucket bounds are fixed; it is not a general-purpose histogram.
-  - `AtomicCounter::add` is one `fetch_add` while the counter is below 2^63 and the amount below 2^32, with a clamping CAS loop otherwise, so contended adds cost about what a bare `fetch_add` costs (`bench/counter_bench.cc`). Saturation is exact. Use a counter either with `add` or with `observe_max`, not both concurrently.
+  - `AtomicCounter` retries its compare-exchange under contention, and `add` and `observe_max` may be mixed on it. A single word cannot take a `fetch_add` fast path: one in flight wraps after another thread lifts the word to the maximum.
+  - For counters many threads `add` to, use `ContendedCounter`: an add below 2^32 never retries and saturation stays exact (eight threads on the M4 Pro: 194-200 ns per add, a bare `fetch_add` 190; `bench/counter_bench.cc`). Use it with `add` or with `observe_max`, not both. It is 16 bytes and costs more than `AtomicCounter` at low contention (two threads on arm64).
 
 ### term-color
 [github.com/Kronuz/term-color](https://github.com/Kronuz/term-color) &middot; depends on: `static-string`
