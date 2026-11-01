@@ -1,13 +1,15 @@
 # Moving pins past October 30, 2026
 
-> Status: CURRENT (2026-10-31). Read from each library's `CHANGELOG.md` and default branch on
-> 2026-10-31.
+> Status: CURRENT (2026-11-01). Read from each library's `CHANGELOG.md` and default branch at
+> 2026-11-01 09:45 UTC.
 
 Consumers pin these libraries by commit, so nothing here reaches a build until a pin moves. This
-note lists every change made on or after 2026-10-30 that changes a result, an exception or a build
-when a pin moves past it. Each entry has the library, the start and fix commits, the inputs whose
-results change, and how a consumer finds out whether it sends them. The full entries, with their
-numbers and oracles, are in each library's `CHANGELOG.md`.
+note covers the libraries the October 30-31 performance campaign touched, and lists every change
+made to them from 2026-10-30 on that changes a result, an exception or a build when a pin moves
+past it. Each entry has the library, the start and fix commits, the inputs whose results change,
+and how a consumer finds out whether it sends them. The full entries, with their numbers and
+oracles, are in each library's `CHANGELOG.md`; libraries outside the campaign (completion,
+journal, consensus, cluster, strata, prospect) keep theirs there too.
 
 - **Start** is the library's default-branch head at 2026-10-30 00:00 PDT, before the first
   change listed here. A pin at or before it gives the old results.
@@ -32,7 +34,9 @@ document's repeated keys. The other changes fix crashes, hangs, wrong answers an
 | [datetime](#datetime) | `fce3d4d` | `fe618d8`, `03f36fa`, `773205b` | Which strings parse; `+12M`; `is_utc`; fractions before 1970 | Xapiand: **owner decision** |
 | [string-similarity](#string-similarity) | `ddfb8d1` | `efba168`, `0939c0c`, `c0825ff` | Jaro, Jaro-Winkler, Dice, weighted Levenshtein, phonetic scores | Xapiand sort keys |
 | [htm](#htm) | `a0321ab` | `cf5177b`, `9006a84` | Ids of points near a cell edge on fusing builds | Xapiand geo index: reindex |
-| [msgpack](#msgpack) | `3c408cf` | `d054ea1`, `c913966` | Maps that repeat a key; growing arrays of maps | Xapiand documents |
+| [msgpack](#msgpack) | `3c408cf` | `d054ea1`, `c913966`, `d8fa3e6` | Maps that repeat a key or have a non-string key; growing arrays of maps | Xapiand documents |
+| [enum-reflection](#enum-reflection) | `79fe3fa` | `2a5da3a` | A crafted name no longer matches a member | http-parser, msgpack, Xapiand |
+| [storage](#storage) | `7b9abd1` | `90aec94`, `a1e49db`, `217e731` | Records past 4 GiB; damaged records; volume locks | Xapiand |
 | [strict-stox](#strict-stox) | `f0f7374` | `7d7f5dd` | Input of 64 bytes or more parses | datetime, msgpack, storage, Detent, Xapiand |
 | [strings](#strings) | `62fb121` | `bb85615` | `indent`, empty-search `replace`, `hasupper` | fs, soundex, string-similarity, system, traceback, Detent, Xapiand |
 | [stringified](#stringified) | `c8c9033` | `1c1fb3e` | Copies no longer dangle; `c_str()` stays in bounds | fs, storage, Xapiand |
@@ -59,6 +63,7 @@ the second.
 | strict-stox | `70b8325` | `199e0be` | The fast path ignores the rounding mode: under `fesetround(FE_UPWARD)`, `strict_stod("-0.1")` gives `-0.1` where libc gives `-0.099999999999999991` (2,358 of 30,012 random texts). |
 | logger | `dc1fe62` | `06a27d2` | A `clears` line due within 1 ms can be written before an immediate line logged earlier. |
 | generation-cache | `715f2af` | `2930a64` | A `Key` or `Value` copy or move that throws in `try_insert` or in a rehash loses entries or leaves a slot that a later `get` dereferences. |
+| fst | `b1e8ff3` | `8058003` | Verifying a node-registry hit reads past the end of the bytes the builder has written (heap use after free under ASan). |
 | string-similarity | `0939c0c` | `c0825ff` | `PhoneticMetric<Encoder, Sorensen_Dice>` bound to a string scores 0 for every pair whose codes differ. |
 | stringified | `2c78a1d` | `0053465` | A string literal passed to an overload set over `stringified` and `std::string_view` or `const std::string&` is ambiguous and does not compile. |
 | metrics | `aa7a3d8` | `4890fc0` | `AtomicCounter::add` racing an add that saturates the counter can wrap it, permanently (`9207dd3` narrows the window and does not close it). |
@@ -183,9 +188,22 @@ points to reindex are the ones whose id differs between the old and the new buil
 Detect: `test/golden.h` holds 396 points with their ids, 96 of them points a fusing build gets
 wrong; run the old and new `getId` over stored points on the build that wrote the index.
 
+## enum-reflection
+
+Start `79fe3fa`, fix `2a5da3a`. `enum_type<E>(name)` and `enum_try_type<E>(name)` matched on a
+64-bit hash of the name alone, and the hash is invertible, so a string built to share a member's
+hash (15 bytes were enough) returned that member. Each lookup compares the name with the member's,
+ASCII case-insensitively as before; such a string misses (`enum_type` throws
+`std::out_of_range`, `enum_try_type` returns `std::nullopt`). Every real member name gives the same
+answer. Xapiand passes schema properties to `enum_type<StemStrategy>`
+(`src/database/schema.cc:7094`).
+
+Detect: lookups of names that are not members; only a crafted string changes.
+
 ## msgpack
 
-Start `3c408cf`, fixes `d054ea1` and `c913966`. Xapiand stores its documents as `MsgPack`.
+Start `3c408cf`, fixes `d054ea1`, `c913966` and `d8fa3e6`. Xapiand stores its documents as
+`MsgPack`.
 
 - A map that repeats a key is merged when it is first filled (a lookup, a walk, `hash()`,
   `erase`): the last value wins in the position of the first occurrence, so
@@ -196,13 +214,37 @@ Start `3c408cf`, fixes `d054ea1` and `c913966`. Xapiand stores its documents as 
 - Pushing onto an array of maps after writing through one of its elements read freed memory: a
   growing `std::vector<MsgPack>` copied its elements, because the move constructor was not
   `noexcept`. It moves them.
+- Filling a map with a key that is not a string throws "MAP keys must be of type STR", and the
+  throw leaves the map as it was. It indexed the keys before the bad one first, so a second fill
+  dropped them: on `{"a":1, 5:2}` the second `erase("a")` left `serialise()` at `810502`.
 
 `unserialise`, `hash()` and `to_string()` are faster with identical results (`ca77ada`,
-`f2f9f78`, `987c111`). The CHANGELOG lists three known problems left for an owner decision: a
-fill that throws on a key that is not a string leaves the map half indexed, and `at(size_t)` and
-`to_string()` read such a key as a string.
+`f2f9f78`, `987c111`). The CHANGELOG lists three known problems left for an owner decision:
+`put()` over a map or array already read through the API keeps the old index, `to_string()`
+reads a key that is not a string as a string, and a failed `lock()` leaves part of a document
+locked.
 
-Detect: documents that repeat a key, and code that grows an array of maps after writing into it.
+Detect: documents that repeat a key or have a key that is not a string, and code that grows an
+array of maps after writing into it.
+
+## storage
+
+Start `7b9abd1`, fixes `90aec94`, `a1e49db` and `217e731`. Xapiand stores its documents' blobs
+with it.
+
+- `read()` bounded a record with a 32-bit product, so a record starting past 4 GiB of byte offset
+  read as end of file; it reads.
+- A record whose flags byte is damaged into "compressed" escaped `read()` as the codec's own
+  exception; it throws `StorageCorruptVolume`.
+- `growfile()` multiplied in `int` and overflowed once a volume passed about 1.6 GiB; the product
+  is `off_t`.
+- A writable open holds a shared `flock` on the volume, and `reclaim_volumes` takes the exclusive
+  one; a writable open that finds a reclaim holding the volume fails with `EWOULDBLOCK`.
+  `commit()` syncs the volume directory once after creating the file.
+
+The on-disk format is unchanged, and the compressors pin carries the compressors fixes above.
+
+Detect: volumes past 4 GiB, damaged volumes, and hosts that open a volume while reclaiming.
 
 ## strict-stox
 
@@ -421,11 +463,11 @@ Detect: tests that assert exact draws.
 ## Unchanged results
 
 These libraries changed between start and head with results identical to start, checked by a
-differential test against a frozen copy of the old code: bitpack, char-classify (its new block
-scanners and escaping kernel serve escape and repr, whose output is unchanged), cuuid (wire bytes),
-docset, double-metaphone, enum-reflection (`enum_try_type` is new), escape, flat-map, fst, md5,
-sha256, soundex, storage (the on-disk format), term-color, threadpool, unicode and
-url-parser. metrics' `AtomicCounter` is start's compare-exchange loop again, and
-`ContendedCounter` is a new type. bloom-filter keeps `BloomFilter<N>` bit for bit;
-`FastBloomFilter<N>` and `BlockedBloomFilter<N>` are new and set different bits, so a bitset
-persisted from one type does not load into another.
+differential test against a frozen copy of the old code (for http, by the same integration tests
+run against the previous header): bitpack, char-classify (its new block scanners and escaping
+kernel serve escape and repr, whose output is unchanged), cuuid (wire bytes), docset,
+double-metaphone, escape, flat-map, fst, http (the bytes on the wire), http-parser, md5, sha256,
+soundex, term-color, threadpool, unicode and url-parser. metrics' `AtomicCounter` is
+start's compare-exchange loop again, and `ContendedCounter` is a new type. bloom-filter keeps
+`BloomFilter<N>` bit for bit; `FastBloomFilter<N>` and `BlockedBloomFilter<N>` are new and set
+different bits, so a bitset persisted from one type does not load into another.
