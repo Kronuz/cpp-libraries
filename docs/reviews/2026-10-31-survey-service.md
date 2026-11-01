@@ -31,8 +31,11 @@ memory (`msgpack:c913966`, `msgpack_growth`), and made a fill that throws leave 
 
 Host: Apple M4 Pro, arm64, macOS, Apple clang 17, `-O3 -DNDEBUG`, C++20. Every timing was taken under an exclusive timing hold
 (four holds, each under 10 minutes; the third and fourth also built). Sources, corpus generator, prototypes and raw output
-were the survey's own harness (msgpack rows: probe not kept; server rows: `http:bench/server_compare.cc`). The libs were not modified; prototypes are copies of the library headers
-(prototype not kept). Comparators: vendored msgpack-c 1.3.0 used directly,
+were the survey's own harness (msgpack rows: now `msgpack:benchmarks/compare.cc` (`msgpack_compare`) and
+`msgpack:benchmarks/pack_unpack.cc` (`msgpack_benchmark`), the corpus in `msgpack:benchmarks/corpus.h`; server rows:
+`http:bench/server_compare.cc`). The libs were not modified; prototypes are copies of the library headers (prototype not
+kept; the changes are described in `msgpack:docs/perf/survey-2026-10.md` and `http:docs/perf/timeouts-cpu.md`).
+Comparators: vendored msgpack-c 1.3.0 used directly,
 msgpack-c cpp_master (7.x), nlohmann::json 3.12, mpack 1.1, RapidJSON (the lib's pin); wrk 4 for the servers.
 x86 (Intel Core i9-9980HK, macOS, Apple clang 17, one exclusive hold): msgpack rows for the library and the prototypes
 only, below; the comparators and the servers were not run there (no asio or wrk installed).
@@ -123,7 +126,8 @@ user+system per request. wrk saturates at about 43k req/s on the M4 Pro, so CPU 
 | http (timeouts on) | 64 connections | 45.1 us CPU (27,549 req/s); first hold 44.4 (28,222) | Asio 23.7 us (43,553) | 1.9x CPU, 0.63x req/s | same | 1.6x throughput | M | **CLEAR WIN** | J-W5 |
 | http | connection per request (round 1) | 44,012 conn/s | Asio 43,245 | 1.02x | 12.5 mallocs and 1.5 KB per connection (Asio 0.0) | - | - | not worth it | - |
 
-http prototypes (a modified copy of `http_asio.h` with compile-time switches, prototype not kept; 4 s runs; one connection unless noted; the baseline row is the
+http prototypes (a modified copy of `http_asio.h` with compile-time switches, prototype not kept; the ablation table is in
+`http:docs/perf/timeouts-cpu.md`; 4 s runs; one connection unless noted; the baseline row is the
 last hold, the other holds' baselines are within 3%):
 
 | variant | timeouts off: latency / CPU / mallocs, `kevent`, `recv` per request | timeouts on: latency / CPU | 64 connections, timeouts on |
@@ -241,5 +245,7 @@ unreliable). The comparator binary agreed with the wrapper on the small and med 
 RapidJSON's default parse differed in the last bit of some doubles (`kParseFullPrecisionFlag` is off); that run stopped there, and
 the check is now a warning (the Linux VM could not rebuild it: the compiler ran out of memory). Not done: x86 comparators and servers, a profile of the msgpack paths, the hand-written JSON writer.
 
-The msgpack harness and the raw output were not kept (probe not kept). The server rows are re-run with
+The msgpack harness is now `msgpack:benchmarks/compare.cc` and `msgpack:benchmarks/pack_unpack.cc`
+(`-DMSGPACK_BUILD_BENCH=ON`, joined by `benchmarks/compare.py`; numbers on an Apple M1 Pro and the i9 in
+`msgpack:docs/perf/survey-2026-10.md`); the raw output was not kept. The server rows are re-run with
 `http:bench/server_compare.cc` and `http:bench/compare.sh` (`-DHTTP_BUILD_BENCH=ON`).

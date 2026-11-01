@@ -29,13 +29,14 @@
 
 The datetime history, with the before and after numbers of each change, is in `datetime:CHANGELOG.md` (2026-10-30 and
 2026-10-31). `5d4f2cb` kept results identical for every input; the fixes that followed (`fe618d8`, `03f36fa`, `773205b`)
-changed the listed input classes on purpose. Not on `main` yet: the external comparator rows (hand ISO parser,
-abseil, `strptime`+`timegm`) as `datetime:bench/compare.cc`; `datetime:bench/bench.cc` times the library against its
-frozen original only.
+changed the listed input classes on purpose. The external comparator rows (hand ISO parser and formatter,
+days-from-civil, abseil, `strptime`+`timegm`) are `datetime:bench/compare.cc` (`datetime_compare`, `datetime:f254133`),
+whose `--check` mode is the CTest test `datetime_compare`; `datetime:bench/bench.cc` times the library against its
+frozen original.
 
-Bench: a cluster harness (prototype not kept; the old-against-new rows are in `datetime:bench/bench.cc`), clang++ -O2,
-C++20, arm64, brew abseil 20260817. 4096 random inputs per row, best of 7 (3 for slow rows), under an exclusive timing
-hold. A/A = the same lib closure run twice (spread 0-7%).
+Bench: a cluster harness (its datetime rows are now `datetime:bench/compare.cc`; the old-against-new rows are in
+`datetime:bench/bench.cc`), clang++ -O2, C++20, arm64, brew abseil 20260817. 4096 random inputs per row, best of 7 (3 for
+slow rows), under an exclusive timing hold. A/A = the same lib closure run twice (spread 0-7%).
 Comparators: hand ISO parser/formatter and days_from_civil/civil_from_days written from the public algorithm
 description (not copied), abseil `ParseTime/FormatTime/FromCivil`, `strptime+timegm`, `gmtime_r`, `clock_gettime`.
 Every "identical=yes" row compared the full result (parsed seconds incl. fsec and TZ offset, or full string).

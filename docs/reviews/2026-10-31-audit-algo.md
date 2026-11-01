@@ -71,7 +71,7 @@ guarantee in cartesian's new hash (C1).
   and the htm, cartesian, soundex and double-metaphone benches), and a Jaro prototype (prototype
   not kept). References were written fresh for this audit (a column-major int64 Levenshtein, a
   Jaro with flags on both sides, a hash-map Dice), plus rapidfuzz-cpp 3.3.4. Mutants: 27
-  string-similarity mutants (probe not kept) and 5 HTM mutants (probe not kept; covered by
+  string-similarity mutants (the script is now `string-similarity:tools/mutants.py`, which carries 69) and 5 HTM mutants (probe not kept; covered by
   `htm:test/diff_test.cc`).
 - Timing host: **Apple M1 Pro (arm64, Apple clang 21 -O3, no hold tool there; load 1-2 during the
   runs, nothing else benchmarking, three interleaved head/start runs per binary, best of 7 rounds
@@ -215,7 +215,7 @@ TSan did not start on the Linux VM; CI's TSan job runs only single-threaded test
 28,217,314 checks; 4,477,828 checks, 0 failures.
 
 **Mutation check of the riskiest claim (the blocked and single-word kernels).** 27 single-token
-mutants (probe not kept), repo tests at -O2 (stopping at the first failing test) and, for
+mutants (the script is now `string-similarity:tools/mutants.py`), repo tests at -O2 (stopping at the first failing test) and, for
 memory-safety mutants, with ASan+UBSan and `differential quick` (M1 Pro, clang 21).
 - Killed by `correctness.cc` (or `test.cc`): M01 carry out `Ph>>62`, M02 carry `hn` wrong,
   M03 last-bit `m % 64`, M04 score without `Mh`, M05 no top carry-in, M06 `Eh` without `hn`,

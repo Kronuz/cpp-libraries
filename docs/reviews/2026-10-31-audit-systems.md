@@ -19,13 +19,13 @@
 | AL1 copy assignment shares the pool | closed | `allocators:e38f759` | `allocators_propagation`, `allocators_pool` |
 | C1 fuzz target does not reach the new `decompress_lz4` | open | - | - (open: `compressors:fuzz/fuzz_lz4.cc` mode 0 still compares only the two stream classes; no commit references C1; damaged input does reach `decompress_lz4` in `compressors_lz4_oneshot`) |
 | C2 per-thread lz4 state and scratch undocumented | no change | `compressors:9bd24af` | - (kept by design, now documented in `compressors:docs/API.md`) |
-| L1 logger README ordering sentence overclaims | partly closed | `logger:f95ff17` | - (README scoped to lines through the LOG thread and names the two kinds that overtake; no test pins them) |
+| L1 logger README ordering sentence overclaims | closed | `logger:f95ff17`, `logger:8bd9d7f` | `logger_order` (README scoped to lines through the LOG thread; the test pins that `L_CRIT` and lines logged after `finish()` has begun are written on the calling thread, and fails with `ASYNC_LOG_LEVEL` raised to `LOG_CRIT` or the refused line dropped) |
 | L2 TSan reports in stash with several producers | not a defect | `stash:0efcd0f` | `stash_concurrent` (four producers, clean under CI's clang 18 TSan) |
 | S1 `add()` reads the published wakeup before its fence | closed | `scheduler:62a4fe8` | `scheduler_handshake_model` |
 | S2 single-producer `add()` 1.33x slower after the loss fix | closed | `scheduler:62a4fe8` | `scheduler_post` (`busy_pass`); `scheduler:bench/bench_post.cc` |
-| N1 README thread paragraph silent on moving a container | open | - | - (open: `allocators:README.md:88-92` lists copying as safe and says nothing of moving; no commit references N1) |
-| N2 `a = {}` and `a.clear()` read like a re-pool | open | - | - (open: the README names only move-assigning a fresh container) |
-| N3 `splice`/`merge` after `e = d` | open | - | - (open: the CHANGELOG entry for `e38f759` does not mention it) |
+| N1 README thread paragraph silent on moving a container | closed (docs) | `allocators:42f6d4c` | - (the README says a moved-from container keeps the shared pool and must be re-pooled before another thread touches either, and when moving a container to another thread is safe) |
+| N2 `a = {}` and `a.clear()` read like a re-pool | closed | `allocators:42f6d4c` | `allocators_propagation` (`a = {}` and `clear()` keep a moved-from container's shared pool, over the six node containers); the README says neither re-pools |
+| N3 `splice`/`merge` after `e = d` | closed | `allocators:42f6d4c` | `allocators_propagation` (a copy-assigned pair and a copy compare unequal; fails with `propagate_on_container_copy_assignment` set back to `true_type`); README and CHANGELOG say `splice` and `merge` between them are not allowed |
 
 L2 was refuted by `stash:0efcd0f`: every report pairs an access with the construction of an object reached through a
 lost compare-exchange, which acquires on failure; LLVM 12's TSan runtime ignores the failure order (LLVM 13 applies it),
@@ -151,7 +151,8 @@ Non-blocking:
 
 ## storage: BETTER WITH CONDITIONS (ST1)
 
-- **Format identity** (`stor_fmt.cc`, probe not kept; Linux VM): 63 records per volume (21 sizes from 0 B to 1 MB+3,
+- **Format identity** (`stor_fmt.cc`, now `storage:test/format_golden.cc`, `storage_format_golden`, with volumes the start
+  engine wrote as fixtures; Linux VM): 63 records per volume (21 sizes from 0 B to 1 MB+3,
   around 2 KB, 64 KB, the 256 KB wrap and 3 x 256 KB; random, text, runs) for none/lz4/zstd/deflate. Volumes written by
   head twice and by start are **byte-identical** (`cmp`, 16.3 / 8.2 / 6.6 / 6.3 MB). Head reads start's volumes and
   start reads head's, whole-record and 2 KB-chunked: 4 x 63 records OK each way.
@@ -171,7 +172,7 @@ Non-blocking:
 - L1 (doc, pre-existing behaviour, new claim): README:110-112 says "Of two lines due in the order they were logged, the
   first is never written after the second". False for two cases on both start and head: (a) an async line
   (`L_INFO`..`L_ERR`, `ASYNC_LOG_LEVEL` = `LOG_ERR`, logger.h:338) followed by a synchronous one (`L_CRIT`+, written inline):
-  `lg_sync.cc` (probe not kept) puts the CRIT first in 1999/2000 pairs on start and 2000/2000 on head; (b) across
+  `lg_sync.cc` (now a case of `logger:test/order.cc`, `logger_order`) puts the CRIT first in 1999/2000 pairs on start and 2000/2000 on head; (b) across
   `finish()`: lines refused after it are written inline before the drained ones (`lg_finish`: about 195 of 200
   post-finish lines per run overtake, start and head alike). Scope the sentence to lines that go through the LOG thread
   and to before `finish()`.
@@ -297,10 +298,11 @@ Where each probe of this audit lives now:
   `compressors:fuzz/fuzz_lz4.cc` (C1 is the gap left in the fuzz target).
 - `bench_comp.cc` and its output: probe not kept; covered by `compressors:bench/bench_lz4.cc`, `bench_xxh32.cc` and
   `bench_oneshot.cc`.
-- `stor_fmt.cc`: probe not kept.
+- `stor_fmt.cc`: `storage:test/format_golden.cc` (`storage_format_golden`).
 - `alloc_probe.cc`: probe not kept; covered by `allocators:allocators_propagation`.
 - `fs_self.cc`: probe not kept; covered by `fs:test/test.cc` `test_copy_file_same_file`.
-- `lg_finish.cc`: probe not kept; covered by `logger:logger_order` (its `finish()` case). `lg_sync.cc`: probe not kept.
+- `lg_finish.cc`, `lg_sync.cc`: now cases of `logger:test/order.cc` (`logger_order`: the `finish()` drain and the
+  written-at-the-call checks, `logger:8bd9d7f`).
 - `sched_add_bench.cc`: probe not kept; covered by `scheduler:bench/bench_post.cc` (its `add()` row).
 - The Linux VM's format shim (enough of `<format>` for threadpool, exception.h, stringified and static-string under
   g++ 11's libstdc++), the exact-scratch compressors copy, the mutants, the hand-built logger start/head trees used on
@@ -343,7 +345,8 @@ Results (macOS arm64 = M4 Pro, APFS; Linux VM = Linux x86_64, clang 12, ASan+UBS
 | `edge_fs1` cross filesystem | all pairs pass (below) | `edge_pre`: "symlink on the other volume to the source" empties the source in all 12 pairs (rc 0) |
 
 `edge_fs1` is not kept: `fs:test/test.cc` `test_copy_file_same_file` covers the same-filesystem spellings (hard link,
-symlink to the same file, directory onto itself); the cross-filesystem and TOCTOU cases are not in the repo test.
+symlink to the same file, directory onto itself); `fs:8293979` adds the cross-filesystem copies to `fs` (skipped on a
+host with one filesystem) and `fs_identity`, which kills mutant m6; the TOCTOU cases are not in the repo tests.
 What `edge_fs1` covers (all refused with `-1`, source intact, no descriptor leak): `./d`, `d/../d`, `d//./`,
 `e/../d`, absolute against relative; a symlink to the source file (relative, absolute, a three-link chain, in the same
 directory) and to the directory (as source, as destination, both); a hard link in another and in the same directory;

@@ -106,7 +106,8 @@ vs std::map (int/unsigned/int8/uint8/int64/uint64, mixed-width queries, sizes 0.
 ## Probes
 
 `queue_wake_stress.cc` (probe not kept; covered by `queue_liveness` and `queue_concurrent`), the mutant headers
-`mutant_queue_M1_nolock.h` and `mutant_queue_M2_nowaitercount.h` (probe not kept), `metrics_saturation_probe.cc` (probe not kept; covered by
+`mutant_queue_M1_nolock.h` and `mutant_queue_M2_nowaitercount.h` (now the `wake-all-no-lock` and
+`untimed-consumer-uncounted` edits of `queue:tools/mutants.py`), `metrics_saturation_probe.cc` (probe not kept; covered by
 `metrics_differential` and `metrics_model`), `gencache_probe.cc` (probe not kept; covered by
 `generation_cache_exception_safety`), `flatmap_probe.cc` (probe not kept; covered by `flat_map_search_insert`),
 `btree_probe.cc` (probe not kept; covered by `key_relocation` and `ownership_move`), `bloom_probe.cc` (probe not kept;

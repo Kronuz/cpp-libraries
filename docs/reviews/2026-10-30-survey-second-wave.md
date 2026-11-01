@@ -12,7 +12,7 @@
 | finding | status | repo:sha | test |
 |---|---|---|---|
 | I-W1 bitpack `unpack`: load each input word once | landed (NEON); the SSE2 twin was tried and dropped (bitpack CHANGELOG 2026-10-31, "Not changed") | `bitpack:494a727`, `bitpack:41cc024` (width 32 `memcpy`) | `bitpack_differential`, `bitpack_differential_portable`; load counts in `bitpack:bench/asm_check.cc` |
-| I-W2 hashes: additive wide-lane `wordwise` | open: no commit on hashes `main` (head `971ea8c`) references it; `bench/candidate_wordwise8.hh` and `bench/compare.cc` exist only on an unmerged branch on origin (`b5-wip`) | - | - |
+| I-W2 hashes: additive wide-lane `wordwise` | open: `hashes:1100edd` lands the prototype as `bench/candidate_wordwise8.hh`, bench-only and kept out of the library, timed beside `wordwise` and XXH3 in `hashes_compare` (1.0x to 1.8x of XXH3's time on the M4 Pro); `hashes.hh` has no wide-lane function | `hashes:1100edd` (candidate only) | - |
 | I-M1 hashes `wordwise` at 16-128 B | not pursued: no commit on hashes `main` references it | - | - |
 | I-W3 allocators: `construct` perfect forwarding | landed | `allocators:7cdb0f8`, `allocators:ea0c5e6` (bench) | `allocators_construct` |
 
@@ -23,9 +23,10 @@ and the SSE2 kernels keep their row-wise loads.
 
 Host: Apple M4 Pro (arm64 macOS), Apple clang 17, `-O3` (allocators `-O2`), libs at `main` after `git pull`
 (`allocators` had uncommitted edits to `allocators.h` in its working tree; they were left alone).
-Benchmarks: the survey's own harnesses (`bp.cc`, `hs.cc`, `al.cc`, `al2.cc`, `bp_asm*.cc`; probe not kept: the bitpack rows
-are covered by `bitpack:bench/bench.cc` and `bitpack:bench/asm_check.cc`, the allocator rows by `allocators:bench/bench.cc`
-and `allocators_construct`).
+Benchmarks: the survey's own harnesses (`bp.cc`, `hs.cc`, `al.cc`, `al2.cc`, `bp_asm*.cc`; the hashes rows of `hs.cc` are
+now `hashes:bench/compare.cc` (`hashes_compare`); the rest was not kept: the bitpack rows are covered by
+`bitpack:bench/bench.cc` and `bitpack:bench/asm_check.cc`, the allocator rows by `allocators:bench/bench.cc` and
+`allocators_construct`).
 All timings under an exclusive timing hold. Ratios are `ours / comparator` unless stated, so above 1.0 means ours is slower.
 "A/A" is the same binary measured twice in the same run. Every comparator's output was checked equal to ours first
 (bitpack: unpacked ints identical for all widths timed; hashes: not comparable bit-for-bit, so the rows are
@@ -72,7 +73,7 @@ deterministic count (a type that counts constructions, 1000 push_backs; probe no
 - Single biggest change: in `unpack_rows` (and `unpack_delta_rows`) first load the B input words into a local `uint32x4_t w[B]`
   (`for i < B: w[i] = load_u32x4(in + 16*i)`), then have `unpack_row<B,R>` read `w[row::word]` and `w[row::word + 1]`. The compiler
   now cannot be forced to reload after each output store. The working scratch version was a copy of `bitpack.hh` with about 20
-  lines changed (prototype not kept). Apply the same to the SSE path (the x86 compiler has the same alias problem: `__m128i` loads
+  lines changed (prototype not kept; the landed change and its measurements are in `bitpack:docs/perf/unpack-loads.md`). Apply the same to the SSE path (the x86 compiler has the same alias problem: `__m128i` loads
   via `reinterpret_cast<const __m128i*>` are may_alias types and `out` is a store through a different type).
 - Keep B == 32 on the old path (plain copy; the array version was 1.07x slower there).
 - Must stay identical: output of `unpack`/`unpack_delta` for every width (tests round-trip every width and compare scalar vs SIMD), packed bytes, API.
@@ -85,7 +86,7 @@ deterministic count (a type that counts constructions, 1000 push_backs; probe no
 - Start files: `hashes:hashes.hh` (`class wordwise`, ~line 226). Add a new class; do not change `wordwise` output (perfect-hash keyword tables and stored hashes depend on it).
 - Design that measured: 8 lanes seeded `seed + P*k`, each `a = (a ^ w) * P; a ^= a >> 29` over 8 B words, 64 B per iteration, last block read overlapped
   (`len - 64`) so there is no byte tail loop, lanes folded with distinct odd weights and a rotate, then the existing finaliser. For `len <= 32`, overlapping loads.
-  (prototype not kept)
+  (the prototype is now `hashes:bench/candidate_wordwise8.hh`, timed by `hashes_compare`)
 - Quality checks run: 2M structured long keys and 2M short counter keys, 0 duplicate 64-bit hashes; avalanche 31.9-32.0 of 64 bits for key lengths 1, 3, 7, 12, 20, 40, 64, 100, 300.
   This is not SMHasher; it must pass SMHasher (or the repo's `bench/collisions.cc`) before shipping.
 - Result: 3.4x / 6.6x / 6.1x faster than `wordwise` at 512 B / 4 KB / 64 KB, **still 1.2-1.8x behind XXH3 and 1.7-1.8x behind abseil**: the claim "beats XXH3" is not met.

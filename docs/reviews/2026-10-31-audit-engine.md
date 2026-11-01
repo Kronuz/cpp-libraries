@@ -45,7 +45,7 @@ apply to them unchanged. Output bytes: fst builds byte-identical FSTs on every s
 pass against fst head; docset's set contents, container shapes and `freeze` bytes are identical.
 
 Probes: the audit's fst and docset probes, edge benches, A/B harness, memory probe, collision probes, hash variants and
-mutants were not kept. Where each now lives is given at its first use below.
+mutants were not kept as written. Where each now lives is given at its first use below.
 
 ## docset
 
@@ -116,7 +116,8 @@ arm64 and x86-64 (clang and GCC).
 
 ### Evidence
 
-- The docset probe (probe not kept; covered by `docset:test/test.cc` and `docset:test/diff.cc`): (1)
+- The docset probe (probe not kept; covered by `docset:test/test.cc` and `docset:test/diff.cc`, which holds its
+  boundary-result cases (3) since `docset:5885676`, CTests `docset_diff` and `docset_diff_portable`): (1)
   `lower_bound_index` exhaustive as above; (2) `from_bitmap` against the reference
   at 0, 1-4, 63-65, 127-129, 3071, 4094-4098, 8192, 65535, 65536 bits in five patterns (packed at the top so the
   last words are full, packed at the bottom, bit 63 of each word, exactly 3 per word, random) and 2,000 random
@@ -185,8 +186,8 @@ it in CTest. The code is right today: forced-collision builds (hash variants wit
 
 **E3. Peak build memory regresses at some sizes** (untargeted, not in the CHANGELOG). The table keeps load <= 0.5
 with 16-byte slots and holds both arrays during `grow()`, so memory per written node saws between about 32 and
-96 bytes; the start's `unordered_map<std::string,...>` cost about 65. A memory probe (probe not kept), peak RSS of
-one build of N random 12-letter keys, arm64:
+96 bytes; the start's `unordered_map<std::string,...>` cost about 65. A memory probe (now `fst:bench/build_rss.cc`,
+`fst_build_rss`), peak RSS of one build of N random 12-letter keys, arm64:
 
 | keys | start | head | head/start |
 |---:|---:|---:|---:|
@@ -245,7 +246,8 @@ Fix: 8-byte slots (40-bit address plus a 24-bit hash tag; the full hash is recom
 
 ### Performance
 
-Edge rows (build of 1 to 1024 keys, 200-byte keys, short `range`) came from an edge bench (probe not kept).
+Edge rows (build of 1 to 1024 keys, 200-byte keys, short `range`) came from an edge bench (now the edge rows of
+`fst:bench/cmp_bench.cc`, `fst_cmp_bench`).
 
 | row | arm64 M4 Pro, clang 17 | x86-64 i9, Apple clang 17 | x86-64 i9, GCC 16.2 | claim |
 |---|---|---|---|---|

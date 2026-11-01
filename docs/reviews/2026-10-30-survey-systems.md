@@ -36,10 +36,12 @@ them.
 
 ## Method
 
-Benchmarks: harnesses written for this survey (`comp.cc comp2.cc tp.cc lg.cc asp.cc stor.cc alloc.cc iob.cc`;
-prototypes not kept, the repos' own benches now cover the rows that landed: `compressors:bench/bench_lz4.cc`,
-`compressors:bench/bench_xxh32.cc`, `compressors:bench/bench_oneshot.cc`, `logger:bench/lg.cc`,
-`threadpool:bench/enqueue_bench.cc`, `allocators:bench/bench.cc`).
+Benchmarks: harnesses written for this survey (`comp.cc comp2.cc tp.cc lg.cc asp.cc stor.cc alloc.cc iob.cc`).
+`stor.cc`'s raw `pwrite`/`pread` plus LZ4/zstd rows are now the "raw" rows of `storage:examples/bench.cc`
+(`storage_bench`), and `alloc.cc`'s pool against `std::pmr` is `allocators:bench/compare_pmr.cc`
+(`allocators_compare_pmr`). The rest were not kept; the repos' own benches cover the rows that landed:
+`compressors:bench/bench_lz4.cc`, `compressors:bench/bench_xxh32.cc`, `compressors:bench/bench_oneshot.cc`,
+`logger:bench/lg.cc`, `threadpool:bench/enqueue_bench.cc`, `allocators:bench/bench.cc`.
 Every row was timed under an exclusive timing hold. "A/A spread" is max/min over 5 repetitions of the same binary
 in the same run (not a separate A/A pair), so a ratio inside that spread is a tie. Ratios are
 `ours / comparator`, so above 1.0 means ours is slower. Libraries were not modified. Comparator results were

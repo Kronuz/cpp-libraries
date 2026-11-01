@@ -20,7 +20,7 @@
 | D-M4 metrics: `fetch_add` fast path for `AtomicCounter` | landed | `metrics:4890fc0` | `metrics_model`, `metrics_differential` |
 | D-M5 metrics: histogram bucket by counting | landed | `metrics:aa7a3d8` | `metrics_differential` |
 | D-M6 metrics: striped `AtomicDurationHistogram` | not pursued | - | - (layout and ABI change, recorded in [LESSONS](../LESSONS.md#metrics)) |
-| D-M7 lru-cache: single-hash `emplace` | not pursued | - | - (lru-cache `main` has no commit after 2026-10-29) |
+| D-M7 lru-cache: single-hash `emplace` | not pursued | - | - (lru-cache `main` has only the benchmark after 2026-10-29, `lru-cache:08f2403`; `emplace` is unchanged) |
 
 D-W2 shipped as the opt-in `FastBloomFilter<N>` and `BlockedBloomFilter<N>`; `BloomFilter<N>` keeps its bits, as the
 hazard below requires. D-M4 landed first as a plain `fetch_add` (`metrics:aa7a3d8`), which wrapped under concurrent
@@ -34,7 +34,8 @@ Host: Apple M4 Pro, Apple clang 17, `-O3 -DNDEBUG`, all timings under an exclusi
 Benchmarks: a survey harness per library (prototype not kept). The repo benches that now cover the rows are
 `bloom-filter:bench/bloom_bench.cc` (boost::bloom), `flat-map:bench/bench.cc`, `btree:benchmarks/string_insert_bench.cc`
 (absl::btree_map), `generation-cache:bench/bench.cc` (absl::flat_hash_map), `metrics:bench/counter_bench.cc`,
-`varint:bench/bench.cc` and `constexpr-phf:bench/compare.cc` (`phf_compare`, also for ctrie); lru-cache has no bench.
+`varint:bench/bench.cc`, `constexpr-phf:bench/compare.cc` (`phf_compare`, also for ctrie) and `lru-cache:bench/bench.cc`
+(`lru_cache_bench`, against the textbook `std::list` plus `std::unordered_map` LRU).
 queue and constexpr-phf use the benches already in their repos (`queue:benchmark/bench.cc`,
 `constexpr-phf:bench/{compare,bench}.cc`).
 Ratio = comparator time / ours: **>1 means ours is faster, <1 means ours is slower.** "A/A" = ours timed twice in the same run (max/min of the two bests). Every comparator was checked for identical results on the benchmark inputs before timing (lru: see hazard note; bloom: no false negatives, FP rates listed, because a different bloom has different false positives by design).

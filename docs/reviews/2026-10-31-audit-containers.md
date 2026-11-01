@@ -25,7 +25,7 @@
 | CA10 queue: x86 below the naive baseline at 2+ threads | closed | `queue:44211ce` | - (performance; re-check CA1) |
 | CA11 hygiene: local merged branches | closed | - | - (origin has only `main` in all five repos) |
 | RC1 catalog still carries the withdrawn `AtomicCounter` claim | closed (docs; the metrics entry describes both counters) | `cpp-libraries:455fae2` | - |
-| RC2 two proof steps checked only at 8 bits or one schedule | open | - | - (`metrics` main is still `50d8bb8`, the re-checked head) |
+| RC2 two proof steps checked only at 8 bits or one schedule | closed | `metrics:41a7213` | `metrics_model` (several adds per thread across the thresholds, four and five threads), `metrics_seeded` (64-bit counters near 2^63 and 2^64 against a 128-bit oracle; fails with the `small_` check dropped) |
 
 CA9, CA10 and CA11 are documentation, timing and hygiene findings: no test can fail on them, and they count as closed
 on the commit (CA9), on the re-check's interleaved timing (CA10) and on the branch lists of origin (CA11). CA5: the
@@ -33,7 +33,9 @@ i9 replayed `<i8,u64>` n=100 find is 6.4 ns against 5.0 with `std::lower_bound` 
 `flat-map`'s CHANGELOG keeps the branchless search for every integer key by choice. `flat-map`'s CHANGELOG also
 records a new x86 gap after the CA6 fix: insert into 64 to 256 entries on the i9 is 27 to 43% slower than on
 2026-10-30, cause not isolated. The CA1 re-check's three notes outside CA1 (teardown with parked threads, the move
-constructor from a moved-from `Queue`, moodycamel on x86 in the README) have no ID; none is addressed on `queue:31552f9`.
+constructor from a moved-from `Queue`, moodycamel on x86 in the README) have no ID. `queue:79d5737` documents the first
+two (a `Queue` is destroyed after the threads blocked in its calls have returned; a moved-from `Queue` can be destroyed
+or assigned to and nothing else), and `queue:6a8aa2a` adds moodycamel's 1.9x to 2.1x lead at 4x4 on the i9 to the README.
 
 Fresh-context audit of the 2026-10-30/31 work against the audit brief ([PERFORMANCE.md](../PERFORMANCE.md)). btree
 skipped (being consolidated).
@@ -386,7 +388,8 @@ argument in ARCHITECTURE ("Wake-ups") holds. The consumers on a `_pop_cond` wait
 `_push_cond` wait for room or for their own Queue to stop, and a stop is a broadcast. Every woken thread that does not
 use its wake-up hands it on.
 
-The extra probe, `recheck_probe.cc` (probe not kept), covers the transitions the tests skipped at `e94be7d`: non-blocking
+The extra probe, `recheck_probe.cc` (probe not kept; its cases are now in `queue_liveness`, `queue_race` and `queue`,
+`queue:31552f9` and `queue:79d5737`), covers the transitions the tests skipped at `e94be7d`: non-blocking
 and timed pops, a running A destroyed on a shared state, a one-slot `clear()`, and four move-assignment cases. At
 `e94be7d` and at `44211ce` all four move cases fail:
 - B's producer is STUCK; the state's count is 1 with no item in any Queue.

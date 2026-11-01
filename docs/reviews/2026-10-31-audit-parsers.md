@@ -20,7 +20,7 @@
 | ER1 forgeable 64-bit hash accepts a crafted name | closed | `enum-reflection:2a5da3a` | `enum_reflection_names` (forged names against a brute-force oracle) |
 | ER2 docs: miss costs "a thousand" hits | closed | `enum-reflection:97c2969` | - (docs: 620-830x, about 500-770x after ER1) |
 | DT1 pre-1970 fractions in `timestamp(tm_t)` / `to_tm_t(double)` | closed | `datetime:773205b` | `datetime` (pre-1970 asserts), `datetime_datemath` ("pre-epoch instants out of order"), `datetime_diff` |
-| DT2 hygiene: `dbg/` binaries, no A/A row, no external comparator | partly closed | `datetime:ed7426b`, `datetime:03ef0e7` | -; `.gitignore` covers build trees; left: `dbg/` stays in history (rewriting it is the owner's decision, `03ef0e7`), and `bench/bench.cc` has no A/A row and no external comparator row |
+| DT2 hygiene: `dbg/` binaries, no A/A row, no external comparator | partly closed | `datetime:ed7426b`, `datetime:03ef0e7`, `datetime:f254133` | `datetime_compare` (`bench/compare.cc --check`: every comparator returns the library's results); `.gitignore` covers build trees, and `bench/compare.cc` times the hand ISO parser, days-from-civil, `strptime`+`timegm` and abseil with an A/A rerun per row; left: `dbg/` stays in history (rewriting it is the owner's decision, `03ef0e7`) |
 | DT3 `normalizeMonths` O(n) loop and int overflow | closed | `datetime:773205b` | `datetime_datemath` (section 6, `normalizeMonths`) |
 
 UP3 and ER2 are documentation findings; their closing commits change docs and a pin, so no test applies.

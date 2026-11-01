@@ -219,17 +219,15 @@ default branches as of 2026-11-01, one line each. The linked Resolution tables c
 - stringified: the size added by the `_terminated` flag is not documented.
 
 **Hashing, identifiers, time** ([audit](reviews/2026-10-31-audit-hash.md#resolution), [hash survey](reviews/2026-10-30-survey-hash.md#resolution), [time survey](reviews/2026-10-30-survey-time.md#resolution), [x86 survey](reviews/2026-10-30-survey-x86.md#resolution))
-- hashes: no wide-lane `wordwise` beside the 8-byte one; `wordwise` is 6.9-9.0x behind XXH3 from 1 KiB to 128 KiB.
-- md5: no external oracle test (OpenSSL EVP) and no EVP rows in its bench.
+- hashes: no wide-lane hash in the library; `wordwise` is 6.9-9.0x behind XXH3 from 1 KiB to 128 KiB, and the wide-lane candidate lives in the bench only (`hashes:bench/candidate_wordwise8.hh`).
 - cuuid: v6 `generate()` still takes two mutexes; only the time claim is lock-free.
 - datetime: `TimeParser` reads each field through `strict_stoul`; `time_to_string` is a chain of `std::format` calls.
-- datetime: no x86-64 numbers for `iso8601` formatting and `to_tm_t`; the bench has no A/A row and no external comparator.
+- datetime: no old-against-new ratio on x86-64 for `iso8601` formatting and `to_tm_t`.
 - strings: no x86-64 numbers for `lower`/`upper`.
 
 **Containers** ([audit](reviews/2026-10-31-audit-containers.md#resolution))
 - flat-map CA5: nothing tests the hint that keeps the search branchless; `<i8,u64>` find at n=100 on the i9 is 6.4 ns against 5.0 for `std::lower_bound`.
 - flat-map: insert into 64-256 entries on x86-64 is 27-43% slower than at the start, cause not isolated.
-- metrics RC2: the model checks two proof steps only at 8 bits or on one schedule; the 64-bit differential misses the `small_` mutant.
 - queue: ARCHITECTURE says teardown releases parked threads (destroying a queue with parked threads is undefined); moving from a moved-from queue crashes; the README omits that moodycamel is 2-4x faster on x86-64 at 4x4 and 8x8.
 
 **Parsers** ([audit](reviews/2026-10-31-audit-parsers.md#resolution))
@@ -251,10 +249,8 @@ default branches as of 2026-11-01, one line each. The linked Resolution tables c
 
 **Systems** ([audit](reviews/2026-10-31-audit-systems.md#resolution), [review H](reviews/2026-10-31-review-h-systems.md#resolution), [logger hand-off](reviews/2026-10-31-logger-producer-handoff.md#resolution))
 - compressors C1: the fuzz target's mode 0 compares the two stream classes only; arbitrary bytes never reach `decompress_lz4`.
-- logger L1: no test pins the two kinds of line that overtake queued ones.
 - logger CR7: the per-second timestamp cache misses a change of `/etc/localtime` when `TZ` is unset.
 - logger and scheduler LPH-R4, R5, R6: the memory-order fix in `pending_count()`, the seq_cst load in `push()` and the `try`/`catch` around `arrivals.push_back` have no test.
-- allocators N1-N3: the README does not say that a container may move to another thread, that `= {}` and `clear()` keep the shared pool, or what `splice`/`merge` do after `e = d`.
 - fs: the same-file test has no `st_dev` case; the missing-`S_ISREG` mutant is caught only on Linux.
 
 **Service** ([survey](reviews/2026-10-31-survey-service.md#resolution))
@@ -266,4 +262,4 @@ default branches as of 2026-11-01, one line each. The linked Resolution tables c
 - C1, F15: no owner ruling yet for Xapiand on the boolean-parser and datetime behavior changes.
 - C2: the nightly CI run has not yet covered every head after the fix round.
 - F2, F3: url-parser keeps its own byte scanner and hex table, and strings its own `ascii_lower/upper`, beside char-classify's shared kernels.
-- F12: benchmark options come in five spellings, and only some READMEs carry x86-64 rows.
+- F12: benchmark options still come in several spellings (the rename list is in the catalog's AGENTS.md), and only some READMEs carry x86-64 rows.

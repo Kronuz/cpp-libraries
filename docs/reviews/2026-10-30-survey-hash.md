@@ -16,8 +16,8 @@
 | B-W3 random `random_real` | landed | `random:0667b61..a6c4f6c` | `random`, `random_engine` |
 | B-W4 random `random_string` | landed | `random:0667b61..a6c4f6c` | `random`, `random_engine` (strings against a field-by-field reference) |
 | B-W5 cuuid v1 `serialise`/`unserialise`/`generate(compact)` | landed | `cuuid:b7b785f` | `cuuid_mt` (`test_wire_identical`, expander against `std::mt19937`) |
-| B-M1 md5 one-shot hex at small sizes | landed | `md5:4cd8c47` | `md5` (frozen-conversion differential, lengths 0..300); the OpenSSL oracle `md5:test/openssl.cc` is not on `main` yet |
-| B-M2 hashes wide-lane hash beside `wordwise` | open | - | -: `hashes` `main` has no wide-lane function and no performance commit since the survey; the hash audit measured `wordwise` 6.9x to 9.0x behind XXH3 from 1 KiB to 128 KiB |
+| B-M1 md5 one-shot hex at small sizes | landed | `md5:4cd8c47` | `md5` (frozen-conversion differential, lengths 0..300); `md5_openssl` (`md5:test/openssl.cc`, against OpenSSL EVP, `md5:acdeff8`) |
+| B-M2 hashes wide-lane hash beside `wordwise` | open: `hashes:1100edd` adds a wide-lane candidate as `bench/candidate_wordwise8.hh`, bench-only and kept out of the library, timed in `hashes_compare`; `hashes.hh` has no wide-lane function. The hash audit measured `wordwise` 6.9x to 9.0x behind XXH3 from 1 KiB to 128 KiB | `hashes:1100edd` (candidate only) | - |
 | B-M3 hashes `mixer::mix(u64)` | not pursued | - | -: the hash audit measured 0.76 ns against XXH3 1.01 and XXH64 1.05 ([audit](2026-10-31-audit-hash.md#hashes)); values unchanged |
 | B-M4 cuuid v6 `generate` | landed | `cuuid:b7b785f`, `cuuid:77af63f` | `cuuid_v6_threads` (the claim only; see below) |
 
@@ -28,10 +28,13 @@ on macOS, `newUUID()`'s. It measured 8 to 10% (about 10 ns) on the Intel Core i9
 (`cuuid:77af63f`). The survey's 2-4x design (own clock, atomic counter, one random node source) was not pursued.
 
 Host: Apple M4 Pro, Apple clang 17, `-O3 -mcpu=native`, one thread. Bench: a cluster harness and a cuuid v1 probe
-(prototype not kept; the sha256 rows are covered by `sha256:bench/hex_bench.cc` and `sha256:test/openssl.cc`, the
-crc32c rows by `crc32c:bench/crc32c.cc`, the random rows by `random:bench/bench.cc`, the cuuid v1 rows by
-`cuuid:benchmarks/v1_bench.cc`). Timed under an exclusive timing hold. Best of 5 windows of >= 80 ms, batched so the
-clock read (~18 ns) does not dominate.
+(the hashes rows are now `hashes:bench/compare.cc` (`hashes_compare`), the md5 rows the OpenSSL EVP columns of
+`md5:bench/hex_bench.cc` (`md5_hex_bench`), the cuuid rows against Boost.UUID `cuuid:benchmarks/compare.cc`
+(`cuuid_compare`, `-DCUUID_BENCH_BOOST=ON`); the rest was not kept: the sha256 rows are covered by
+`sha256:bench/hex_bench.cc` and `sha256:test/openssl.cc`, the crc32c rows by `crc32c:bench/crc32c.cc`, the random rows
+by `random:bench/bench.cc`, the cuuid v1 rows by `cuuid:benchmarks/v1_bench.cc`). Timed under an exclusive timing hold.
+Best of 5 windows of >= 80 ms, batched so the clock read (~18 ns) does
+not dominate.
 
 Identity checks (all passed, `ALL IDENTITY CHECKS OK`): md5 vs OpenSSL EVP md5 (hex), sha256 kernel and legacy class
 vs EVP, crc32c vs a `__crc32cd` loop, `xxh64::hash` vs `XXH64` (same output), cuuid v6 serialise/unserialise roundtrip.

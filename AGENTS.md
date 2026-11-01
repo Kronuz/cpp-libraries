@@ -2644,18 +2644,17 @@ The conventions a performance or behavior change follows. [docs/PERFORMANCE.md](
 has the method behind them.
 
 1. **Bench option and layout.** Benchmarks live in `bench/` and build only with
-   `<LIB>_BUILD_BENCH=ON`, the form allocators, datetime, double-metaphone, escape, http, logger,
-   md5, random, repr, strict-stox, string-similarity, strings, term-color and threadpool use. A
-   comparator that is not commonly installed is fetched (FetchContent at a pinned tag) or found
-   (`find_package`) by the bench target alone, under `<LIB>_BENCH_REFERENCE=ON` (bitpack and docset
-   use it); neither option touches the library target, and no comparator is vendored. A library
-   with another spelling renames it on its next change and keeps the old name as an alias for one
-   cycle: `BOOLEAN_PARSER_BENCH`, `COMPRESSORS_BENCH`, `ENUM_REFLECTION_BENCH`, `SCHEDULER_BENCH`,
-   `URL_PARSER_BENCH` (and `URL_PARSER_BENCH_ADA` to `URL_PARSER_BENCH_REFERENCE`),
-   `CRC32C_BUILD_BENCHMARKS`, `SHA256_BUILD_BENCHMARKS`. A bench that builds by target name only
-   (bloom-filter, flat-map, generation-cache, metrics, queue and others) gains the option on its
-   next change, and queue's vendored concurrentqueue becomes a bench-only fetch. Existing
-   `benchmarks/` directories stay where they are.
+   `<LIB>_BUILD_BENCH=ON`, the form most libraries use (`STRINGS_BUILD_BENCH`, `QUEUE_BUILD_BENCH`,
+   `MSGPACK_BUILD_BENCH`, ...). A comparator that is not commonly installed is fetched
+   (FetchContent at a pinned tag) or found (`find_package`) by the bench target alone, under
+   `<LIB>_BENCH_REFERENCE=ON` (bitpack and docset use it); neither option touches the library
+   target, and no comparator is vendored. A library with another spelling renames it on its next
+   change and keeps the old name as an alias for one cycle: `BOOLEAN_PARSER_BENCH`,
+   `COMPRESSORS_BENCH`, `ENUM_REFLECTION_BENCH`, `SCHEDULER_BENCH`, `URL_PARSER_BENCH` (and
+   `URL_PARSER_BENCH_ADA` to `URL_PARSER_BENCH_REFERENCE`), `CUUID_BENCH_BOOST` (to
+   `CUUID_BENCH_REFERENCE`), `CRC32C_BUILD_BENCHMARKS`, `SHA256_BUILD_BENCHMARKS`. A bench that
+   still builds by target name only (btree, fst, htm, soundex, unicode and others) gains the option
+   on its next change. Existing `benchmarks/` directories stay where they are.
 2. **SIMD knob.** Every SIMD path has a scalar or SWAR fallback selected by `<LIB>_NO_SIMD`
    (`CHARS_NO_SIMD`, `BITPACK_NO_SIMD`, `DOCSET_NO_SIMD`, `URL_PARSER_NO_SIMD`,
    `HTTP_PARSER_NO_SIMD`), and a CTest target reruns the SIMD-covering tests with it, named

@@ -22,10 +22,12 @@
 R3 and C2 are documentation findings, so no test fails when they are reverted. For C2, `cuuid:00d3b64` put the mutex
 back and `cuuid:77af63f` restored the CAS after timing the Intel Core i9-9980HK: the mutex costs 8 to 10% (about 10 ns)
 per `generate()` at one to four threads there, and nothing on the M4 Pro. hashes (verdict NOT YET, no finding ID): `main`
-has no wide-lane function yet; see [survey hash](2026-10-30-survey-hash.md) B-M2.
+has no wide-lane function; `hashes:1100edd` adds a wide-lane candidate as a bench-only file, the comparator bench
+`hashes_compare` (whose `--check` tests `xxh64` against `XXH64`) and a CHANGELOG; see
+[survey hash](2026-10-30-survey-hash.md) B-M2.
 
-Start = last commit before 2026-10-30 on origin/main; head = origin/main at audit time. The probes, mutant scripts and
-raw logs are not kept; each section names the repo test that now covers its probe.
+Start = last commit before 2026-10-30 on origin/main; head = origin/main at audit time. Mutant scripts and raw logs are
+not kept; each section names the repo test or bench that now holds or covers its probe.
 
 | repo | start | head | verdict |
 |---|---|---|---|
@@ -170,11 +172,11 @@ Bar: v6 (the default) is 10 ns and 12 ns. v1's remaining 616 ns is the serial in
 
 **Verdict: BETTER.** Hex conversion of the legacy `SHA256` class and `to_hex` is 1.5x to 4.2x faster, byte-identical, at or above OpenSSL's hex-returning path. The kernels are untouched.
 
-- Correctness (`probe_hex`, probe not kept; the sha256 half is covered by `sha256:test/openssl.cc`; both revisions pass on arm64 Apple clang and x86 gcc 11): 64,201 lengths (0..4200 and random up to 8000) at random misalignments: one-shot pointer and `string_view`, reuse after `operator()`, streaming with random chunk splits and `getHash()` (hex and raw) at random cut points, `reset()`, all equal to OpenSSL EVP; the namespaced `digest`+`to_hex` and `hasher` over 4,201 lengths. Hex is lowercase and exactly 64 characters.
+- Correctness (`probe_hex`; its md5 half is now `md5:test/openssl.cc` (`md5_openssl`), the sha256 half is covered by `sha256:test/openssl.cc`; both revisions pass on arm64 Apple clang and x86 gcc 11): 64,201 lengths (0..4200 and random up to 8000) at random misalignments: one-shot pointer and `string_view`, reuse after `operator()`, streaming with random chunk splits and `getHash()` (hex and raw) at random cut points, `reset()`, all equal to OpenSSL EVP; the namespaced `digest`+`to_hex` and `hasher` over 4,201 lengths. Hex is lowercase and exactly 64 characters.
 - Repo test adds a frozen byte-at-a-time conversion over lengths 0..300 plus continue-after-`getHash()`. Mutants (nibble order, nibble mask, one byte short, one byte dropped in `getHash` or `to_hex`): the four `getHash()` mutants are killed by `test.cc`; the `to_hex` mutant survives `test.cc` alone, and `kernels.cc` (registered as `sha256_kernels`) compares `to_hex` with known digests (`kernels.cc:117,132,140,174`), so the registered suite kills it (by reading; I did not run `sha256_kernels` against the mutant).
 - CI: success on 385ec42 (push) and nightly; tests `sha256`, `sha256_kernels`, `sha256_openssl` registered. Headers unchanged.
 
-Numbers (M4 Pro, ns, 3 rounds; A/A under 1%; `bench_hex` (probe not kept) and the repo `sha256_hex_bench`):
+Numbers (M4 Pro, ns, 3 rounds; A/A under 1%; `bench_hex` (its md5 rows are now the OpenSSL EVP columns of `md5:bench/hex_bench.cc`, `md5_hex_bench`) and the repo `sha256_hex_bench`):
 
 | size | legacy start | legacy head | ratio | OpenSSL EVP raw / EVP + hex | head vs EVP+hex |
 |---|---:|---:|---:|---:|---:|
@@ -191,7 +193,7 @@ Claim check: README "about 60 ns" at 16 B confirmed (60 to 62).
 
 **Verdict: BETTER.** Same change, smaller win, same proof; bulk throughput stays about 8% behind OpenSSL's assembly (unchanged, scalar).
 
-- Correctness: the 64,201-length probe above (md5 legacy class vs EVP; probe not kept), start and head, arm64 and x86. Repo test adds the frozen-conversion differential (0..300). Mutants high nibble masked, low nibble first, one byte short: killed (ASan abort or assertion).
+- Correctness: the 64,201-length probe above (md5 legacy class vs EVP; now `md5:test/openssl.cc`, `md5_openssl`), start and head, arm64 and x86. Repo test adds the frozen-conversion differential (0..300). Mutants high nibble masked, low nibble first, one byte short: killed (ASan abort or assertion).
 - CI success on 4cd8c47 and nightly; `md5` registered; `md5_hex_bench` builds with `-DMD5_BUILD_BENCH=ON` exactly as the README command says. Header unchanged.
 
 | size | legacy start | legacy head | ratio | OpenSSL EVP raw / + hex |
@@ -210,7 +212,7 @@ x86 (EPYC, loaded): a 10% gap at 64 KiB and 1 MiB. Claim check: README "about 11
 
 **Verdict: NOT YET.** origin/main has no campaign commit (head = start = de5b3ac). Nothing regressed; nothing improved. CI green (nightly runs 41206875606, 41070977413).
 
-- Against xxHash 0.8.4 (`bench_hashes`, probe not kept; M4 Pro, exclusive, ns): `xxh64::hash` (the constexpr code, `STRING_KIT_HAS_XXHASH=0`) equals `XXH64` on 13 sizes x 2,000 random offsets and runs within 0 to 7% of it (4 B 1.17 vs 1.11; 100 B 6.48 vs 6.49; 128 KiB 5558 vs 5553).
+- Against xxHash 0.8.4 (`bench_hashes`, now `hashes:bench/compare.cc`, `hashes_compare`; M4 Pro, exclusive, ns): `xxh64::hash` (the constexpr code, `STRING_KIT_HAS_XXHASH=0`) equals `XXH64` on 13 sizes x 2,000 random offsets and runs within 0 to 7% of it (4 B 1.17 vs 1.11; 100 B 6.48 vs 6.49; 128 KiB 5558 vs 5553).
   `wordwise` beats XXH3_64bits up to 32 B (4 B 0.76 vs 1.30; 16 B 1.09 vs 1.30; 32 B 1.79 vs 1.82), ties near 48 B (2.53 vs 2.66), then falls behind: 1.3x at 64-100 B, 3.6x at 256 B, 6.9x at 1 KiB, 8.8x at 16 KiB, 9.0x at 128 KiB (5.1 GB/s against 46 GB/s).
   `fnv1a64` is 47x behind at 128 KiB (by definition). `mixer::mix(u64)` 0.76 ns against XXH3 1.01 and XXH64 1.05.
 - For its stated job (string switch keys, a few to 32 bytes) it is already at or ahead of the best comparator. For anything over 64 bytes it is 1.3x to 9x behind, and the values are frozen (call sites store them), so `wordwise` cannot change.
