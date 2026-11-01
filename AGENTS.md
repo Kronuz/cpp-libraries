@@ -168,6 +168,7 @@ Facts worth knowing before you wire anything up:
 | Bit-pack blocks of 128 integers (postings, FOR/PFOR) | `bitpack` |
 | Sets of doc ids: bitset, sorted array, Roaring-style chunks; AND/OR/ANDNOT | `docset` |
 | Compact self-terminating length/integer wire encoding, exception-free decode | `varint` |
+| `int64`, `uint64` and `double` as bytes that `memcmp` orders numerically: sort keys, range scans | `sortable` |
 | Send a file over a byte channel, framed and checked | `flume` |
 | Append-only compressed blob store | `storage` |
 | Embedded LSM-style segment store: immutable segments, background merges, crash-safe commits, checkpoints | `strata` (`strata::core`) |
@@ -1912,6 +1913,33 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 - **Do not use it when / gotchas:**
   - The continuation-bit direction (set on the LAST byte, not every byte except the last) is deliberate wire-format compatibility, not a style choice -- don't "fix" it to match classic LEB128.
   - `unserialise_string`'s output is a view; it's only valid as long as the input buffer is.
+
+### sortable
+[github.com/Kronuz/sortable](https://github.com/Kronuz/sortable) &middot; depends on: none
+- **What it is:** An exact number codec whose bytes compare with `memcmp` in numeric order: `int64`, `uint64` and `double` share one encoding of 1 to 10 bytes, so a sort key, a range bound or an index term never converts between types.
+- **Header / target:** `#include "sortable.hh"`; target `sortable::sortable`; header-only; C++20.
+- **How it works:** A tag byte for the binary exponent leads the big-endian fraction, whose trailing zero bytes are dropped. One tag covers each exponent from 2^-60 to 2^63, so every integer and most doubles take one tag byte; an exponent outside that window adds an escape tag and a 2-byte field. A negative takes the mirrored tag and the tail 1 - f, so its order reverses without a terminator. 5, `5u` and 5.0 give the same bytes. -0.0 is 0, every NaN is the single byte `ff` and sorts last, and the infinities have their own encodings.
+- **Key API:**
+  - `sortable::encode(v)` returns a `std::string`; `sortable::encode(v, char* out)` is constexpr, allocation-free, writes at most `sortable::max_size` (10) bytes and returns the count; `v` is any integer type up to 64 bits (not `bool` or the character types), `float` or `double`
+  - `sortable::decode(string_view)` returns `std::optional<sortable::number>`: a value only when the bytes are exactly what `encode` writes; it reads only inside the input and never throws
+  - `number`: `to_int64()` and `to_uint64()` (nullopt unless exact), `to_double()`, `saturate_int64()`, `saturate_uint64()`, `is_nan()`, `is_inf()`, `is_zero()`
+  - `sortable::max_finite` and `min_finite`: the encodings of DBL_MAX and -DBL_MAX, for a missing sort value
+- **Example:**
+  ```cpp
+  #include "sortable.hh"
+
+  assert(sortable::encode(5) == sortable::encode(5.0));                         // same bytes
+  assert(sortable::encode(std::int64_t{2147483649}) < sortable::encode(std::int64_t{2147483650}));
+  char buf[sortable::max_size];
+  std::size_t n = sortable::encode(0.01, buf);
+  auto v = sortable::decode(std::string_view(buf, n));                          // nullopt unless exact
+  ```
+- **Use it when:**
+  - Sort keys, value slots and index terms where integers and floating-point numbers share an order, compared with `memcmp`, and range bounds must be exact for 64-bit integers.
+- **Do not use it when / gotchas:**
+  - A column of one fixed 64-bit type that never mixes: an 8-byte big-endian map with the sign bit flipped is fixed-width and simpler.
+  - The encoding is not prefix-free: concatenating several numbers needs framing (escape `0x00`, end each with a terminator).
+  - -0.0 encodes as 0 and every NaN as `ff`; neither round-trips bit for bit.
 
 ### bitpack
 [github.com/Kronuz/bitpack](https://github.com/Kronuz/bitpack) &middot; depends on: none
