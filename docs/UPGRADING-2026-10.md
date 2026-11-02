@@ -1,913 +1,1032 @@
 # Moving pins past October 30, 2026
 
-> Status: CURRENT (2026-11-01). Read from each library's `CHANGELOG.md` and default branch at
-> 2026-11-01 16:45 PST.
+> Status: CURRENT (2026-11-01). Read from every library's `CHANGELOG.md`, its `git log` since
+> 2026-10-30 and its default branch on GitHub at 2026-11-01 19:15 PST.
 
 Consumers pin these libraries by commit, so nothing here reaches a build until a pin moves. This
-note covers the libraries the October 30-31 performance campaign touched, and lists every change
-made to them from 2026-10-30 on that changes a result, an exception or a build when a pin moves
-past it. Each entry has the library, the start and fix commits, the inputs whose results change,
-and how a consumer finds out whether it sends them. The full entries, with their numbers and
-oracles, are in each library's `CHANGELOG.md`; libraries outside the campaign (completion,
-journal, consensus, cluster, strata, prospect) keep theirs there too.
+note covers every library in the catalog: what changes when a pin moves past 2026-10-30 (results,
+exceptions, API, builds) and what the move buys in speed. Each library's `CHANGELOG.md` has the
+full entry, with the oracle and every number; the sections here say only what a consumer must
+know and link there.
 
-- **Start** is the library's default-branch head at 2026-10-30 00:00 PDT, before the first
-  change listed here. A pin at or before it gives the old results.
+- **Start** is the library's default-branch head at 2026-10-30 00:00 PDT. A pin at or before it
+  gives the old results.
 - **Fix** is the first commit with the new results. Every later commit on the default branch
   carries it; no branch diverges.
+- **Head** is the default branch at the time of this note.
 - Xapiand (`3fe13a2f`, 1.0.0-alpha.10) and Detent's `cmake/dependencies.json` pin commits older
-  than every fix below. In-family pins move in waves; compare a pin with the two columns.
+  than every fix below. In-family pins move in waves.
 
 **Two changes need an owner decision when Xapiand's pins move, because Xapiand's users see
 them:** boolean-parser regroups queries and rejects some it accepted, and datetime changes which
-strings parse as dates, and so how schema detection types a new field. Three more change what
-Xapiand returns or stores: string-similarity changes the order of similarity-sorted results, htm
-changes the id of a point near a cell edge on builds that fuse multiply-adds (arm64, x86 with
-FMA), so an index written by such a build needs those points reindexed, and msgpack merges a
-document's repeated keys. fs, storage and url-parser normalize a path as Python's
-`os.path.normpath` does, which changes the paths Xapiand builds from an empty data directory and
-from endpoints whose paths hold a `..`.
+strings parse as dates, and so how schema detection types a new field. Others change what Xapiand
+returns or stores: string-similarity's scores and so the order of similarity-sorted results; htm's
+id of a point near a cell edge on builds that fuse multiply-adds (an index written by such a build
+needs those points reindexed); msgpack's merge of a document's repeated keys; and fs, storage and
+url-parser's normal form of a path (Python's `os.path.normpath`), which changes the paths built from
+an empty data directory and from endpoints that hold a `..`.
 
-**Three need code changes when the pins move:** `http` handlers are coroutines, `reactor` has no
-worker pool and new constructors, and `http-log` follows `http`. http-parser rejects what request
-smuggling relies on unless a consumer sets `lenient_http_headers`. The other changes fix crashes,
-hangs, wrong answers and timing.
+**Five need code changes:** `http` handlers are coroutines, `reactor` has no worker pool and new
+constructors, `http-log` follows `http`, scheduler's tasks no longer derive
+`std::enable_shared_from_this`, and hashes' CRC-32C moved to `crc32c` (before the start, but Detent
+pins a hashes from before the move). http-parser rejects what request smuggling relies on unless a
+consumer sets `lenient_http_headers`. The other changes fix crashes, hangs, wrong answers and
+timing.
+
+## Updating an application (for agents)
+
+The steps for an agent that owns an application built on these libraries (Xapiand, Detent, prism,
+or any other).
+
+1. **List its pins.** `tools/pins.sh -c <app>` lists every first-party `FetchContent_Declare` of the
+   application on GitHub that is behind its library's head. A pin kept elsewhere (Detent's
+   `cmake/dependencies.json`) is read by hand: the library, the commit, and who declares it first.
+2. **Read each pinned library's row and section.** The [Summary](#summary) has one row per library,
+   and every library whose results, API or build change has a section below. Act first on the rows
+   marked **owner decision** (ask the owner before changing what users see) and **code change**.
+3. **Skip the bad ranges.** No pin may fall inside a range of [Commits not to pin](#commits-not-to-pin),
+   including the ranges a library carries through its own pins.
+4. **Move pins dependency first.** FetchContent keeps the first declaration of a name, so the
+   application declares a shared dependency before the libraries that use it, at the newest commit
+   any of them needs: uinteger_t before base-x, scheduler (at or after `5ad60fc`) before logger,
+   http-parser and reactor before http. Leaves move first, then their consumers.
+5. **Rebuild, test and diff.** Run the application's tests, then run its stored inputs through the
+   old and the new build on the input classes each section names, and compare the results. Several
+   libraries ship the old code as a frozen copy for this (each section's "Detect" says where).
+6. **Fix the API breaks.** `http` handlers return `asio::awaitable<void>` and `HttpAsioService` takes
+   `(handler, reactors, in_flight_limit)`; `reactor::TcpServer` takes `(reactors, admission_limit,
+   session)` and `Reactor::pool()` is gone; `http_log::AccessLog::handle` is a coroutine; a scheduler
+   task that calls `shared_from_this()` derives `std::enable_shared_from_this` itself; code that
+   includes hashes' `crc32c.hh` includes `<crc32c/crc32c.hh>` and links `crc32c::crc32c`.
+7. **Measure the hot path.** Time the application's own hot path at the old and the new pins
+   (`tools/ab_compare.py` runs both binaries interleaved with an A/A control). The "What you get"
+   column says what each library gained in its own benchmarks; the application's number is the one
+   that counts.
+8. **Record it.** The application's `CHANGELOG.md` names each library moved (old pin, new pin), the
+   sections acted on, the results that changed and the owner decisions taken.
+
+A message an owner can paste to the agent of an application:
+
+> Move this application's pins of the Kronuz C++ libraries to their current heads. Follow
+> "Updating an application (for agents)" in
+> https://github.com/Kronuz/cpp-libraries/blob/main/docs/UPGRADING-2026-10.md step by step: list
+> the pins, read each library's Summary row and section, act on the owner-decision and
+> code-change rows first and ask me before changing anything users see, avoid the commits not to
+> pin, move dependencies first, rebuild, run the tests and diff the input classes each section
+> names, measure the hot path before and after, and record what you adopted in the CHANGELOG.
+> Report what changed, what you did not adopt and why, and every decision you need from me.
 
 ## Summary
 
-| Library | Start | Fix | What changes | Consumers |
-|---|---|---|---|---|
-| [boolean-parser](#boolean-parser) | `41a20b5` | `00b3021`, `172a5c2` | Query grouping; malformed queries throw at construction | Xapiand: **owner decision** |
-| [datetime](#datetime) | `fce3d4d` | `fe618d8`, `03f36fa`, `773205b`, `22d1f6a` | Which strings parse; `+12M`; `is_utc`; fractions before 1970; field widths with a newer strict-stox | Xapiand: **owner decision** |
-| [string-similarity](#string-similarity) | `ddfb8d1` | `efba168`, `0939c0c`, `c0825ff` | Jaro, Jaro-Winkler, Dice, weighted Levenshtein, phonetic scores | Xapiand sort keys |
-| [htm](#htm) | `a0321ab` | `cf5177b`, `9006a84` | Ids of points near a cell edge on fusing builds | Xapiand geo index: reindex |
-| [msgpack](#msgpack) | `3c408cf` | `d054ea1`, `c913966`, `d8fa3e6`, `f083ad7`, `adac439`, `1c851dc` | Maps that repeat a key or have a non-string key; growing arrays of maps; `replace` and `put` over a read value; `erase()`'s count; `to_string()` of non-string keys and NaN | Xapiand documents |
-| [enum-reflection](#enum-reflection) | `79fe3fa` | `2a5da3a` | A crafted name no longer matches a member | http-parser, msgpack, Xapiand |
-| [storage](#storage) | `7b9abd1` | `90aec94`, `a1e49db`, `217e731`, `b141849` | Records past 4 GiB; damaged records; volume locks; an empty, `.` or `..` base path | Xapiand |
-| [strict-stox](#strict-stox) | `f0f7374` | `7d7f5dd`, `a1b03fb` | Input of 64 bytes or more parses; decimals libc aborted on | datetime, msgpack, storage, Detent, Xapiand |
-| [strings](#strings) | `62fb121` | `bb85615` | `indent`, empty-search `replace`, `hasupper` | fs, soundex, string-similarity, system, traceback, Detent, Xapiand |
-| [stringified](#stringified) | `c8c9033` | `1c1fb3e` | Copies no longer dangle; `c_str()` stays in bounds | fs, storage, Xapiand |
-| [repr](#repr) | `2063945` | `3191c08` | `max_size == 1` | msgpack, strings, Detent, Xapiand |
-| [allocators](#allocators) | `e8fb173` | `085331c`, `2fc537f`, `e38f759`, `7cdb0f8` | Pool sharing, equality, propagation; `construct` moves | none found |
-| [queue](#queue) | `7df74b2` | `e94be7d`, `31552f9` | Who a pop or `clear()` wakes; `count()` after move assignment | server, Xapiand |
-| [scheduler](#scheduler) | `ae3f0f9` | `36afada`, `62a4fe8` | A task no longer waits out the 30 s idle sleep | logger, Detent, Xapiand |
-| [logger](#logger) | `ce27b90` | `dc1fe62`, `c7332d6` | Write delay, crash window, timestamps | Detent, Xapiand, http-log, prism |
-| [compressors](#compressors) | `17873b2` | `f157dab`, `8f57675`, `533bee4`, `430870c` | Damaged input throws; XXH32 on big-endian hosts and past 4 GiB; `XXH32_state_t` fields | storage, flume, http, strata, Detent, Xapiand |
-| [generation-cache](#generation-cache) | `00762bd` | `715f2af`, `89baa5b`, `2930a64`, `32a2b4a` | Exception paths; writers no longer starve | Detent |
-| [fs](#fs) | `ce16118` | `14932b9`, `0b5f78e`, `d6d8bc2`, `8848b49`, `bf10f39`, `8e5f3d2` | `copy_file` truncates, refuses the same file, reports short writes; empty paths; `normalize_path` is `os.path.normpath` | Xapiand |
-| [btree](#btree) | `25f9494` | `d81f2a3`, `a56261d`, `512febb` | Allocation-failure behavior; slot layout | strata, Detent |
-| [cartesian](#cartesian) | `6eab8ed` | `79ed663`, `7066e9e` | `std::hash<Cartesian>` values | none found |
-| [random](#random) | `115f3f3` | `0667b61` | The sequence | scheduler, Detent, Xapiand |
-| [url-parser](#url-parser) | `4424e25` | `2c9ea8e`, `1cdcb53` | `normalize_path` and `PathParser` on empty, `.` and `..` paths | Xapiand |
-| [http-parser](#http-parser) | `52a30d0` | `21c8f30`, `ab8377c`, `62ac7f3`, `0aeec14`, `e2f23b9`, `5cb4409` | Rejects request smuggling unless lenient; new error numbers | http, http-log, prism, Detent |
-| [http](#http) | `c23bb99` | `bda9b5a`, `fce24c6`, `25f4b99`, `3caaeda` | Coroutine handlers (**code change**); trailers; `CONNECT`; HTTP/1.0 with Transfer-Encoding closes | http-log, prism, Detent |
-| [reactor](#reactor) | `ef26c30` | `67e22a6`, `76c32b4` | No worker pool; `AdmissionGate`; constructors (**code change**) | http, cluster, consensus, prism, Detent |
-| [http-log](#http-log) | `6ee47af` | `c7772ab` | `AccessLog::handle` is a coroutine (**code change**) | prism, Detent |
-| [times](#times) | `666dfdd` | `cb75580`, `1f1f9c0` | Seconds past `int`; fractions on x86; negative values folded | none found |
-| [time-point](#time-point) | `2f1f7f9` | `624c2e9` | Instants before the epoch on clocks finer than a nanosecond; coarse clocks build | none found |
-| [io](#io) | `3893d47` | `6524ce0` | `pread` reads to the full count | fs, pki, system, Xapiand |
-| [math](#math) | `2730483` | `01ad763`, `5486d04` | 8- and 16-bit overflow; `modulus` of the lowest value and of zero; `min<double>` | Xapiand |
-| [errno-names](#errno-names) | `a5ab101` | `0ec0801` | Descriptions on glibc | storage, traceback, Xapiand |
-| [namegen](#namegen) | `70bd983` (in `Kronuz/fantasyname`) | `c0f9393`, `72b3f1c`, `fd7ab7f`, `c8faf70` | Every alternative equally likely, so a seed gives other names; one engine per thread | Xapiand |
-| [uinteger_t](#uinteger_t) | `85316dd` | `a39ede0`, `bd7bab1`, `6ff439f`, `10cf088`, `eb588dc` | Digits outside the base throw; base-256 leading zero bytes; `x *= 1` after a right shift; `sizeof` 88 and its own container | base-x, Xapiand |
-| [base-x](#base-x) | `54a9326` | `8935fe6`, `c3965ec`, `b8fc1a2`, `2507a82`, `d3d9f23`, `27be05e`, `c599da0` | RFC 4648 text and decoding; Bitcoin and Ripple leading zeros; all-zero bytes; stricter `decode` and `is_valid` | Xapiand (the ids it mints keep their text) |
+One row per library, alphabetical. "What you get" is the [gate](reviews/gate-2026-11-01.md)'s
+geomean of start's time over head's on the Apple M4 Pro and the Intel Core i9-9980HK (above 1 is
+faster at head; "gate 2.71 / 3.43" reads M4 Pro / i9), with the fixes that landed after the gate
+where they move it; for a library outside the gate, the CHANGELOG's or README's own number. "Same
+results" means a frozen-copy differential test holds every output to start's.
+
+| Library | Start | Head | What changes | What you get | Consumers |
+|---|---|---|---|---|---|
+| [allocators](#allocators) | `e8fb173` | `6eb7fb2` | Pool sharing, equality, propagation; `construct` moves; tracked blocks 16-byte aligned; layout | gate 1.30 / 1.20; one-block pool pair 0.66 ns against 1.16 (M4 Pro) | completion, journal |
+| analysis | `991ff33` | `158c81b` | Same results (unicode and snowball pins move) | 1.8 to 2.7x Xapian's `TermGenerator` (README) | prospect, queryparser |
+| atomic-shared-ptr | `9a2582e` | `9af0aa7` | Docs only | unchanged | msgpack, Detent |
+| [base-x](#base-x) | `54a9326` | `d95e37c` | RFC 4648 text and decoding; Bitcoin and Ripple leading zeros; all-zero bytes; stricter `decode` and `is_valid` | 32-byte base58 encode 49.7 ns, decode 52.1 (M4 Pro), over 10x start | Xapiand |
+| bitpack | `cd13f36` | `ca99608` | Same results | gate 1.04 / 0.99 (the i9 binaries are identical) | prospect |
+| bkd | `4ddc2cf` | `dfc04d4` | Docs only | unchanged | none |
+| [bloom-filter](#bloom-filter) | `0410185` | `22fe8ef` | `BloomFilter` keeps its bits; two new filter types; `BLOOM_FILTER_NO_INT128` | gate 1.00 / 0.98; `FastBloomFilter` 16-byte miss 8.0 ns against 27.7 (M4 Pro) | none |
+| [boolean-parser](#boolean-parser) | `41a20b5` | `2c4a6ba` | **Owner decision:** query grouping; malformed queries throw at construction | gate 2.71 / 3.43 | Xapiand |
+| [btree](#btree) | `25f9494` | `47b1d67` | Allocation-failure behavior; slot layout | gate 1.07 / 1.12; string `emplace` 2.4x (Clang) | strata, Detent |
+| [cartesian](#cartesian) | `6eab8ed` | `69d834b` | `std::hash<Cartesian>` values | gate 2.67 / 2.47 | htm |
+| [char-classify](#char-classify) | `a890496` | `f81020a` | Same results; new block scanners and escaping kernel | gate 1.01 / 1.00; the kernel is escape's and repr's speedup | cuuid, escape, hashes, pki, repr, strings, url-parser, Detent |
+| [cluster](#cluster) | `4d894db` | `9b25fa1` | Its reactor pin crosses reactor's code change | not measured | Detent |
+| [completion](#completion) | `03cef1d` | `42e74ea` | Its metrics and allocators pins move (`AtomicCounter` is an alias) | not measured | journal, strata, Detent |
+| [compressors](#compressors) | `17873b2` | `94a3758` | Damaged input throws; XXH32 on big-endian hosts and past 4 GiB; `XXH32_state_t` fields | gate 1.27 / 1.28; XXH32 256 B 8.4 ns against 10.9 (M4 Pro) | flume, http, storage, strata, Detent |
+| [consensus](#consensus) | `a4c28e0` | `35c0f66` | Its journal, completion and reactor pins move | not measured | Detent |
+| constexpr-phf | `dd7a9ff` | `e545aec` | Docs only | unchanged | enum-reflection, hashes, msgpack, Detent |
+| [crc32c](#crc32c) | `b60a8e5` | `f004191` | Same values; the hashes `crc32c.hh` it replaces is gone | gate 1.48 / 1.39; 1 MiB 29.8 GB/s against 19.9 (i9) | journal, residency, strata |
+| ctrie | `4b6eb1b` | `c6c2887` | Docs only | unchanged | constexpr-phf (bench) |
+| cuuid | `d46c825` | `b2243cb` | Same wire bytes | gate 2.27 / 1.97 | none |
+| [datetime](#datetime) | `fce3d4d` | `f46ecb8` | **Owner decision:** which strings parse; `+12M`; `is_utc`; fractions before 1970; field widths | gate 6.44 / 7.44 | Xapiand |
+| docset | `cd38597` | `dcbd528` | Same results | gate 1.31 / 1.15 | prospect |
+| [double-metaphone](#double-metaphone) | `91c17a2` | `ba395a3` | Same keys; copying from a non-const lvalue compiles | gate 1.90 / 2.26 | none |
+| endian | `a625b94` | `a24942e` | Docs only | unchanged | cuuid, md5, sha256, Detent |
+| [enum-reflection](#enum-reflection) | `79fe3fa` | `8a9e1d8` | A crafted name no longer matches a member; `enum_try_type`; bench option renamed | hits 1.01 to 1.35x start (the gate's 0.86 / 0.84 was before the table lookup) | http-parser, msgpack, Detent, Xapiand |
+| epoch | `4f9e76a` | `de7efdf` | Docs only | unchanged | none |
+| [errno-names](#errno-names) | `a5ab101` | `1111c57` | Descriptions on glibc | gate 1.00 / 1.00 | storage, traceback, Xapiand |
+| escape | `f4efd99` | `b5d9f30` | Same output | gate 2.88 / 2.43 | none |
+| flat-map | `a9a52b0` | `9fe0bd9` | Same answers | gate 1.46 / 1.91 | Detent |
+| [flume](#flume) | `7184cb4` | `8761e9f` | `Receiver(sink, max_block)`; big-endian XXH32 footer through compressors | gate 1.00 / 1.01 | none |
+| [fs](#fs) | `ce16118` | `452d737` | `copy_file` truncates, refuses the same file, reports short writes; empty paths; `normalize_path` is `os.path.normpath` | `normalize_path` 1.25 / 1.66 geomean (the gate's 0.84 / 0.76 was before the one-pass loop) | Xapiand |
+| fst | `12657aa` | `7338f56` | Same bytes | gate 2.13 / 2.14 | strata, termdict |
+| fusefilter | `a42bd15` | `77ab0a7` | Docs and bench only | unchanged | strata |
+| [generation-cache](#generation-cache) | `00762bd` | `bc22169` | Exception paths; writers no longer starve; layout | gate 3.22 / 4.35 | Detent |
+| [hashes](#hashes) | `de5b3ac` | `033957e` | Same values; `crc32c.hh` gone since `aba7865` (2026-10-20) | unchanged | bloom-filter, enum-reflection, msgpack, strata, Detent |
+| [htm](#htm) | `a0321ab` | `37c4830` | Ids of points near a cell edge on fusing builds | gate 1.00 / 1.06; `getId` 591 ns against 914 (M4 Pro) | Xapiand |
+| [http](#http) | `c23bb99` | `8c5c668` | **Code change:** coroutine handlers; trailers; `CONNECT`; the disconnect watch | gate parser 1.25 / 1.33; i9 end to end 1.08 / 0.99 at 8 / 64 connections | http-log, prism, Detent |
+| [http-log](#http-log) | `6ee47af` | `d020974` | **Code change:** `AccessLog::handle` is a coroutine | not measured | prism, Detent |
+| [http-parser](#http-parser) | `52a30d0` | `c7023b0` | Rejects request smuggling unless lenient; two new error numbers | gate 1.78 / 2.17 | http, Detent |
+| [io](#io) | `3893d47` | `9f68e5f` | `pread` reads to the full count | gate 0.94 / 0.96 (the extra `pread` at end of file) | fs, pki, system, Xapiand |
+| [iterators](#iterators) | `55cd86b` | `2e2c6cf` | Same types; no `std::iterator` base | unchanged | none |
+| [journal](#journal) | `d564dfe` | `eb99e70` | Its completion pin moves; fetches allocators and crc32c | not measured | consensus, Detent |
+| lazy | `78a8281` | `b7d840a` | Docs only | unchanged | none |
+| located-exception | `4dcb2b4` | `9cce2c7` | Docs only | unchanged | msgpack |
+| [logger](#logger) | `ce27b90` | `bb2d16c` | Write delay of a burst; timestamps; order across threads | gate 2.88 / 2.45; producer `L_INFO` 225 ns against 715 (i9) | http-log, prism, Detent |
+| lru-cache | `7dd23eb` | `df0ebc8` | Docs and bench only | gate 0.97 / 1.14 (placement) | Detent |
+| [math](#math) | `2730483` | `9739089` | 8- and 16-bit overflow; `modulus` of the lowest value and of zero; `min<double>` | gate 0.99 / 0.99 (the zero-modulus guard) | Xapiand |
+| md5 | `fbb8ff0` | `3c7fe15` | Same output | gate 1.13 / 1.16 | none |
+| [metrics](#metrics) | `645d729` | `d7d4c4d` | `AtomicCounter` is an alias of a template; new contended types | gate 1.16 / 1.04 | completion, Detent |
+| [msgpack](#msgpack) | `3c408cf` | `ddbfe8b` | Repeated keys; growing arrays of maps; `replace` and `put` over a read value; `erase()`'s count; JSON of non-string keys and NaN | gate 1.21 / 1.27 | Xapiand |
+| [namegen](#namegen) | `70bd983` (fantasyname) | `55345ee` | Every alternative equally likely; one engine per thread; target name | a name 2.1 to 2.9x faster (M4 Pro) | Xapiand |
+| nanosleep | `c894531` | `974680b` | Docs only | unchanged | time-point, traceback |
+| persistent-map | `938d65e` | `d7acbb5` | Docs only | unchanged | none |
+| pki | `cce99b0` | `c662da1` | Same results (io and char-classify pins) | unchanged | none |
+| prism | `17ce07e` | `c93a389` | The application: coroutine handlers and its libraries' changes | not measured | none |
+| prospect | | | The owner's active work: its formats change between phases; read its [CHANGELOG](https://github.com/Kronuz/prospect/blob/main/CHANGELOG.md) | | |
+| queryparser | `8a9798f` | `f554cd3` | Same results (analysis pin) | unchanged | none |
+| [queue](#queue) | `7df74b2` | `3b70fd7` | Who a pop or `clear()` wakes; `count()` after move assignment | gate 3.67 / 4.45 | server, Xapiand |
+| radix-router | `35aab1b` | `74ab7ce` | Docs and bench only | gate 1.02 / 1.00 | http, Detent |
+| [random](#random) | `115f3f3` | `8e5686e` | The sequence | gate 3.02 / 5.65 | scheduler, Detent, Xapiand |
+| [reactor](#reactor) | `ef26c30` | `c6b2c3e` | **Code change:** no worker pool, `AdmissionGate`, constructors | not measured | cluster, consensus, http, prism, Detent |
+| [repr](#repr) | `2063945` | `12ea880` | `max_size == 1` | gate 4.40 / 3.85 | http-log, msgpack, strings, Detent, Xapiand |
+| residency | `f4206c7` | `a0a183c` | Docs only (task pin) | unchanged | strata |
+| [scheduler](#scheduler) | `ae3f0f9` | `6b8d754` | **Code change:** no `shared_from_this()` on a task; a task no longer waits out the idle sleep | gate 1.06 / 1.17; "make only" 10 to 15% faster than start | logger, Detent, Xapiand |
+| sha256 | `e440b98` | `55a44ca` | Same output | gate 1.41 / 1.11 | Detent |
+| snowball | `51582e3` | `3efcd0f` | Docs and bench only | unchanged | analysis, prospect |
+| sortable | `1aa2f98` | `33ed972` | Docs only | unchanged | none |
+| [soundex](#soundex) | `89f9d51` | `119055b` | Same codes; copying an encoder compiles | gate 2.11 / 1.83 | string-similarity |
+| split | `27dbc41` | `40af1a2` | Docs only | gate 1.00 / 1.01 | fs, strings, Detent |
+| [stash](#stash) | `2e2b75f` | `3bfc455` | Same results; leaf and chain-node layout | gate 1.75 / 1.80 | scheduler, Detent |
+| static-string | `e0a3d6e` | `46561fa` | Docs only | unchanged | hashes, strings, term-color, Detent |
+| [storage](#storage) | `7b9abd1` | `83f1896` | Records past 4 GiB; damaged records; volume locks; base paths | gate 1.01 / 0.98; i9 compressed whole reads 1.17 to 1.65x start | Xapiand |
+| strata | | | The owner's active work: its formats change between phases; read its [CHANGELOG](https://github.com/Kronuz/strata/blob/main/CHANGELOG.md) | | prospect |
+| [strict-stox](#strict-stox) | `f0f7374` | `dc24d9f` | Input of 64 bytes or more parses; no libc for undecided decimals | gate 1.75 / 1.52; every row at least 1.07x start | datetime, msgpack, storage, Detent, Xapiand |
+| [string-similarity](#string-similarity) | `ddfb8d1` | `a8cee7f` | Jaro, Jaro-Winkler, Dice, weighted Levenshtein, phonetic scores | gate 20.8 / 23.2 on unchanged answers | Xapiand |
+| [stringified](#stringified) | `c8c9033` | `47a0bb6` | Copies no longer dangle; `c_str()` stays in bounds | gate 1.05 / 1.20 on unchanged rows | fs, storage, Xapiand |
+| [strings](#strings) | `62fb121` | `5c98ec5` | `indent`, empty-search `replace`, `hasupper` | gate 2.10 / 1.67 | fs, http-log, soundex, string-similarity, system, traceback, Detent, Xapiand |
+| system | `c5b8e50` | `4eb2cea` | Same results (io and strings pins) | unchanged | none |
+| task | `9a85e89` | `8cad661` | Docs only | unchanged | prospect, residency, strata |
+| [term-color](#term-color) | `032ef09` | `215a23a` | Same output; `resolve()` and `policy` | gate 6.10 / 4.59 | logger, strings, traceback, Detent |
+| termdict | `cdb8042` | `d7f5954` | Same results (fst and varint pins) | unchanged | strata |
+| [threadpool](#threadpool) | `e961e44` | `9d194fd` | Same results; `TaskGroup` scheduling; queued task type; `post()`, `ending()` | gate 2.01 / 2.34; `TaskGroup` burst 3 to 4x start | scheduler, strata, Detent |
+| [time-point](#time-point) | `2f1f7f9` | `2876a56` | Instants before the epoch on clocks finer than a nanosecond; coarse clocks build | gate 1.00 / 0.99 | none |
+| [times](#times) | `666dfdd` | `c6d1a90` | Seconds past `int`; fractions on x86; negative values folded | gate 1.17 / 1.06 | none |
+| [traceback](#traceback) | `099d795` | `8388580` | `dump_callstacks` prints a blank line after each thread header | not measured | prism |
+| [uinteger_t](#uinteger_t) | `85316dd` | `d2c95db` | Digits outside the base throw; base-256 leading zero bytes; `x *= 1` after a right shift; `sizeof` 88 and its own container | decimal `str()` 43 to 530x and parsing 57 to 121x start (M1 Pro) | base-x, Xapiand |
+| unicode | `d80b6bb` | `297413c` | Same tables and decoding | gate 1.31 / 1.22 | analysis, prospect |
+| [url-parser](#url-parser) | `4424e25` | `7989b7e` | `normalize_path` and `PathParser` on empty, `.` and `..` paths | gate 7.99 / 7.75 | Xapiand |
+| utype | `6e2c2a8` | `b2cac7a` | Docs only | unchanged | none |
+| varint | `d9631ab` | `ac6003e` | Docs and bench only | unchanged | cluster, strata, termdict, Detent |
 
 ## Commits not to pin
 
 Some changes broke something that a later commit fixes. Pin before the first column or at or after
-the second.
+the second. The last rows are libraries whose own pin, inside the range, carries a dependency's bad
+range to a consumer that takes the dependency through them.
 
 | Library | Broken from | Fixed in | What goes wrong |
 |---|---|---|---|
-| compressors | `0498bf5` | `8f57675` | A crafted 98 KB LZ4 stream makes `decompress_lz4` reserve 64 MB; a refused allocation throws `bad_alloc` instead of `LZ4CorruptVolume`. |
-| strict-stox | `70b8325` | `199e0be` | The fast path ignores the rounding mode: under `fesetround(FE_UPWARD)`, `strict_stod("-0.1")` gives `-0.1` where libc gives `-0.099999999999999991` (2,358 of 30,012 random texts). |
-| logger | `dc1fe62` | `06a27d2` | A `clears` line due within 1 ms can be written before an immediate line logged earlier. |
-| generation-cache | `715f2af` | `2930a64` | A `Key` or `Value` copy or move that throws in `try_insert` or in a rehash loses entries or leaves a slot that a later `get` dereferences. |
-| fst | `b1e8ff3` | `8058003` | Verifying a node-registry hit reads past the end of the bytes the builder has written (heap use after free under ASan). |
-| string-similarity | `0939c0c` | `c0825ff` | `PhoneticMetric<Encoder, Sorensen_Dice>` bound to a string scores 0 for every pair whose codes differ. |
-| stringified | `2c78a1d` | `0053465` | A string literal passed to an overload set over `stringified` and `std::string_view` or `const std::string&` is ambiguous and does not compile. |
-| metrics | `aa7a3d8` | `4890fc0` | `AtomicCounter::add` racing an add that saturates the counter can wrap it, permanently (`9207dd3` narrows the window and does not close it). |
-| queue | `b1b38b0` | `e94be7d` | Waits block forever: two `Queue`s sharing one state, `clear()` with parked producers, `QueueSet::erase`, and a pop that leaves the size at or above the threshold. |
-| fs | `14932b9` | `d6d8bc2` | `copy_file` onto the same file (the same path, a hard link or a symlink to it) truncates the source to 0 bytes and returns 0. |
 | allocators | `2fc537f` | `e38f759` | Container copy assignment shares the source's pool, so the two containers used from two threads corrupt the heap. |
-| uinteger_t | `8f1345e` | `dabd824` | A refused allocation of the carry limb in `x += y` or `++x` leaves `x` half written, with a zero top limb. |
-| uinteger_t | `bd7bab1` | `819daa4` | On a 32-bit `size_t`, `digits()` or `from_digits()` of 512 MiB or more wraps a size and writes past its buffer. |
-| uinteger_t | `6e74834` | `b012716` | On a 32-bit `size_t`, `digits()` of a value of 2^32 bits or more wraps its bit count and returns wrong digits. |
 | base-x | `8572a00` | `fdee12d` | Does not compile: it calls uinteger_t's chunk primitives, which the uinteger_t it pins lacks. |
 | base-x | `1687e9a` | `8935fe6` | Does not compile: it calls `digits()` and `from_digits()`, which the uinteger_t it pins (`aeeeb67`) lacks. |
 | base-x | `2507a82` | `b468653` | On a 32-bit `size_t`, an RFC 4648 encode of 512 MiB or more wraps its digit count and writes wrong text. |
+| bloom-filter | `c32355b` | `77dca4c` | An unconditional `unsigned __int128` breaks every includer on MSVC, on 32-bit targets and under GCC `-Wpedantic -Werror`. |
+| compressors | `0498bf5` | `8f57675` | A crafted 98 KB LZ4 stream makes `decompress_lz4` reserve 64 MB; a refused allocation throws `bad_alloc` instead of `LZ4CorruptVolume`. |
+| fs | `14932b9` | `d6d8bc2` | `copy_file` onto the same file (the same path, a hard link or a symlink to it) truncates the source to 0 bytes and returns 0. |
+| fst | `b1e8ff3` | `8058003` | Verifying a node-registry hit reads past the end of the bytes the builder has written (heap use after free under ASan). |
+| generation-cache | `715f2af` | `2930a64` | A `Key` or `Value` copy or move that throws in `try_insert` or in a rehash loses entries or leaves a slot that a later `get` dereferences. |
+| http | `bda9b5a` | `fce24c6` | A streamed body cut short reads as a clean end of file, and a throwing `on_cancel` callback is a heap use after free or escapes `io_context::run()`; until `7bdb90a` a feed error also left the handler holding a freed frame. |
+| logger | `dc1fe62` | `06a27d2` | A `clears` line due within 1 ms can be written before an immediate line logged earlier. |
+| metrics | `aa7a3d8` | `4890fc0` | `AtomicCounter::add` racing an add that saturates the counter can wrap it, permanently (`9207dd3` narrows the window and does not close it). |
+| queue | `b1b38b0` | `e94be7d` | Waits block forever: two `Queue`s sharing one state, `clear()` with parked producers, `QueueSet::erase`, and a pop that leaves the size at or above the threshold. |
 | random | `0667b61` | `86bd0f5` | On MSVC: `0667b61` does not compile, and from `8df54fb` the 128-bit multiply swaps its halves, so `random_int` returns values outside its range on x64. |
-
-## boolean-parser
-
-Start `41a20b5`, fix `00b3021`. Xapiand builds its query from the RPN queue
-(`src/query_dsl.cc:952`), so a regrouped query matches different documents.
-
-Inputs that change:
-
-- An implicit `OR` (two operands with no operator between them: a term or `)`, then a term, `(`
-  or `NOT`) that follows another operator in the same parentheses. `a AND b c` was
-  `a OR (b AND c)` and is `(a AND b) OR c`; `NOT a b` was `a OR (NOT b)` and is `(NOT a) OR b`.
-- An implicit `OR` before `NOT` or `(`. `a NOT b` and `a ( NOT b )` were rejected and parse now;
-  `a ( b ) & c` was `(a OR b) AND c` and is `a OR (b AND c)`.
-- One binary operator repeated in a group groups to the left: `a | b | c` is `(a | b) | c`. `AND`,
-  `OR` and `XOR` keep their truth table with a different RPN queue; `MAYBE` changes meaning.
-- Malformed input that the old queue accepted by dropping operands (`a NOT`, `a ()`, `( ) a`,
-  `a ( NOT )`) throws `SyntacticException`. A rejected input's message may name a different
-  token.
-- An unclosed `(` (`(a`, `a AND (b`) or an operator without its operands (`a AND`, `AND a`) left
-  a token that is not RPN in the queue, and the error came from `Parse()` or never. Xapiand reads
-  the queue without calling `Parse()`, so these queries reached it. The constructor throws the
-  `SyntacticException` that `Parse()` gave for the same input (`172a5c2`).
-
-Every other input gives the same RPN queue and tree. `PrintTree()` on a tree with a `MAYBE` node
-was undefined behavior (a segfault in practice) and prints the tree.
-
-Detect: build boolean-parser as the top-level project. `old_dump` (`test/frozen/frozen_dump.cc`,
-the original sources under `Old` names) and `new_dump` (`test/new_dump.cc`) render one input's RPN
-queue and tree, or its exception; run both over a log of real queries and compare.
-`oracle::changed_class` in `test/oracle.h` classifies a token sequence without parsing it.
-
-## datetime
-
-Start `fce3d4d`, fixes `fe618d8` (parsing), `03f36fa` (months, loose offsets) and `773205b`
-(timestamps before 1970). Xapiand calls
-`isDate` and `isDatetime` for schema detection (`src/database/schema.cc:5156-5164`) and when it
-serializes values (`src/serialise.cc:819-823`). A new field whose first value is in the second
-class below is no longer detected as a date, and the schema keeps the type it gets instead.
-
-Inputs that change:
-
-- A negative hour, minute or second (`2020-01-02T-3:04:05`). The filling `Iso8601Parser`, which
-  `DatetimeParser` uses, accepted it; both overloads return `OUT_OF_RANGE`.
-- A fraction dot with no digits (`2020-01-02T03:04:05.`, `...:05.Z`) or with more than 62 digits.
-  The validating overload, which `isDatetime` uses, accepted it; both return `ERROR`.
-- A loose-format time ending in `Z` (`2020/01/02 03:04:05Z`) threw; it parses as UTC.
-- A loose-format time with an offset (`2020/01/02 03:04:05+05:30`) sets `is_utc`. The instant is
-  unchanged.
-- Month arithmetic that lands on a multiple of 12. `2020-12-15||+12M` threw
-  `Month must be in 1..12` and is `2021-12-15`; a `tm_t` whose month is 24, 36, ... normalizes to
-  month 12 instead of 0.
-- A date-math term that overflows `int` (`+2147483647d`) was undefined behavior. Date math is
-  64-bit, and a result outside years 1 to `INT_MAX` throws `Year is out of range`.
-- A timestamp before 1970 with a fraction. `timestamp(tm_t)` of 1969-12-31T23:59:58.9 was -2.9
-  and is -1.1; `to_tm_t(-2.9)` was 23:59:58.0 and is 23:59:57.1, and `iso8601(double)` follows.
-  Timestamps from 1970 on and whole-second timestamps are unchanged.
-- `normalizeMonths` looped once per twelve months below 1 (about 180 million times for
-  `INT_MIN`) and overflowed for a year near `INT_MAX`; it throws `Year is out of range` and
-  leaves its arguments unchanged. The string parsers never reach it with such values.
-
-`toordinal`, `timegm` and `timestamp(tm_t)` compute from one calendar routine; their exceptions,
-messages and order are unchanged.
-
-A datetime pin before `22d1f6a` built with a strict-stox at `c1c9bc1` or later accepts a time or
-timedelta fraction of 63 digits or more and a date-math term of 64 characters (`+0...010d`): its
-`TimeParser` and `TimedeltaParser` took their width limit from strict-stox, which read only 63
-bytes until `c1c9bc1`. From `22d1f6a` datetime checks the widths itself (62 digits, 63
-characters), with the results of a build on strict-stox `21b7941`. Move the two pins together.
-
-Detect: `test/old/` holds the original as namespace `DatetimeOld`, and `test/diff_test.cc` lists
-each class with its oracle. Run stored date strings and logged date-math expressions through both
-and compare `isDatetime`, the `tm_t` and the exception.
-
-## string-similarity
-
-Start `ddfb8d1`, fixes `efba168`, `0939c0c` and `c0825ff`. Xapiand sorts by these metrics
-(`src/multivalue/keymaker.cc:635-690`), so result order changes. Serialized metric parameters
-still load, and Xapiand's subclasses compiled against `0a31357` (system review probe
-`xap_metric.cc`).
-
-Inputs that change:
-
-- `Jaro_Winkler` returned the plain Jaro score. It adds the prefix boost
-  `jd + l * p * (1 - jd)` when `jd > bt` (0.7), so every pair with a common prefix and a Jaro score
-  above 0.7 scores higher.
-- `Jaro` uses the standard window and transposition count: pairs with repeated characters or an
-  odd number of out-of-order matches score differently, and two one-character strings equal only
-  after case folding score 1 instead of 0.
-- `Levenshtein` with an insert or delete cost other than 1 was wrong; with both costs 0 it
-  returned NaN and returns distance 0.
-- `Sorensen_Dice` counts bigrams as a multiset: strings with a repeated bigram (`"aaaa"`) score
-  differently. With `icase`, two one-character strings equal after folding score 1 instead of 0.
-- A copy or move of a bound `Sorensen_Dice` scored against its source's string (a use after free
-  once the source was gone). It scores against its own (`c0825ff`). Xapiand's sort keys hold
-  `SerialisableMetric<Sorensen_Dice>` (`keymaker.cc:690`).
-- `PhoneticMetric` encodes both operands before the inner metric runs; it compared the raw
-  strings.
-- Copying a bound metric from a non-const lvalue (`Levenshtein b = a;`) did not compile; it
-  copies.
-
-Unit-cost Levenshtein, LCSubstr, LCSubsequence and Jaccard are unchanged.
-
-Detect: `test/legacy_metrics.h` holds the old Levenshtein, Jaro and Jaro_Winkler, and
-`test/differential.cc` names the classes. Run a sample of sort queries before and after.
-
-## htm
-
-Start `a0321ab`, fixes `cf5177b` and `9006a84`. `getId(Cartesian)` left its products to the
-compiler, and a compiler that fuses a multiply into the add or subtract that uses it rounds once
-instead of twice: clang on any CPU with FMA (Apple Silicon, x86 with `-mfma` or
-`-march=haswell`), GCC by default on arm64 and with `-mfma`, and any compiler under
-`-ffp-contract=fast`. A point within rounding of a trixel edge then landed in the neighboring
-trixel: 0.83% of random points, 0.65% of a one-degree grid and 57% of points on trixel edges,
-against plain IEEE-754 arithmetic (Apple clang 17 on arm64). `getId` turns contraction off, so
-every build returns the ids of a build without it. Builds that never fused (x86-64 without FMA,
-`-ffp-contract=off`) return the same ids as before.
-
-Xapiand indexes the HTM ranges of each geometry (`src/database/schema.cc:5535-5600`). An index
-written by a fusing build files those points under the neighboring cell; after the bump, the
-points to reindex are the ones whose id differs between the old and the new build.
-
-Detect: `test/golden.h` holds 396 points with their ids, 96 of them points a fusing build gets
-wrong; run the old and new `getId` over stored points on the build that wrote the index.
-
-## enum-reflection
-
-Start `79fe3fa`, fix `2a5da3a`. `enum_type<E>(name)` and `enum_try_type<E>(name)` matched on a
-64-bit hash of the name alone, and the hash is invertible, so a string built to share a member's
-hash (15 bytes were enough) returned that member. Each lookup compares the name with the member's,
-ASCII case-insensitively as before; such a string misses (`enum_type` throws
-`std::out_of_range`, `enum_try_type` returns `std::nullopt`). Every real member name gives the same
-answer. Xapiand passes schema properties to `enum_type<StemStrategy>`
-(`src/database/schema.cc:7094`).
-
-Detect: lookups of names that are not members; only a crafted string changes.
-
-## msgpack
-
-Start `3c408cf`, fixes `d054ea1`, `c913966` and `d8fa3e6`. Xapiand stores its documents as
-`MsgPack`.
-
-- A map that repeats a key is merged when it is first filled (a lookup, a walk, `hash()`,
-  `erase`): the last value wins in the position of the first occurrence, so
-  `{"a":1,"a":2,"b":3,"c":4}` is `{"a":2,"b":3,"c":4}`. It was `{"a":2,"b":3,"b":3}`: `c` was
-  lost, `b` repeated, and a later `erase(key)` dereferenced the end iterator. `hash()`,
-  `serialise()` and copies after the first fill follow the merged map; a map nothing has filled
-  serializes as it came. Documents without a repeated key are unchanged.
-- Pushing onto an array of maps after writing through one of its elements read freed memory: a
-  growing `std::vector<MsgPack>` copied its elements, because the move constructor was not
-  `noexcept`. It moves them.
-- Filling a map with a key that is not a string throws "MAP keys must be of type STR", and the
-  throw leaves the map as it was. It indexed the keys before the bad one first, so a second fill
-  dropped them: on `{"a":1, 5:2}` the second `erase("a")` left `serialise()` at `810502`.
-
-- `replace()` and `put()` over a key whose old value was a map or an array that had been read
-  went by the old value's entries (an assertion, or an out-of-bounds read); they use the new
-  value's. Replacing a value that was locked on its own throws `const_error`, as assigning to it
-  does (`f083ad7`).
-- A `lock()` that throws leaves nothing locked; it left the maps above a bad one locked
-  (`f083ad7`).
-- `erase()` returns 1 for the last element of a map or an array, as for any other; it returned 0
-  (`f083ad7`).
-- References to the children of an array element stay valid when the array grows, and a failed
-  allocation leaves the document consistent with its own bytes (`f083ad7`).
-- `to_string()` and `as_document()` write a key that is not a string as its compact JSON text,
-  quoted (`5` as `"5"`, `true` as `"true"`, `null` and an ext as `"null"`). They read every key as
-  a string, which gave garbage text or a crash (`adac439`).
-- `update()` changes nothing when it throws for a reason of its arguments (a key that is not a
-  string in the way of the merge, a target that cannot be read by key, a constant or locked
-  value); it applied the entries before the failing one (`adac439`).
-- `to_string()` writes a NaN or infinite float as `null`; the text stopped at it, so
-  `{"v":NaN,"w":1}` gave `{"v":` (`1c851dc`, documented in `4bb04dd`). `as_document()` keeps the
-  number.
-
-`unserialise`, `hash()` and `to_string()` are faster with identical results (`ca77ada`,
-`f2f9f78`, `987c111`). The CHANGELOG keeps three known problems for an owner decision: an
-allocation that fails part way through `update()` leaves the entries before it applied, a
-reference to a child of a value that is replaced, erased or cleared goes with the value, and the
-JSON Patch helper, threads and a failing `msgpack::zone` allocation are outside its hunt test.
-
-Detect: documents that repeat a key, have a key that is not a string or hold a NaN or an
-infinity; code that grows an array of maps after writing into it, replaces a value it has read,
-or counts what `erase()` returns.
-
-## storage
-
-Start `7b9abd1`, fixes `90aec94`, `a1e49db` and `217e731`. Xapiand stores its documents' blobs
-with it.
-
-- `read()` bounded a record with a 32-bit product, so a record starting past 4 GiB of byte offset
-  read as end of file; it reads.
-- A record whose flags byte is damaged into "compressed" escaped `read()` as the codec's own
-  exception; it throws `StorageCorruptVolume`.
-- `growfile()` multiplied in `int` and overflowed once a volume passed about 1.6 GiB; the product
-  is `off_t`.
-- A writable open holds a shared `flock` on the volume, and `reclaim_volumes` takes the exclusive
-  one; a writable open that finds a reclaim holding the volume fails with `EWOULDBLOCK`.
-  `commit()` syncs the volume directory once after creating the file.
-- The vendored `normalize_path` follows [fs](#fs)'s (`934b7d9`, `42b1053`, `b141849`).
-  `Storage("", ...)` opened `/vol.0` at the root of the filesystem; an empty, `.` or `a/..` base
-  path is `./` and opens `./vol.0` in the working directory. A `..` removes the component before
-  it (`a/../b` was `a/b` and is `b`). Pins from `934b7d9` to before `b141849` give `""` for an
-  empty base path, which also opens in the working directory.
-
-The on-disk format is unchanged, and the compressors pin carries the compressors fixes above.
-
-Detect: volumes past 4 GiB, damaged volumes, hosts that open a volume while reclaiming, and base
-paths that are empty, `.`, or contain `..`.
-
-## strict-stox
-
-Start `f0f7374`, fix `7d7f5dd`. Valid input of 64 bytes or more (100 leading zeros, a long run of
-whitespace, a long decimal) was rejected as `EINVAL`, or, with an `idx`, parsed as its first 63
-bytes with a wrong `idx`. It parses as libc `strto*` does on the same bytes. Shorter input is
-unchanged, and the table-driven `stod`/`stof` path (`199e0be`) returns the bits, end, `errno` and
-exceptions `strtod` returns.
-
-`a1b03fb` converts the decimals its table cannot decide with an exact big-integer comparison
-instead of calling libc. The values are libc's where libc is right; Apple's `strtod` aborted the
-process on some texts (`99004559013337762701442583720290300000000000.00000000000000` is one), and
-`strict_stod` returns their value. On FreeBSD, `stof` of some texts between two subnormal floats
-returned the smallest normal float with no `errno`, as FreeBSD's `strtof` does; it gives `ERANGE`.
-
-Detect: values of 64 bytes or more that reach a `strict_*` call; with the old pin they fail with
-`EINVAL`. `STRICT_STOX_C_LOCALE` changes results in a locale whose decimal point is not `.`, and
-is off unless a consumer defines it.
-
-## strings
-
-Start `62fb121`, fix `bb85615`.
-
-- `indent` keeps blank lines and the trailing newline (blank and whitespace-only lines get no
-  prefix), and an empty string stays empty. It dropped both and turned `""` into the prefix.
-  `indent("a\n\nb", ' ', 2)` is `"  a\n\n  b"`.
-- `replace` and `inplace_replace` with an empty search never returned. They insert the
-  replacement at every position, as Python's `str.replace` does.
-- `hasupper` tests ASCII `A`-`Z`. It used the locale's `isupper`, which in Latin-1 is true for
-  0xC0 to 0xDE, and was undefined for a negative `char`.
-
-Detect: `indent` calls on text with blank lines or a trailing newline; any empty search string
-(the old code hangs on it); `hasupper` on non-ASCII text in a program that sets a locale.
-`test/fix_test.cc` keeps the old `indent` beside the new one.
-
-## stringified
-
-Start `c8c9033`, fix `1c1fb3e`.
-
-- Copying or moving a `stringified` that owned its text kept a view into the source, which
-  dangled once the source died (heap use after free under ASan). The copy views its own storage.
-- `c_str()` read the byte after a view over an exact-size buffer. It copies once instead.
-- An explicit `stringified(const char*)` (`0053465`) returns a C string from `c_str()` without a
-  copy. A call that compiled at start compiles the same way; see the skip table for `2c78a1d`.
-
-Detect: valid programs get the same text. A program that read a copy after its source died sees
-the right text instead of freed memory.
-
-## repr
-
-Start `2063945`, fix `3191c08`. `repr(..., max_size = 1)` with a quote wrote both quotes past a
-one-byte buffer and returned a string ending in a stray NUL; it returns the two quotes. Every
-other output is byte-identical (`test/diff_test.cc` against `test/repr_old.cc`).
-
-Detect: calls with `max_size` 1.
-
-## allocators
-
-Start `e8fb173`, fixes `085331c`, `2fc537f`, `e38f759` and `7cdb0f8`.
-
-- Every copy of a `memory_pool_allocator` had its own pool, so a `std::list` or `std::map` freed
-  nodes into the wrong pool and corrupted the heap after a few elements. Copies and rebinds share
-  one pool family and compare equal. `propagate_on_container_move_assignment` and `_swap` are
-  `true_type`, `propagate_on_container_copy_assignment` is `false_type` (a copy-assigned
-  container keeps its own pool), `is_always_equal` is `false_type`, and a copy-constructed
-  container gets a new pool.
-- `allocator<T, Backend>::construct` and `memory_pool_allocator<T>::construct` took only
-  `const T&`, so `push_back(std::move(x))` and every `vector` reallocation copied. They
-  perfect-forward, as `std::allocator` does: an object moved into such a container is left
-  moved-from, where it stayed intact before.
-
-Builds without `NDEBUG`, or with `ALLOCATORS_POOL_CHECK`, abort when two threads use one pool at
-the same time; `allocators::set_pool_misuse_handler` replaces the abort (`2fc537f`).
-
-Detect: containers over these allocators, and code that reads an object after moving it into one.
-Xapiand uses only `allocators::total_allocated()`; completion and journal use only the resource
-accounts.
-
-## queue
-
-Start `7df74b2`, fixes `e94be7d` and `31552f9`. At start, a parked thread that a state change
-should have released waited for the next one-second re-check; untimed waits no longer re-check
-(`b1b38b0`, see the skip table), and every state change that can release a parked thread wakes
-one that can use it.
-
-- Two `Queue`s on one `QueueState` each have their own consumer condition variable, so a push no
-  longer wakes the other queue's consumer.
-- `clear()` wakes every parked producer (one when it freed one slot), whatever its own queue's
-  flags; `QueueSet::erase` wakes one.
-- A pop wakes a producer whenever it leaves the count below the hard limit; `threshold` no longer
-  affects waking.
-- A producer that waited and then does not push (soft limit, shutdown, an exception) wakes the
-  next one.
-- Move assignment returns the target's dropped items to its state, so `count()` no longer reads
-  high and producers of other queues on that state see the room.
-- `QueueSet::clear()` compiles.
-
-Detect: code that relied on a parked producer staying parked until a later push or pop, and
-readers of `count()` on a state shared by several queues.
-
-## scheduler
-
-Start `ae3f0f9`, fixes `36afada` and `62a4fe8`. A task added between the worker's last look at
-the wheel and its sleep could wait up to the worker's 30 s idle target: 2,623 of 140 million adds
-in a burst soak. It runs when due. `62a4fe8` closes the same window in the memory model (`add()`
-read the published wakeup before its fence), which no run on arm64 or x86 showed. Nothing else
-changes; `post()` and `post_ordered()` (`5ad60fc`) are new calls.
-
-Detect: timers that fired late fire on time.
-
-## logger
-
-Start `ce27b90`, changes `dc1fe62` and `c7332d6`.
-
-- A routine, deferred or `clears` line due within 1 ms of its call is written 1 ms after the call,
-  so a hard crash inside that millisecond loses it.
-- The timestamp comes from the steady clock with an offset to the wall clock measured every 20 ms:
-  within 2 us of `system_clock` at the default microsecond precision, and a step of the wall clock
-  shows within 20 ms.
-- Lines are ordered per thread. Across threads a line may wait behind one due microseconds later.
-- When filing a line fails on the LOG thread (an allocation failure, or a wakeup the wheel
-  refuses), the LOG thread runs the line if it is due and drops it otherwise; the caller no longer
-  sees the refusal.
-
-Otherwise the bytes written are identical (`test/transcript.cc` against `test/frozen/`).
-
-Detect: log readers that rely on nanosecond timestamps or on order across threads below a
-millisecond, and the last lines before a crash.
-
-## compressors
-
-Start `17873b2`, fixes `f157dab` and `8f57675`.
-
-- A damaged LZ4 record whose 16-bit length exceeds the 2,072-byte block buffer overflowed the heap
-  in `LZ4DecompressData` and `LZ4DecompressFile`; it throws `LZ4CorruptVolume`. A block LZ4 rejects
-  is reported as `LZ4CorruptVolume` too (`f157dab`).
-- A zstd frame whose header claims more than 32,768 bytes per compressed byte aborted in the
-  allocator; it throws `ZstdCorruptVolume` (`f157dab`).
-- A zlib stream with the preset-dictionary flag decompressed to an empty string; it throws
-  `DeflateException` (`f157dab`).
-- `decompress_lz4` sizes its buffers by the decoded data: hostile input allocates under 1 MB
-  and throws `LZ4CorruptVolume` instead of `bad_alloc` (`8f57675`, see the skip table).
-- `XXH32` reads its input little-endian on every host (`533bee4`). A big-endian host computed a
-  digest that differed from upstream xxHash and from a little-endian host, and storage persists
-  it, so its volumes failed their checksums elsewhere. Little-endian digests are unchanged.
-- One `XXH32` update of 4 GiB and 5 bytes or more wrapped its 32-bit length counter below 16 and
-  digested the input as a short one, unlike upstream xxHash; the update's own length sets the
-  flag (`430870c`).
-- `XXH32_state_t` keeps its four lanes as `v[4]`; code that names `v1` to `v4` does not compile
-  (`430870c`).
-
-Valid streams decode to the same bytes, and the compressed bytes are unchanged. `compress_zstd`,
-`decompress_zstd` and `decompress_deflate` are out of line now (`62e6b62`), with the same bytes and
-exceptions.
-
-Detect: catch sites for decompression errors, any input that decompressed to an empty result,
-and LZ4 digests written on a big-endian host.
-
-## generation-cache
-
-Start `00762bd`, changes `715f2af`, `89baa5b`, `2930a64` and `32a2b4a`.
-
-- `try_insert` has the strong exception guarantee, a rehash that throws keeps every entry, and the
-  `operator<` adapter no longer keeps a default-constructed entry when `Value`'s move throws.
-  Paths that do not throw return the same values.
-- Readers take a one-word reader-writer lock instead of `std::shared_mutex`, and a waiting writer
-  holds new readers back on every platform. With `std::shared_mutex` the fairness was the
-  platform's (glibc prefers readers), so continuous readers could starve `try_insert` and
-  `clear`.
-- The hash seed is drawn once per process (`49a86e9`); constructing a `Cache` cannot throw.
-
-Detect: keys or values whose copy or move can throw, and workloads that read continuously while
-another thread inserts.
-
-## fs
-
-Start `ce16118`, fixes `14932b9`, `0b5f78e`, `d6d8bc2`, `8848b49` and `bf10f39`.
-
-- `copy_file` over a longer existing file kept the old tail; the destination is truncated.
-- A failed destination open went on to write to descriptor -1; it returns `-1`.
-- A short write (a full disk, `RLIMIT_FSIZE`) left a truncated copy and returned 0; it returns
-  `-1`, as does a failed `close` of the destination. The partial file stays in place.
-- `copy_file` onto the same file (another spelling of the path, a hard link, a symlink) returns
-  `-1` before writing anything, as `cp` refuses "identical" files. In a directory copy that stops
-  the copy at that file.
-- `mkdirs("")` and `build_path_index("")` read past an empty view (a crash, or `true`); they
-  return `false` and create nothing.
-- `normalize_path` returns the lexical normal form of Python's `os.path.normpath`, and the
-  current directory has one spelling, `.` (`7a10a04`, `d172a13`, `8e5f3d2`). `""`, `.`, `./`,
-  `x/..`, `x/../` and `./x/..` are `.` (`./` with `slashed`, and with `keep_slash` when the input
-  ends in `/`); the empty path was `/`, the root. A `..` removes the component before it, the
-  first one of a relative path included (`a/../b` was `a/b` and is `b`); a relative path keeps
-  the `..` it cannot remove (`..` was `.` and `../a` was `./a`; they stay `..` and `../a`); the
-  root absorbs it (`/..` is `/`); a leading `./` is dropped (`./a` is `a`); and a component of
-  three or more dots is a name (`...` popped two components). A run of leading `/` is one root
-  (`//x` is `/x`, where `os.path.normpath` keeps two). A default-constructed view is the empty
-  path; with `keep_slash` it crashed (`bf10f39`). A non-empty input without a `.` gives the bytes
-  it gave. Pins from `7a10a04` to before `8e5f3d2` give answers of neither kind: the empty path is
-  `""`, and `..` keeps start's rules until `d172a13`.
-
-Detect: callers that copy over existing files, that treat 0 as success on a full disk, that copy
-a directory onto itself, or that pass an empty path to `mkdirs`. Xapiand's `master` normalizes its
-data and working directories (`src/main.cc:652`, `:709`), endpoint paths (`src/endpoint.cc:242`)
-and the WAL's base path (`src/database/wal.cc:729`): an empty data directory resolved to `/` and
-resolves to `.`, so a caller that must refuse an empty directory checks before normalizing.
-`test_normalize_path_table` holds `os.path.normpath`'s output for 55 inputs.
-
-## btree
-
-Start `25f9494` (on `master`), fixes `d81f2a3`, `a56261d` and `512febb`.
-
-- With keys on the heap (`std::string` past the small-string buffer), a refused allocation during
-  a split, rebalance, merge, erase or root replacement lost or misordered entries, leaked, or
-  double-freed. A refused insertion leaves contents, structure and live allocations unchanged, and
-  erase allocates nothing.
-- A value whose construction fails after a split no longer leaves `size()` one too high or an empty
-  leaf in the tree.
-- Maps accept move-only keys.
-- A map slot is a union of `std::pair<Key, T>` and `std::pair<const Key, T>`. Node layout and sizes
-  are unchanged; rebuild every translation unit that includes btree against the same revision.
-
-Detect: allocation-failure tests, allocation counts (65,536 erases with 200-byte keys made 72,692
-heap calls and make none), and builds that mix header revisions.
-
-## cartesian
-
-Start `6eab8ed`, fixes `79ed663` and `7066e9e`. `std::hash<Cartesian>` hashes the bits of `x`,
-`y`, `z` and the SRID, the fields `operator==` compares, instead of `to_string()`. Every hash
-value and the iteration order of unordered containers keyed on `Cartesian` change, and two points
-that compare equal but differ in `scale` (`Cartesian(3, 4, 0)` after `normalize()` and
-`Cartesian(0.6, 0.8, 0)`) hash alike, so an `unordered_set` finds one with the other. No family
-library or Xapiand persists the values.
-
-Detect: stored hash values, or tests that depend on unordered iteration order.
-
-## random
-
-Start `115f3f3`, fix `0667b61`. The generator is xoshiro256++ seeded with 256 bits, and the ranges
-use Lemire's method, so every sequence differs. The API has no seed, so no sequence was
-reproducible before either; ranges, inclusiveness and the `random_string` alphabet are unchanged.
-
-Detect: tests that assert exact draws.
-
-## url-parser
-
-Start `4424e25`, fixes `2c9ea8e` and `1cdcb53`. url-parser carries its own copy of fs's
-`normalize_path`, which `PathParser::init` runs first, and gives fs's bytes on every input.
-
-- `normalize_path` follows `os.path.normpath` as in [fs](#fs). Start returned `""` for the empty
-  path and for `.` with `keep_slash`, and `x` for `x/..`; with `keep_slash` the last component
-  stayed as written (`a/..` stayed `a/..`), and `../x` was `./x`.
-- `PathParser` follows it, with one rule of its own: the current directory, however it is
-  spelled, is the empty path (no path, no id). `a/..` is the empty path (it was the path `a/..`
-  with the id `..`), `a/b/..` is the path `a` (it was `a/b/..`), `a/../b` is no path and the id
-  `b` (it was the path `a` and the id `b`), and `../a` is the path `..` with the id `a` (it was the
-  path `.`). `a/b/../c`, `x//y` and `foo/./bar` parse as they did.
-- `PathParser::init(std::string_view())` crashed; a null view is the empty path (`2c9ea8e`).
-
-Pins from `2c9ea8e` to before `1cdcb53` have fs's intermediate rules (`a/..` is `.`, `../a` is
-`./a`).
-
-Detect: request paths with `.`, `..` or `...` components. Xapiand's search views parse paths with
-`PathParser` (`src/server/search_views.cc` on `master`). `test/normalize_path_test.cc` holds
-`os.path.normpath`'s output for 55 inputs.
-
-## http-parser
-
-Start `52a30d0`, fixes `21c8f30`, `ab8377c`, `62ac7f3`, `0aeec14`, `e2f23b9` and `5cb4409`;
-http pins `c7023b0`, which carries them. Unless a consumer sets `parser->lenient_http_headers = 1`
-after `http_parser_init()`, the parser rejects what request smuggling relies on, as upstream
-http_parser 2.8 to 2.9.4 and llhttp do. Each case stops `http_parser_execute()` with
-`HTTP_PARSER_ERRNO(parser)` set:
-
-- A bare LF ending the request line, a header line or the headers: `HPE_CR_EXPECTED` (new).
-- obs-fold (a header line that starts with a space or a tab), and a control byte other than HT,
-  or DEL, anywhere in a header value: `HPE_INVALID_HEADER_TOKEN`. Start checked only the first
-  byte of a value or of an `execute()` call, so its verdict depended on where the input was split.
-- In a request, a `Transfer-Encoding` that is not exactly `chunked`, an empty one, or `chunked`
-  twice: `HPE_INVALID_TRANSFER_ENCODING` (new). In a response, an empty `Transfer-Encoding` or one
-  after `chunked` is the same error, and a `Transfer-Encoding` with a `Content-Length` is
-  `HPE_UNEXPECTED_CONTENT_LENGTH`.
-- A `Content-Length` with a space between digits, an empty one, or one in a trailer section:
-  `HPE_INVALID_CONTENT_LENGTH`.
-- A space after a chunk size, or a chunk extension that is not `;name[=token|"quoted"]`:
-  `HPE_INVALID_CHUNK_SIZE`.
-- A request line without a version, or a version with more than one digit a side or other than
-  0.9, 1.0, 1.1 or 2.0: `HPE_INVALID_VERSION`. A response status that is not one space and three
-  digits: `HPE_INVALID_STATUS`.
-- After an HTTP/1.0 message with `Transfer-Encoding`, `http_should_keep_alive()` is 0 and the next
-  byte is `HPE_CLOSED_CONNECTION`, whatever `Connection` says.
-- A 1xx, 204 or 304 response has no body whatever its framing fields say, and only a 101 is an
-  upgrade.
-
-The two new error numbers come after `HPE_UNKNOWN`, so the others keep their values. The private
-`index` field of `struct http_parser` is 5 bits and a private `extra_flags` takes the other 2; the
-struct's size is unchanged. `http_parser_parse_url()` reads only the port's own digits: it read on
-past `buflen` when the buffer was not NUL-terminated. With `lenient_http_headers` set, the parser
-reports what start reported, request smuggling included.
-
-Detect: `test/diff.cc`'s `changed_class()` names the inputs whose result changes; replay logged
-requests through both pins. A client that ends lines with a bare LF or folds headers gets an error.
-
-## http
-
-Start `c23bb99`, fixes `bda9b5a`, `fce24c6`, `25f4b99` and `3caaeda`; `e70ba34` pins http-parser at
-`c7023b0`. The first changes the source of every handler (`bda9b5a`, 2026-10-30; the CHANGELOG
-has no entry for it):
-
-- `HttpHandler::handle` is `asio::awaitable<void> handle(Request&, ResponseWriter&)`, awaited on
-  the connection's loop, and `Router` routes are coroutines. The worker pool, `should_offload`,
-  `BodyReader` and `ChannelBodyReader` are gone; a streamed body is a `BodyStream` read with
-  `co_await`.
-- `HttpAsioService(handler, reactors, in_flight_limit, ...)` replaces the `workers` and
-  `queue_limit` arguments. A request is admitted at the end of its headers through reactor's
-  `AdmissionGate`, and a refused one is answered 503 with `Retry-After: 1`. A buffered body is
-  capped, 16 MiB by default, and a longer one is answered 413.
-- A request is cancelled (`Request::cancel`, `Request::on_cancel`) when the client hangs up or the
-  service shuts down. The handler's frame is never destroyed early, and its response is still
-  attempted.
-
-For requests that reach a handler:
-
-- A streamed body cut short by the client ends with `connection_reset`, not end of file
-  (`fce24c6`).
-- Trailer fields go to `Request::trailers`, and `header()` reads the header section only: a field
-  in a chunked request's trailer reached the handler as a header (`25f4b99`).
-- A `CONNECT` is answered and the connection closed; the bytes after its header section were
-  served as the next request (`25f4b99`).
-- After an HTTP/1.0 request with `Transfer-Encoding` the connection closes, whatever `Connection`
-  says (`3caaeda`), and requests that [http-parser](#http-parser) rejects are refused.
-
-Detect: the build. Then handlers that read trailers through `header()`, clients that send
-`CONNECT` or keep an HTTP/1.0 chunked connection open, and uploads over 16 MiB to a handler that
-buffers the body.
-
-## reactor
-
-Start `ef26c30`, fixes `67e22a6` and `76c32b4`. reactor's CHANGELOG begins on 2026-11-01; this
-comes from the commits.
-
-- Nothing runs off a reactor's loop: `Reactor::pool()`, the `workers` constructor argument and the
-  worker pools of `TcpServer` and `UdpServer` are gone, and `OffloadGate` is `AdmissionGate` (a
-  per-reactor in-flight cap, 0 for none, a move-only `Lease`, a refusal counter). The
-  constructors are `TcpServer(reactors, admission_limit, session)` and `UdpServer(on_datagram)`
-  (`67e22a6`).
-- `Reactor::track` takes an `Abortable&`, linked into a list touched on the reactor's loop only.
-  `TcpServer::stop()` asks every tracked request to stop, waits up to a grace (5 s), then forces
-  what a stalled peer still holds and waits for the sessions (`67e22a6`).
-- The accept loop keeps accepting after a connection that reset while it was queued; on macOS
-  `accept` returned `EINVAL` for it, the loop threw, and the listener disappeared (`76c32b4`).
-
-Detect: the build. cluster and consensus pin reactor `4083bdb`, which carries both.
-
-## http-log
-
-Start `6ee47af`, fix `c7772ab`. `AccessLog::handle` is a coroutine that awaits the inner handler,
-as [http](#http) requires, and `AccessLog` no longer forwards `should_offload`; its error mapping,
-buffered-response logging and capture are unchanged. Move its pin with http's.
-
-Detect: the build.
-
-## times
-
-Start `666dfdd`, fixes `cb75580` and `1f1f9c0`.
-
-- `timespec_t(double)` keeps whole seconds past `int`: `timespec_t(3e9)` was
-  `{2147483647, 2147483647}` on arm64 and `{-2147483648, -2147483648}` on x86, and is
-  `{3000000000, 0}`. `*` and `/` keep large values too. A Unix time after January 2038 did not fit.
-- The fraction is scaled in `double` on every platform. On x86, whose `long double` has 80 bits,
-  about half of the decimal fractions came out one nanosecond short: `timespec_t(0.3)` had
-  `tv_nsec = 299999999`, and `timespec_t(0.3) + timespec_t(0.7)` was not one second. Of 1,111,104
-  decimals of one to six digits, 536,298 change on x86 and none on arm64.
-- A negative value with a fraction has `tv_nsec` in `[0, 1e9)`: `timespec_t(-0.5)` was
-  `{0, -500000000}` and is `{-1, 500000000}`: the same instant, which now compares equal to the
-  same instant made by arithmetic.
-- The comparisons with a `double` on the left take a `const timespec_t&`, so `0.5 < now()`
-  compiles.
-
-Detect: `test/diff.cc` lists the classes against the frozen old code: values of 2^31 seconds and
-more, negative values with a fraction, and fractions on x86.
-
-## time-point
-
-Start `2f1f7f9`, fix `624c2e9`.
-
-- A conversion that drops precision rounds toward negative infinity (`std::chrono::floor`), not
-  toward zero. Only an instant before the epoch on a clock finer than a nanosecond, at a tick that
-  is not a whole nanosecond, changes: -1500 ps was -1 ns and is -2 ns. On nanosecond clocks the
-  values are the same, bit for bit.
-- `time_point_from_ullong<Clock>` builds for a clock coarser than a nanosecond (libc++'s
-  `system_clock` ticks in microseconds) and rounds down to the tick, and `time_point_to_ullong`
-  takes a `time_point` of any duration. Both failed to compile.
-- `time_point_to_llong` and `time_point_from_llong` give the same count signed, so instants
-  before the epoch order like the instants.
-
-Detect: `test/diff.cc` names the one class that changes.
-
-## io
-
-Start `3893d47`, fix `6524ce0`. `io::pread` loops to the full count, as `io.hh` documents for
-`read`, `write`, `pread` and `pwrite`: it advances the offset by each count until the buffer is
-full, a read returns 0 (end of file: the bytes so far) or a read fails (the bytes so far, `-1` when
-none). It returned after one `::pread`. A read that reaches end of file makes one more `pread`,
-which returns 0.
-
-Detect: callers that took a short `pread` for end of file or looped themselves. journal, storage,
-completion, residency and strata do not call `io::pread`. Xapiand's `Storage` policy forwards to it
-and compares the count with the header size or accepts any count but `-1`, so it sees only the
-extra call at end of file.
-
-## math
-
-Start `2730483`, fixes `01ad763` and `5486d04`. Xapiand calls `modulus` (`src/query_dsl.cc`,
-`src/multivalue/generate_terms.cc` on `master`).
-
-- `add` and `sub` on `uint8_t` and `uint16_t` report overflow. The sum was formed in `int` and
-  never wrapped, so `add<uint8_t>(250, 10)` returned 4 with the flag clear. `uint32_t` and
-  `uint64_t` are unchanged.
-- `modulus` of `INT_MIN`, `LONG_MIN` or `LLONG_MIN` was undefined behavior and returns the least
-  non-negative residue (`modulus(INT_MIN, 7)` is 5), as do the lowest `int8_t` and `int16_t`
-  (`modulus(INT16_MIN, 1000)` is 232). With a modulus type narrower than `val`,
-  `modulus(300, uint8_t{7})` was 2 and is 6.
-- `modulus(val, 0)` divided by zero; it throws `std::invalid_argument("Modulus must be positive")`,
-  as a negative modulus does.
-- `min<double>` is `std::numeric_limits<double>::lowest()`. It was `min()`, the smallest positive
-  normal double, about 2.2e-308.
-
-Every other result is unchanged. Detect: the inputs above.
-
-## errno-names
-
-Start `a5ab101`, fix `0ec0801`. `error::description()` returned `"Unknown error: N"` for every
-errno on glibc, where g++ and clang++ select the GNU `strerror_r`; it returns libc's text there
-(`description(ENOENT)` is `"No such file or directory"`). macOS is unchanged.
-
-Detect: log lines on Linux. storage and traceback describe errors through it, and so do Xapiand's
-I/O traces (`src/xapiand_io_trace.h` and others on `master`).
-
-## namegen
-
-namegen is the C++ generator of the `Kronuz/fantasyname` fork, moved to its own repository with its
-history; start is the fork's `70bd983`. Xapiand names its nodes with it (`src/xapiand_namegen.h`).
-
-- Every alternative of a choice, and every entry of a symbol, has probability 1/n (`c0f9393`). The
-  original rounded a draw to the nearest integer, so the first and last alternatives came up half
-  as often (`v` gave `a` and `y` 10% of the time, `e`, `i`, `o` and `u` 20%). Patterns whose
-  choices have at most two alternatives give the original's names for a seed; others do not.
-- Each thread has its own engine; `toString()` from several threads raced on one (`72b3f1c`).
-  `NameGen::engine()` is the thread's engine, and `Generator::generate(std::mt19937&)` draws from
-  the caller's.
-- `combinations()` saturates at `SIZE_MAX`; it wrapped around (`fd7ab7f`).
-- The CMake target is `namegen::namegen`, with `fantasyname::fantasyname` and `fantasyname` as
-  aliases (`c8faf70`).
-
-Detect: tests that pin the names drawn from a seed.
-
-## uinteger_t
-
-Start `85316dd`, fixes `a39ede0`, `bd7bab1`, `6ff439f`, `10cf088` and `eb588dc`. uinteger_t and
-base-x had a campaign of their own on the same days ([record](reviews/2026-10-31-uinteger_t-base-x.md)).
-base-x and Xapiand build on it, and FetchContent keeps the first declaration, so Xapiand's own
-uinteger_t pin decides which uinteger_t base-x gets. Xapiand's `xapiand` branch pins `a383e37`
-(`Xapiand:bc19f0c0`); `3fe13a2f` pins a commit from before the start.
-
-Inputs that change:
-
-- A character that is a digit but not below the base was folded into the value (`uinteger_t("9", 8)`
-  was 9, `uinteger_t("g", 16)` was 16); it throws `std::invalid_argument` (`Error: Not a digit in
-  base 8: '9' at 1`). So does a byte 0x80 or above, which indexed the digit table with a negative
-  value where `char` is signed (`"1é"` in base 16 parsed as 0x100) (`bd7bab1`).
-- A base-256 parse (`uinteger_t(bytes, 256)`) kept leading zero limbs. An all-zero buffer, or the
-  single `00` byte that `uinteger_t(0).str(256)` writes, gave a zero that compared unequal to 0 and
-  was true as a `bool`; with 8 or more leading zero bytes `==`, `<` and `bits()` were wrong (eight
-  zero bytes and `01` had 65 bits and was not 1); a division by a parsed zero divided by zero
-  (undefined behavior, `SIGFPE` on x86-64). The parse skips leading zero bytes, and the division
-  throws `std::domain_error` (`eb588dc`).
-- After an in-place right shift of 64 bits or more, `x *= 1` (and any self copy-assignment) gave
-  back the shifted-out limbs, and a value moved from had `size()` 2^64 - 1, so `bool`, `bits()` and
-  comparisons read out of bounds. They give the shifted value and zero (`6ff439f`).
-- A left shift of a nonzero value by a `uinteger_t` count of 2^64 bits or more threw `std::bad_alloc`;
-  it throws `std::length_error` ("Shift too large") (`6ff439f`; at 32- and 16-bit limbs `d50f9bd`).
-  A right shift by such a count gives zero, as before.
-- Targets without `unsigned __int128` and MSVC computed wrong products: the portable multiply-add
-  wrapped its middle sum, and the MSVC paths passed a full carry limb as a one-bit carry and left a
-  product's low limb unset (`a39ede0`). GCC and Clang on 64-bit targets are unchanged.
-- `str()` with a bad base says "Base must be in the range [2, 36] or 256" (it said "[2, 36]")
-  (`204eed1`). On a 32-bit `size_t`, a conversion whose bit or digit count does not fit (512 MiB of
-  base-256 digits) throws `std::length_error` before it allocates (`819daa4`, `b012716`).
-
-What changes for the build:
-
-- `uinteger_t::container` is the library's own small vector, not `std::vector<digit>`: its iterators
-  are `digit*`, and it has only the members the class uses (`8f1345e`). Code that treats it as a
-  `std::vector` does not compile.
-- `sizeof(uinteger_t)` is 88 on LP64 (56 at start, 24 from `6ff439f`, 80 at `8f1345e`, 88 from
-  `10cf088`). Up to 8 limbs live in the object, and the object points into itself while they do,
-  so `memcpy` or `realloc` of one leaves it pointing at the old storage. `UINTEGER_T_INLINE_LIMBS`
-  and every tuning macro must have one value in all the translation units of a program.
-- Moves are `noexcept` and leave the source zero; moving an inline value copies its limbs, so
-  pointers into the source do not follow the new owner (`6ff439f`, `8f1345e`).
-- `compare(lhs, rhs)` and `divmod(q, r, lhs, rhs)` are public (`compare` was documented, and a call
-  did not compile), and `mul(r, lhs, rhs)` is new (`d1be6ed`); so are `digits()` and `from_digits()`
-  (`bd7bab1`). A native integer on the left of a shift (`5 << big`) and `signed char` compound
-  assignments compile (`1d96eea`). `divmod_small`, `mul_add_small` and `base_chunk` were public only
-  from `aeeeb67` to `bd7bab1`; code written against those commits does not compile after them.
-
-Valid input gives the same values and text: `str()` and parsing match the original header byte for
-byte in bases 2 to 36, and the arithmetic matches GMP; the faster kernels return the same results.
-
-Detect: text that reaches a string constructor with characters outside its base or bytes 0x80 and
-above (it throws now); base-256 buffers with leading zero bytes, and divisions by a value parsed
-from bytes; left shifts by a `uinteger_t` count; code that treats `container` as a `std::vector`,
-copies a `uinteger_t` with `memcpy`, or sets `UINTEGER_T_*` macros per translation unit.
-
-## base-x
+| string-similarity | `0939c0c` | `c0825ff` | `PhoneticMetric<Encoder, Sorensen_Dice>` bound to a string scores 0 for every pair whose codes differ. |
+| strict-stox | `70b8325` | `199e0be` | The fast path ignores the rounding mode: under `fesetround(FE_UPWARD)`, `strict_stod("-0.1")` gives `-0.1` where libc gives `-0.099999999999999991`. |
+| stringified | `2c78a1d` | `0053465` | A string literal passed to an overload set over `stringified` and `std::string_view` or `const std::string&` is ambiguous and does not compile. |
+| uinteger_t | `8f1345e` | `dabd824` | A refused allocation of the carry limb in `x += y` or `++x` leaves `x` holding the wrapped sum, untrimmed. |
+| uinteger_t | `bd7bab1` | `819daa4` | On a 32-bit `size_t`, `digits()` or `from_digits()` of 512 MiB or more wraps a size and writes past its buffer. |
+| uinteger_t | `6e74834` | `b012716` | On a 32-bit `size_t`, `digits()` of a value of 2^32 bits or more wraps its bit count and returns wrong digits. |
+| completion | `5ef01ad` | `43d3fef` | Pins metrics `9207dd3` and allocators `2fc537f`, inside their ranges above (completion uses neither path). |
+| fs | `487c401` | `c4bf223` | Pins stringified `2c78a1d`, inside its range above. |
+| http-log | `c7772ab` | `d2315b8` | Pins http commits inside http's range above. |
+| journal | `d5b8bc1` | `c733261` | Pins allocators `2fc537f`, inside its range above (journal uses only the resource accounts). |
+
+## Libraries
+
+Each section has the same four parts: the inputs whose results change, what a build or the API
+needs, how a consumer finds out, and what the move buys. The CHANGELOG link has the rest.
+
+### allocators
+
+Start `e8fb173`, fixes `085331c`, `2fc537f`, `e38f759`, `7cdb0f8`, `e075c1b`, `9f575e3`; head `6eb7fb2`.
+[CHANGELOG](https://github.com/Kronuz/allocators/blob/main/CHANGELOG.md)
+
+- **Changes:** copies and rebinds of a `memory_pool_allocator` share one pool family and compare
+  equal (every copy had its own pool, so a `std::list` or `std::map` freed nodes into the wrong one);
+  move assignment and swap propagate the pool, copy assignment does not, and a copy-constructed
+  container gets a new pool. `construct` perfect-forwards, so an object moved into such a container
+  is left moved-from. In the tracked build (`XAPIAND_TRACKED_MEM`) blocks are 16-byte aligned; on
+  Apple arm64 they were 8 mod 16 (`e075c1b`).
+- **Build and API:** `memory_pool_allocator` gains a local free list (`9f575e3`), so its size grows:
+  rebuild every translation unit together. Builds without `NDEBUG`, or with `ALLOCATORS_POOL_CHECK`,
+  abort when two threads use one pool at once (`set_pool_misuse_handler` replaces the abort). The
+  resource headers are unchanged.
+- **Detect:** containers over these allocators, and code that reads an object after moving it into
+  one. Xapiand uses only `total_allocated()`; completion and journal use only the resource accounts.
+- **What you get:** gate 1.30 / 1.20. The one-block pool pair takes 0.66 ns on the M4 Pro against
+  start's 1.16; on the i9 1.00 against 0.74, the cost of not sharing a pool on copy assignment
+  ([allocators#1](https://github.com/Kronuz/allocators/issues/1)).
+
+### base-x
 
 Start `54a9326`, fixes `8935fe6`, `c3965ec`, `d1fda10`, `36dd216`, `712c643`, `f702d6d`, `b8fc1a2`,
-`2507a82`, `d3d9f23`, `27be05e` and `c599da0`. Its text also depends on the uinteger_t it is built
-with: the results below are each commit's with the uinteger_t its `CMakeLists.txt` pins, so a
-project that declares uinteger_t itself keeps that pin at or after base-x's (`919698e` pins
-`a383e37`). Xapiand's `xapiand` branch pins `919698e` (`Xapiand:bc19f0c0`); `3fe13a2f` pins a
-commit from before the start.
+`10a5f0b`, `2507a82`, `b468653`, `d3d9f23`, `27be05e`, `c599da0`; head `d95e37c` (on `master`).
+[CHANGELOG](https://github.com/Kronuz/base-x/blob/master/CHANGELOG.md),
+[record](reviews/2026-10-31-uinteger_t-base-x.md)
 
-Text that `encode` writes:
+- **Changes:**
+  - The RFC 4648 presets write and read the bytes, as Python's `base64` does: leading zero bytes are
+    kept (`0x01` was `Q===` in base64 and is `AQ==`), every base32 and base64 text of 32 bytes or more
+    changes, `Base16::rfc4648()` writes two digits per byte, and empty is empty (`c3965ec`, `2507a82`).
+  - `Base58::bitcoin()` and `ripple()` keep leading zero bytes both ways (`00 00 61 62 63` was `ZiCa`
+    and is `11ZiCa`) (`27be05e`); `bitcoinchk()`, `ripplechk()` and the other presets keep the numeric
+    text.
+  - All-zero bytes are one zero digit with no check character in every numeric preset
+    (`Base16::base16()` was empty and is `0`; `dubaluchk()` was `zN` and is `z`) (`8935fe6`, `b8fc1a2`).
+  - `decode` throws on text after the padding, on a NUL in an alphabet without padding, on an
+    unknown Crockford check byte and on empty `*chk` text, and leaves a `uinteger_t` result as it was
+    when it throws (`d3d9f23`, `36dd216`, `712c643`, `10a5f0b`, `c599da0`).
+  - `is_valid` accepts `=` padding and Crockford's extended check characters and rejects a digit
+    after the padding (`f702d6d`); `encode` into a non-empty result pads and sums only its own text
+    (`d1fda10`).
+- **Build and API:** the target, C++17 and the options are unchanged. New: the `BaseX::leading_zeros`
+  flag and `BASEX_NO_SIMD`; new throws "Error: Encoded string is too short" and `std::length_error`
+  "Error: Too many bytes". Head pins uinteger_t `291dab8` (its header is unchanged since `afdded1`);
+  a project that pins both declares uinteger_t first, at or after base-x's pin.
+- **Detect:** `test/golden/encode.txt` holds every preset's text. Encode and decode a sample of stored
+  texts with both pins: RFC 4648 text of bytes that start below 0x10 or run to 32 bytes, Bitcoin and
+  Ripple base58 with leading zero bytes, and all-zero inputs are the classes that move. None of the
+  ids Xapiand mints changes text ([record](reviews/2026-10-31-uinteger_t-base-x.md)).
+- **What you get:** a 32-byte base58 key encodes and decodes over 10 times faster than start
+  (CHANGELOG); 49.7 and 52.1 ns on an M4 Pro against Firedancer's 41.4 and 44.0 and libbase58's 1,234
+  and 179, and 149 and 205 ns on an i9 against Firedancer's 71.8 and 91.2 (README).
 
-- The RFC 4648 presets (`Base16::rfc4648()`, `Base32::rfc4648()` and `rfc4648hex()`,
-  `Base64::rfc4648()`, `rfc4648url()` and `rfc4648url_unpadded()`) write the bytes, as Python's
-  `base64` does. In base32 and base64, below 32 bytes the text changes when the first byte is below
-  0x08 or 0x04: `0x01` was `Q===` in base64, which decodes to `00`, and is `AQ==`. From 32 bytes on,
-  every base32 and base64 text changes; the old one was misaligned (`c3965ec`). Every leading zero
-  byte is kept (six zero bytes and `0x01` were `Q===` and are `AAAAAAAAAQ==`), `Base16::rfc4648()`
-  writes two digits per byte, so a first byte below 0x10 gains a digit (`0x01` was `1` and is `01`),
-  an empty buffer is the empty text (it threw), and a `uinteger_t` 0 is `AA==` (it was `A`)
-  (`2507a82`).
-- `Base58::bitcoin()` and `ripple()` write each leading zero byte as a leading zero digit:
-  `00 00 61 62 63` was `ZiCa` and is `11ZiCa`, two zero bytes were `1` and are `11`, and an empty
-  buffer is the empty text (it threw) (`27be05e`). `bitcoinchk()`, `ripplechk()` and the other
-  presets keep the numeric text.
-- Bytes that are all zero encode as one zero digit with no check character in every numeric
-  preset. The power-of-two presets wrote the empty text (`Base16::base16()` is `0`,
-  `Base64::base64()` is `A`) until `8935fe6`, and the check presets of the other bases wrote a check
-  character after the digit (`Base59::dubaluchk()` was `zN` and is `z`, `Base58::base58chk()` was
-  `0v` and is `0`) until `b8fc1a2`. Each of those texts decodes to one zero byte, as does the
-  digit and check character that `8935fe6` to `dd2124e` wrote in the power-of-two check presets
-  (`Base16::base16chk()` `0f`).
-- `encode` into a non-empty result pads and sums only the text it appends: after `xy`,
-  `Base64::rfc4648()` writes `xyYQ==` for `a` (it wrote `xyYQ`) (`d1fda10`).
+### bloom-filter
 
-What `decode` and `is_valid` accept:
+Start `0410185`, changes `c32355b`, `08f5e15`, `77dca4c`; head `22fe8ef`.
+[CHANGELOG](https://github.com/Kronuz/bloom-filter/blob/main/CHANGELOG.md)
 
-- The RFC 4648 presets return the bytes their digits hold: each leading zero digit is a zero byte,
-  digits past the last whole byte are dropped (`ABC` in base64 was `10` and is `00 10`; one digit
-  `A` was one zero byte and is none), the empty text is no bytes (it was one zero byte), and
-  `Base16::rfc4648()` drops the last of an odd count of digits (`ABC` was `0A BC` and is `AB`)
-  (`2507a82`).
-- `Base58::bitcoin()` and `ripple()` return a zero byte for each leading zero digit: `11ZiCa` was
-  `61 62 63` and is `00 00 61 62 63`, `11` was one zero byte and is two, and the empty text was one
-  zero byte and is none (`27be05e`).
-- Text after the padding throws `std::invalid_argument` (`YWI=junk` decoded as `ab`), and a check or
-  checksum character after the padding is read after all of it (`d3d9f23`). A NUL byte in an
-  alphabet without padding throws (`ab\0cd` decoded as `ab`) (`36dd216`), and so does an unknown
-  byte in `Base32::crockfordchk()`'s check position (`10?` decoded as 32) (`712c643`). The empty
-  text in a `*chk` alphabet throws `std::invalid_argument` (it threw `std::bad_alloc`) (`10a5f0b`).
-- `decode` into a `uinteger_t` leaves it as it was when it throws: on a bad character from
-  `8935fe6`, and on a failed check or checksum character from `c599da0`. It held the digits before
-  the bad character, or the decoded value.
-- `is_valid` accepts `=` padding (`YWI=` was invalid) and `crockfordchk()`'s extended check
-  characters (`10*`), and rejects a digit after the padding; in six presets, `crockfordchk()` and
-  `dubaluchk()` among them, it answers differently for text that ends in an ignored character
-  (`f702d6d`).
-- Checksums are summed in 64 bits: the `int` sum overflowed (undefined behavior) at about 34
-  million base64 characters (`10a5f0b`). On a 32-bit `size_t` an RFC 4648 encode of 512 MiB or more
-  throws `std::length_error` (`b468653`).
+- **Changes:** `BloomFilter<N>` keeps its bits. `FastBloomFilter<N>` and `BlockedBloomFilter<N>` are
+  new and set different bits, so a bitset persisted from one type does not load into another.
+- **Build and API:** `BLOOM_FILTER_NO_INT128` (`77dca4c`); the hashes pin moves past the removal of
+  hashes' `crc32c.hh`.
+- **Detect:** bitsets persisted from one type and loaded into another.
+- **What you get:** gate 1.00 / 0.98 on `BloomFilter`; a `FastBloomFilter` 16-byte miss takes 8.0 ns
+  against 27.7 for `BloomFilter` on the M4 Pro.
 
-`encode` and `decode` call uinteger_t's `digits()` and `from_digits()` from `1687e9a` on, so a
-hand-copied `uinteger_t.hh` older than `bd7bab1` does not compile with them.
+### boolean-parser
 
-Xapiand's `xapiand` branch keeps `Base59::dubaluchk()` UUID text (`src/serialise.cc:52`),
-`Base62::inverted()` node ids (`src/manager.h:73`) and `Base64::rfc4648url_unpadded()` `_id`s
-(`src/database/schema.cc:2856`).
-None of the ids it mints changes text: a compact cuuid wire never starts with a zero byte, and
-20,000 v6 and 20,000 v1 ids minted on 2026-11-01 were 8 bytes starting with 0x4c, which encode as
-before. An `_id` minted from a wire whose first byte is below 0x04, or of 32 bytes or more, would
-change. Its `is_valid` of a `~` UUID text (`src/serialise.cc:93`) answers differently for text that
-ends in an ignored character.
+Start `41a20b5`, fixes `00b3021`, `172a5c2`; head `2c4a6ba`.
+[CHANGELOG](https://github.com/Kronuz/boolean-parser/blob/main/CHANGELOG.md)
 
-Detect: `test/golden/encode.txt` holds every preset's text at head for a fixed set of inputs.
-Encode a sample of the stored inputs with the old and the new pin and compare, and decode stored
-texts with both: RFC 4648 text of bytes that start below 0x10 or run to 32 bytes, Bitcoin and
-Ripple base58 of bytes with leading zeros, and all-zero inputs are the classes that move.
+- **Changes (owner decision):** an implicit `OR` obeys precedence (`a AND b c` was `a OR (b AND c)`
+  and is `(a AND b) OR c`; `NOT a b` is `(NOT a) OR b`); an implicit `OR` before `NOT` or `(` parses
+  (`a NOT b` was rejected); a repeated binary operator groups to the left, which changes what `MAYBE`
+  means; malformed input that start accepted by dropping operands (`a NOT`, `a ()`), an unclosed `(`
+  and an operator without operands throw `SyntacticException` from the constructor. `PrintTree()` of a
+  `MAYBE` node no longer crashes. Xapiand builds its query from the RPN queue.
+- **Build and API:** `BooleanTree` holds its first tokens and input bytes inline, and nodes come from
+  a per-thread cache, so the layout grows; the node API is unchanged.
+- **Detect:** `old_dump` (`test/frozen/`) and `new_dump` render one input's queue and tree; run both
+  over a log of real queries. `oracle::changed_class` in `test/oracle.h` classifies a token sequence.
+- **What you get:** gate 2.71 / 3.43; a typical query parses in 344 ns against 780 on the M4 Pro.
 
-## Unchanged results
+### btree
 
-These libraries changed between start and head with results identical to start, checked by a
-differential test against a frozen copy of the old code: bitpack, char-classify (its new block
-scanners and escaping kernel serve escape and repr, whose output is unchanged), cuuid (wire
-bytes), docset, double-metaphone, escape, flat-map, fst, md5, sha256, soundex, term-color,
-threadpool and unicode.
+Start `25f9494`, fixes `d81f2a3`, `a56261d`, `512febb`, `599e853`; head `47b1d67` (on `master`).
+[CHANGELOG](https://github.com/Kronuz/btree/blob/master/CHANGELOG.md)
 
-Three grow a type, so every translation unit of a program needs one revision: a stash leaf is 16
-bytes larger and each chain node 8 (`stash:78a18f3`), scheduler's `ScheduledTask` grows from 48 to
-96 bytes with `post()` and is 72 from `eb2483b`, and threadpool's `TaskWrapper<std::function<void()>>` holds a `SmallTask`
-with 48 bytes of inline storage instead of a `std::function` (`threadpool:12f1516`). metrics' `AtomicCounter` is
-start's compare-exchange loop again, and `ContendedCounter` is a new type. bloom-filter keeps
-`BloomFilter<N>` bit for bit; `FastBloomFilter<N>` and `BlockedBloomFilter<N>` are new and set
-different bits, so a bitset persisted from one type does not load into another.
+- **Changes:** with keys on the heap, a refused allocation during a split, rebalance, merge, erase or
+  root replacement lost or misordered entries, leaked or double-freed; a refused insertion now leaves
+  the tree unchanged and erase allocates nothing. A failed construction after a split no longer leaves
+  `size()` one too high, and a move-only mapped value that throws during root growth keeps its keys.
+  Maps accept move-only keys.
+- **Build and API:** a map slot is a union of `std::pair<Key, T>` and `std::pair<const Key, T>`; node
+  layout and sizes are unchanged. Rebuild every translation unit against one revision.
+- **Detect:** allocation-failure tests, allocation counts, and builds that mix header revisions.
+- **What you get:** gate 1.07 / 1.12; `emplace` of string keys 2.4 times faster with Clang and 2.0
+  with GCC; 65,536 erases with 200-byte keys make no heap calls (72,692 at start).
+
+### cartesian
+
+Start `6eab8ed`, fixes `79ed663`, `7066e9e`; head `69d834b`.
+[CHANGELOG](https://github.com/Kronuz/cartesian/blob/main/CHANGELOG.md)
+
+- **Changes:** `std::hash<Cartesian>` hashes the bits of `x`, `y`, `z` and the SRID, the fields
+  `operator==` compares, instead of `to_string()`. Every hash value and the iteration order of
+  unordered containers keyed on `Cartesian` change, and two points that compare equal but differ in
+  `scale` hash alike.
+- **Detect:** stored hash values, or tests that depend on unordered iteration order. No family
+  library or Xapiand persists them.
+- **What you get:** gate 2.67 / 2.47; a hash takes 0.77 ns on the M4 Pro, where `to_string()` took
+  214.
+
+### char-classify
+
+Start `a890496`, additions `d670574`, `7eb6468`, `684a962`; head `f81020a`.
+[CHANGELOG](https://github.com/Kronuz/char-classify/blob/main/CHANGELOG.md)
+
+- **Changes:** none; `chars.hh` gives the same answers.
+- **Build and API:** new headers `chars_simd.hh` (`FirstOf<N>`, `Outside<N>`, `find_outside`,
+  `ascii_lower`, `ascii_upper`) and `chars_escape.hh` (the escaping kernel of escape and repr), plus
+  `chars::hex_value`; `CHARS_NO_SIMD` selects the portable backend.
+- **Detect:** nothing to detect.
+- **What you get:** gate 1.01 / 1.00 on `chars.hh`; the kernel is most of escape's 2.88 / 2.43 and
+  repr's 4.40 / 3.85.
+
+### cluster
+
+Start `4d894db`, head `9b25fa1`. No change of its own code; its pins move.
+
+- **Changes:** none in cluster. Its reactor pin moves from `fe8c5ce` to `c6b2c3e`, across reactor's
+  `67e22a6` (see [reactor](#reactor)); its varint pin moves over bench and docs commits.
+- **Build and API:** `Bus` already uses `UdpServer(on_datagram)`, so cluster's API is unchanged. A
+  consumer that takes reactor through cluster's pin gets reactor's new constructors.
+- **Detect:** the build of code that uses reactor directly.
+- **What you get:** `cluster_bus_bench` is new; not measured against start.
+
+### completion
+
+Start `03cef1d`, head `42e74ea`. Its own code adds tests; its pins move.
+[CHANGELOG](https://github.com/Kronuz/completion/blob/main/CHANGELOG.md)
+
+- **Changes:** none in completion's results.
+- **Build and API:** the metrics pin moves to `d7d4c4d`, where `AtomicCounter` is
+  `BasicAtomicCounter<std::uint64_t, std::atomic>`: a forward declaration `class AtomicCounter;`
+  breaks and mangled names change. The allocators pin moves to `6eb7fb2` (resource headers unchanged).
+  `AllocationContext` and `OwnedAllocator<T>` alias the `allocators::resources` types since `21809c7`
+  (2026-10-19, before the start, filed under 2026-10-30 in the CHANGELOG); Detent pins `5251cf9`,
+  before it. Rebuild dependents together; persisted bytes are unchanged.
+- **Detect:** the build.
+- **What you get:** not measured.
+
+### compressors
+
+Start `17873b2`, fixes `f157dab`, `8f57675`, `533bee4`, `430870c`; head `94a3758`.
+[CHANGELOG](https://github.com/Kronuz/compressors/blob/main/CHANGELOG.md)
+
+- **Changes:** a damaged LZ4 record whose length exceeds the block buffer overflowed the heap and
+  throws `LZ4CorruptVolume`; a zstd frame that claims more than 32,768 bytes per compressed byte
+  throws `ZstdCorruptVolume`; a zlib stream with a preset dictionary throws `DeflateException`;
+  `decompress_lz4` sizes its buffers by the decoded data and throws `LZ4CorruptVolume` instead of
+  `bad_alloc`. `XXH32` reads little-endian on every host, so a big-endian host's digest changes and
+  matches upstream (storage persists it). One `XXH32` update of 4 GiB and 5 bytes or more digested as
+  a short input; it matches upstream (`430870c`). Valid streams decode to the same bytes, and the
+  compressed bytes are unchanged.
+- **Build and API:** `XXH32_state_t` keeps its lanes as `v[4]` (it was `v1` to `v4`);
+  `COMPRESSORS_XXH32_PLAIN_BELOW` tunes the short-update path (`94a3758`); `decompress_zstd(compressed,
+  out)` is new; the one-shots are out of line.
+- **Detect:** catch sites for decompression errors, any input that decompressed to an empty result,
+  digests written on a big-endian host, and code that names `XXH32_state_t`'s fields.
+- **What you get:** gate 1.27 / 1.28; the one-shot calls 1.75 / 1.87; XXH32 of 256 B in one update
+  takes 8.4 ns on the M4 Pro (start 10.9) and 32.6 on the i9 (start 42.8).
+
+### consensus
+
+Start `a4c28e0`, head `35c0f66`. No change of its own library code; its pins move.
+
+- **Changes:** the demo ticks inside the election window, so its proposal commits (`259b217`).
+- **Build and API:** the journal pin moves to `eb99e70`, which fetches allocators and crc32c (journal's
+  CRC-32C comes from `crc32c`, with the same stored bytes) and moves completion across its aliasing and
+  metrics' alias (see [completion](#completion)). The transport's reactor pin moves to `c6b2c3e`: timer
+  and posted-callback exceptions go to `L_EXC`, and a repeating `PeriodicTimer` rearms before it
+  propagates one.
+- **Detect:** the build.
+- **What you get:** the checkpoint benchmark is new; not measured against start.
+
+### crc32c
+
+Start `b60a8e5`, changes `ce14992`, `f004191`; head `f004191`.
+[CHANGELOG](https://github.com/Kronuz/crc32c/blob/main/CHANGELOG.md)
+
+- **Changes:** none; values are unchanged. Detection calls `__builtin_cpu_init()` first: a CRC taken
+  during static initialization on macOS no longer keeps the whole run on the table path.
+- **Build and API:** `detail::x86_update` and `arm_update` are `detail::hardware_update` and
+  `hardware_plain` (namespace `detail` only). hashes' `crc32c.hh`, `hashes::crc32c`, `Crc32c` and
+  `crc32c_combine` are gone since `hashes:aba7865`, with no forwarding header: include
+  `<crc32c/crc32c.hh>`, use `kronuz::crc32c::`, link `crc32c::crc32c`.
+- **Detect:** the build, for code that includes hashes' `crc32c.hh`.
+- **What you get:** gate 1.48 / 1.39; on the i9, 16 B 4.45 GB/s against 3.76, 4 KiB 29.9 against
+  17.8, 1 MiB 29.8 against 19.9; on the M4 Pro, 1 MiB 29.1 against 22.1.
+
+### datetime
+
+Start `fce3d4d`, fixes `fe618d8`, `03f36fa`, `773205b`, `22d1f6a`, `0dc7345`; head `f46ecb8`.
+[CHANGELOG](https://github.com/Kronuz/datetime/blob/main/CHANGELOG.md)
+
+- **Changes (owner decision):** a negative hour, minute or second is `OUT_OF_RANGE`; a fraction dot
+  with no digits or more than 62 is `ERROR` (`isDatetime` accepted both); a loose-format time ending in
+  `Z` parses as UTC and one with an offset sets `is_utc`; `2020-12-15||+12M` is `2021-12-15` (it threw);
+  date math is 64-bit and a result outside years 1 to `INT_MAX` throws `Year is out of range`; a
+  timestamp before 1970 with a fraction converts right (`-2.9` was 23:59:58.0 and is 23:59:57.1).
+  Xapiand calls `isDate` and `isDatetime` for schema detection, so a new field whose first value is in
+  a changed class gets another type. `TimedeltaParser("")` throws without reading out of bounds.
+- **Build and API:** the strict-stox pin moves to `752cf9f`. A datetime before `22d1f6a` built with a
+  strict-stox at `c1c9bc1` or later accepts a 63-digit fraction and a 64-character date-math term; move
+  the two pins together.
+- **Detect:** `test/old/` holds the original (`DatetimeOld`), and `test/diff_test.cc` lists each class
+  with its oracle; run stored date strings and logged date-math expressions through both.
+- **What you get:** gate 6.44 / 7.44; an ISO 8601 parse takes 8 to 26 ns against 41 to 230 (CHANGELOG).
+
+### double-metaphone
+
+Start `91c17a2`, head `ba395a3`. [CHANGELOG](https://github.com/Kronuz/double-metaphone/blob/main/CHANGELOG.md)
+
+- **Changes:** none; every key equals start's (`test/diff_test.cc`).
+- **Build and API:** `DoubleMetaphone b = a;` from a non-const lvalue, and `emplace_back(a)`, compile
+  (`41656f1`).
+- **Detect:** nothing to detect.
+- **What you get:** gate 1.90 / 2.26; a dictionary word encodes in 61 ns against 132 on the M4 Pro.
+
+### enum-reflection
+
+Start `79fe3fa`, fixes `7d394c5`, `2a5da3a`, `36cf117`; head `8a9e1d8`.
+[CHANGELOG](https://github.com/Kronuz/enum-reflection/blob/main/CHANGELOG.md)
+
+- **Changes:** `enum_type` and `enum_try_type` compare the name after the hash matches, so a string
+  built to share a member's 64-bit hash (15 bytes were enough) misses: `enum_type` throws
+  `std::out_of_range`, `enum_try_type` returns `std::nullopt`. Every real name gives the same answer,
+  ASCII case-insensitively as before.
+- **Build and API:** `enum_try_type` is new (`7d394c5`). `enum.h` includes `<bit>`, `<cstddef>`,
+  `<cstdint>`, `<cstring>` and `<type_traits>`, and its compile time halves (`36cf117`). The bench
+  option is `ENUM_REFLECTION_BUILD_BENCH` (it was `ENUM_REFLECTION_BENCH`, with no alias). The hashes
+  pin moves past the removal of hashes' `crc32c.hh`.
+- **Detect:** lookups of names that are not members; only a crafted string changes. Xapiand passes
+  schema properties to `enum_type<StemStrategy>`.
+- **What you get:** hits are 1.01 to 1.35 times start's speed, except the 8-member hit on the M4 Pro
+  (0.94, the cost of verifying a hit; [enum-reflection#1](https://github.com/Kronuz/enum-reflection/issues/1)).
+
+### errno-names
+
+Start `a5ab101`, fix `0ec0801`; head `1111c57`.
+[CHANGELOG](https://github.com/Kronuz/errno-names/blob/main/CHANGELOG.md)
+
+- **Changes:** `error::description()` returned `"Unknown error: N"` for every errno on glibc; it
+  returns libc's text there (`description(ENOENT)` is `"No such file or directory"`). macOS is
+  unchanged.
+- **Detect:** log lines on Linux; storage, traceback and Xapiand's I/O traces describe errors through
+  it.
+- **What you get:** gate 1.00 / 1.00.
+
+### flume
+
+Start `7184cb4`, change `d34313e`; head `8761e9f`.
+[CHANGELOG](https://github.com/Kronuz/flume/blob/main/CHANGELOG.md)
+
+- **Changes:** none by default. Through its compressors pin a big-endian host's XXH32 footer changes
+  and matches a little-endian peer.
+- **Build and API:** `Receiver(sink, max_block)`, `max_block()` and `max_block_for()` cap what a
+  sender can make the receiver hold; the default 0 behaves as before.
+- **Detect:** transfers between hosts of different byte order.
+- **What you get:** gate 1.00 / 1.01.
+
+### fs
+
+Start `ce16118`, fixes `14932b9`, `0b5f78e`, `d6d8bc2`, `8848b49`, `bf10f39`, `7a10a04`, `d172a13`,
+`8e5f3d2`; head `452d737`. [CHANGELOG](https://github.com/Kronuz/fs/blob/main/CHANGELOG.md)
+
+- **Changes:**
+  - `copy_file` truncates a longer destination, returns `-1` on a failed open, a short write (a full
+    disk, `RLIMIT_FSIZE`) or a failed `close`, and refuses the same file (another spelling, a hard
+    link, a symlink) before writing anything.
+  - `mkdirs("")` and `build_path_index("")` return `false` and create nothing.
+  - `normalize_path` returns Python's `os.path.normpath` form: `""`, `.`, `./`, `x/..`, `x/../` and
+    `./x/..` are `.` (the empty path was `/`); a `..` removes the component before it, the first one of
+    a relative path included (`a/../b` was `a/b` and is `b`); a relative path keeps the `..` it cannot
+    remove (`../a` was `./a`); the root absorbs it; `./a` is `a`; `...` is a name; `//x` is `/x`. A
+    non-empty input without a `.` gives the bytes it gave. Pins from `7a10a04` to before `8e5f3d2` give
+    answers of neither kind.
+- **Build and API:** pins move (io, strings, split, stringified).
+- **Detect:** callers that copy over existing files, treat 0 as success on a full disk, copy a
+  directory onto itself or pass an empty path. Xapiand's `master` normalizes its data and working
+  directories (`src/main.cc:652`, `:709`), endpoint paths (`src/endpoint.cc:242`) and the WAL's base
+  path (`src/database/wal.cc:729`): an empty data directory resolved to `/` and resolves to `.`.
+  `test_normalize_path_table` holds `os.path.normpath`'s output for 55 inputs.
+- **What you get:** `normalize_path` geomean 1.25 on the M4 Pro and 1.66 on the i9 after the one-pass
+  loop (`c91b457`), every comparable row faster than start but `np_relative` on the M4 Pro (0.92,
+  [fs#1](https://github.com/Kronuz/fs/issues/1)).
+
+### generation-cache
+
+Start `00762bd`, changes `715f2af`, `89baa5b`, `2930a64`, `32a2b4a`, `49a86e9`; head `bc22169`.
+[CHANGELOG](https://github.com/Kronuz/generation-cache/blob/main/CHANGELOG.md)
+
+- **Changes:** `try_insert` has the strong exception guarantee, a rehash that throws keeps every
+  entry, and the `operator<` adapter no longer keeps a default-constructed entry when `Value`'s move
+  throws. A waiting writer holds new readers back on every platform, so continuous readers no longer
+  starve `try_insert` and `clear`. Paths that do not throw return the same values.
+- **Build and API:** a one-word reader-writer lock replaces `std::shared_mutex`, so `Cache`'s layout
+  changes; the seed is drawn once per process, and constructing a `Cache` cannot throw.
+- **Detect:** keys or values whose copy or move can throw, and workloads that read while another
+  thread inserts.
+- **What you get:** gate 3.22 / 4.35.
+
+### hashes
+
+Start `de5b3ac`, head `033957e`. Same values.
+[CHANGELOG](https://github.com/Kronuz/hashes/blob/main/CHANGELOG.md)
+
+- **Changes:** none since the start.
+- **Build and API:** `crc32c.hh`, `hashes::crc32c`, `hashes::Crc32c` and `hashes::crc32c_combine` were
+  removed at `aba7865` (2026-10-20, before the start), with no forwarding header. A pin at or before
+  `7ab0c23` (Detent's, and bloom-filter's and enum-reflection's at their starts) still has them, and
+  moving it removes them: include `<crc32c/crc32c.hh>`, use `kronuz::crc32c::`, link `crc32c::crc32c`
+  ([crc32c](#crc32c)).
+- **Detect:** the build.
+- **What you get:** unchanged.
+
+### htm
+
+Start `a0321ab`, fixes `cf5177b`, `9006a84`; head `37c4830`.
+[CHANGELOG](https://github.com/Kronuz/htm/blob/main/CHANGELOG.md)
+
+- **Changes:** `getId(Cartesian)` turns floating-point contraction off. A compiler that fused a
+  multiply into an add (clang on Apple Silicon or with FMA, GCC on arm64, `-ffp-contract=fast`) put a
+  point within rounding of a trixel edge in the neighboring trixel: 0.83% of random points. Every
+  build returns the ids of a build without contraction; builds that never fused are unchanged.
+- **Detect:** `test/golden.h` holds 396 points with their ids. Xapiand indexes HTM ranges: run the
+  old and new `getId` over stored points on the build that wrote the index, and reindex the points
+  whose id differs.
+- **What you get:** gate 1.00 / 1.06; `getId` takes 591 ns against 914 on the M4 Pro.
+
+### http
+
+Start `c23bb99`, fixes `bda9b5a`, `fce24c6`, `25f4b99`, `3caaeda`, `c37474a`; head `8c5c668`.
+[CHANGELOG](https://github.com/Kronuz/http/blob/main/CHANGELOG.md)
+
+- **Changes:** trailer fields go to `Request::trailers`, and `header()` reads the header section only
+  (a trailer field reached the handler as a header). A `CONNECT` is answered and the connection
+  closed. After an HTTP/1.0 request with `Transfer-Encoding` the connection closes. A streamed body cut
+  short ends with `connection_reset`, not end of file. Requests that [http-parser](#http-parser)
+  rejects are refused. On plain TCP the disconnect watch starts when the handler first calls
+  `on_cancel()`, `cancelled()` or `cancel_reason()`, and a peek at that moment reports an earlier
+  hang-up; a handler that never asks never sees one. TLS and streamed bodies are watched from the
+  start (`c37474a`).
+- **Build and API (code change, `bda9b5a`, 2026-10-30, no CHANGELOG entry):**
+  `HttpHandler::handle` is `asio::awaitable<void> handle(Request&, ResponseWriter&)` and `Router`
+  routes are coroutines; the worker pool, `should_offload`, `BodyReader` and `ChannelBodyReader` are
+  gone, and a streamed body is a `BodyStream` read with `co_await`. `HttpAsioService(handler, reactors,
+  in_flight_limit, ...)` replaces the `workers` and `queue_limit` arguments; a refused request gets 503
+  with `Retry-After: 1`, and a buffered body over 16 MiB gets 413. `http::CancelWatch` and
+  `Request::set_cancel_watch` are new, and `Request` gains a pointer: rebuild.
+- **Detect:** the build; then handlers that read trailers through `header()`, clients that send
+  `CONNECT` or keep an HTTP/1.0 chunked connection open, uploads over 16 MiB to a buffering handler,
+  and handlers that expect a hang-up without asking.
+- **What you get:** gate 1.25 / 1.33 on the request parser; end to end on the i9 93.7k and 98.7k req/s
+  at 8 and 64 connections against start's 87.3k and 98.0k; the M4 Pro is unchanged (`wrk` sets the
+  rate).
+
+### http-log
+
+Start `6ee47af`, fix `c7772ab`; head `d020974`.
+[CHANGELOG](https://github.com/Kronuz/http-log/blob/main/CHANGELOG.md)
+
+- **Changes:** none in what it logs.
+- **Build and API (code change):** `AccessLog::handle` is a coroutine that awaits the inner handler,
+  as [http](#http) requires, and `AccessLog` no longer forwards `should_offload`. cppcodec is pinned at
+  `8019b8b` (it tracked `master`). Move its pin with http's and logger's.
+- **Detect:** the build.
+- **What you get:** not measured.
+
+### http-parser
+
+Start `52a30d0`, fixes `21c8f30`, `ab8377c`, `62ac7f3`, `0aeec14`, `e2f23b9`, `5cb4409`; head
+`c7023b0`. [CHANGELOG](https://github.com/Kronuz/http-parser/blob/main/CHANGELOG.md)
+
+- **Changes:** unless a consumer sets `parser->lenient_http_headers = 1` after `http_parser_init()`,
+  the parser rejects what request smuggling relies on, as upstream http_parser 2.8 to 2.9.4 and llhttp
+  do: a
+  bare LF (`HPE_CR_EXPECTED`, new); obs-fold and control bytes in a value
+  (`HPE_INVALID_HEADER_TOKEN`); a request `Transfer-Encoding` other than exactly `chunked`
+  (`HPE_INVALID_TRANSFER_ENCODING`, new); a malformed or trailer `Content-Length`
+  (`HPE_INVALID_CONTENT_LENGTH`); a malformed chunk line (`HPE_INVALID_CHUNK_SIZE`); a missing or odd
+  version (`HPE_INVALID_VERSION`); a response with `Transfer-Encoding` and `Content-Length`
+  (`HPE_UNEXPECTED_CONTENT_LENGTH`) or a malformed status (`HPE_INVALID_STATUS`). After an HTTP/1.0
+  message with `Transfer-Encoding` the connection closes; a 1xx, 204 or 304 response has no body; only
+  101 upgrades. `http_parser_parse_url()` no longer reads past `buflen`.
+- **Build and API:** the two new error numbers come after `HPE_UNKNOWN`, so the others keep their
+  values; `struct http_parser` keeps its size. The enum-reflection pin moves to `610203f`.
+- **Detect:** `test/diff.cc`'s `changed_class()` names the inputs whose result changes; replay logged
+  requests through both pins. With `lenient_http_headers` set the parser reports what start reported.
+- **What you get:** gate 1.78 / 2.17.
+
+### io
+
+Start `3893d47`, fix `6524ce0`; head `9f68e5f`.
+[CHANGELOG](https://github.com/Kronuz/io/blob/main/CHANGELOG.md)
+
+- **Changes:** `io::pread` loops to the full count, as `io.hh` documents: it stops at end of file
+  (the bytes so far) or on an error (the bytes so far, `-1` when none). It returned after one
+  `::pread`. A read that reaches end of file makes one more `pread`, which returns 0.
+- **Detect:** callers that took a short `pread` for end of file or looped themselves. Xapiand's
+  `Storage` policy sees only the extra call at end of file.
+- **What you get:** gate 0.94 / 0.96, the extra call (0.99 / 1.01 without that row).
+
+### iterators
+
+Start `55cd86b`, change `e87b125`; head `2e2c6cf`.
+[CHANGELOG](https://github.com/Kronuz/iterators/blob/main/CHANGELOG.md)
+
+- **Changes:** none; `std::iterator_traits` reads the same types.
+- **Build and API:** `transform` and `chain` declare their member typedefs instead of deriving the
+  deprecated `std::iterator`, so the `-Wdeprecated-declarations` warnings are gone and an
+  `is_base_of<std::iterator<...>>` test is false.
+- **Detect:** nothing to detect.
+- **What you get:** unchanged.
+
+### journal
+
+Start `d564dfe`, head `eb99e70`. Its pins move.
+[CHANGELOG](https://github.com/Kronuz/journal/blob/main/CHANGELOG.md)
+
+- **Changes:** its completion pin moves from `21809c7` to `42e74ea`, which brings completion's barrier
+  fix: macOS barrier errors other than `ENOTSUP`, `EOPNOTSUPP` or `ENOTTY` are returned, where they were
+  retried into success. The stored CRC-32C bytes are unchanged.
+- **Build and API:** journal fetches allocators and crc32c; `crc32c()` and `Checksum` forward to
+  `kronuz::crc32c`. The completion range brings the one owner lock (journal still calls
+  `acquire_owner(bool)`) and metrics' `AtomicCounter` alias ([completion](#completion)).
+- **Detect:** the build, and barrier errors on macOS.
+- **What you get:** not measured against start.
+
+### logger
+
+Start `ce27b90`, changes `dc1fe62`, `c7332d6`, `bb2d16c`; head `bb2d16c`.
+[CHANGELOG](https://github.com/Kronuz/logger/blob/main/CHANGELOG.md)
+
+- **Changes:** a line that finds nothing pending is written at once (`bb2d16c`); a burst of routine,
+  deferred or `clears` lines due within 1 ms of the call is written 1 ms after it, so a hard crash
+  inside that millisecond loses them. Timestamps come from the steady clock with a wall offset
+  measured every 20 ms (within 2 µs of `system_clock`). Lines are ordered per thread; across threads a
+  line may wait behind one due microseconds later. When the LOG thread cannot file a line it runs it
+  if due and drops it otherwise. Every other byte written is identical.
+- **Build and API:** logger needs a scheduler with `post()` (`5ad60fc` or later): a consumer that
+  declares scheduler itself pins it there or later. cppcodec is pinned at `8019b8b`.
+- **Detect:** log readers that rely on nanosecond timestamps or on sub-millisecond order across
+  threads, and the last lines before a crash.
+- **What you get:** gate 2.88 / 2.45; a producer's `L_INFO` costs 225 ns against 715 on the i9, and an
+  isolated line reaches the handler in 16.8 µs (M4 Pro) and 42.5 µs (i9) against start's 21.7 and
+  58.5.
+
+### math
+
+Start `2730483`, fixes `01ad763`, `5486d04`; head `9739089`.
+[CHANGELOG](https://github.com/Kronuz/math/blob/main/CHANGELOG.md)
+
+- **Changes:** `add` and `sub` on `uint8_t` and `uint16_t` report overflow (`add<uint8_t>(250, 10)`
+  returned 4 with the flag clear). `modulus` of `INT_MIN`, `LONG_MIN`, `LLONG_MIN` and the lowest
+  `int8_t` and `int16_t` returns the least non-negative residue (it was undefined), and
+  `modulus(300, uint8_t{7})` is 6 (it was 2). `modulus(val, 0)` throws `std::invalid_argument`.
+  `min<double>` is `lowest()`, not about 2.2e-308. Every other result is unchanged.
+- **Detect:** the inputs above. Xapiand calls `modulus` in `src/query_dsl.cc` and
+  `src/multivalue/generate_terms.cc`.
+- **What you get:** gate 0.99 / 0.99, the zero-modulus guard.
+
+### metrics
+
+Start `645d729`, fix `4890fc0`; head `d7d4c4d`.
+[CHANGELOG](https://github.com/Kronuz/metrics/blob/main/CHANGELOG.md)
+
+- **Changes:** `AtomicCounter` is start's compare-exchange loop again.
+- **Build and API:** `AtomicCounter` is `BasicAtomicCounter<std::uint64_t, std::atomic>`, so a
+  forward declaration `class AtomicCounter;` breaks and mangled names change. New:
+  `ContendedCounter`, `ContendedDurationHistogram`, `BasicAtomicCounter`, `BasicContendedCounter`. The
+  bench builds only with `METRICS_BUILD_BENCH`.
+- **Detect:** the build.
+- **What you get:** gate 1.16 / 1.04; `ContendedCounter` adds in 194 to 200 ns with eight threads on
+  the M4 Pro, against 190 for a bare `fetch_add`.
+
+### msgpack
+
+Start `3c408cf`, fixes `d054ea1`, `c913966`, `d8fa3e6`, `f083ad7`, `adac439`, `1c851dc`; head
+`ddbfe8b`. [CHANGELOG](https://github.com/Kronuz/msgpack/blob/main/CHANGELOG.md)
+
+- **Changes:**
+  - A map that repeats a key is merged at its first fill: the last value wins in the first
+    position (`{"a":1,"a":2,"b":3,"c":4}` was `{"a":2,"b":3,"b":3}` and is `{"a":2,"b":3,"c":4}`).
+  - Pushing onto an array of maps after writing into one no longer reads freed memory, and references
+    to an element's children survive growth.
+  - Filling a map with a key that is not a string throws and leaves the map as it was.
+  - `replace()` and `put()` over a value that was read use the new value's index; replacing a value
+    locked on its own throws `const_error`; a `lock()` that throws leaves nothing locked; `erase()`
+    returns 1 for the last element (it returned 0) (`f083ad7`).
+  - `to_string()` and `as_document()` write a key that is not a string as its JSON text (`5` as `"5"`;
+    they gave garbage or crashed), `update()` changes nothing when it throws for a reason of its
+    arguments (`adac439`), and `to_string()` writes a NaN or infinite float as `null`, where the text
+    stopped (`1c851dc`).
+- **Build and API:** benches build only with `MSGPACK_BUILD_BENCH`; the strict-stox, repr and
+  enum-reflection pins move.
+- **Detect:** documents that repeat a key, have a key that is not a string or hold a NaN; code that
+  grows an array of maps after writing into it, replaces a value it has read, or counts what `erase()`
+  returns. Xapiand stores its documents as `MsgPack`.
+- **What you get:** gate 1.21 / 1.27; `unserialise` 1.5 to 2.0 times faster, `hash()` 3.9 to 7.9
+  times, `to_string` 1.5 to 2.5 times.
+
+### namegen
+
+namegen is the C++ generator of the `Kronuz/fantasyname` fork, moved to its own repository with its
+history; start is the fork's `70bd983`, fixes `c0f9393`, `72b3f1c`, `fd7ab7f`, `c8faf70`; head
+`55345ee`. [CHANGELOG](https://github.com/Kronuz/namegen/blob/main/CHANGELOG.md)
+
+- **Changes:** every alternative of a choice has probability 1/n (the first and last came up half
+  as often), so patterns with more than two alternatives give other names for a seed. Each thread has
+  its own engine (`toString()` from several threads raced on one). `combinations()` saturates at
+  `SIZE_MAX` (it wrapped).
+- **Build and API:** the target is `namegen::namegen`, with `fantasyname::fantasyname` and
+  `fantasyname` as aliases; `NameGen::engine()` and `Generator::generate(std::mt19937&)` are new.
+- **Detect:** tests that pin the names drawn from a seed. Xapiand names its nodes with it
+  (`src/xapiand_namegen.h`).
+- **What you get:** compiling a pattern 2.8 to 29 times faster and a name 2.1 to 2.9 times on the M4
+  Pro (`sV'i`: 68 ns against 191).
+
+### queue
+
+Start `7df74b2`, fixes `e94be7d`, `31552f9`; head `3b70fd7`.
+[CHANGELOG](https://github.com/Kronuz/queue/blob/main/CHANGELOG.md)
+
+- **Changes:** untimed waits no longer re-check every second, and every state change that can release
+  a parked thread wakes one that can use it: two `Queue`s on one state wake only their own consumers;
+  `clear()` and `QueueSet::erase` wake parked producers; a pop wakes a producer whenever it leaves room;
+  a producer that waited and does not push wakes the next. Move assignment returns the target's items
+  to its state, so `count()` no longer reads high. `QueueSet::clear()` compiles.
+- **Detect:** code that relied on a parked producer staying parked until a later push or pop, and
+  readers of `count()` on a state shared by several queues.
+- **What you get:** gate 3.67 / 4.45.
+
+### random
+
+Start `115f3f3`, fix `0667b61`; head `8e5686e`.
+[CHANGELOG](https://github.com/Kronuz/random/blob/main/CHANGELOG.md)
+
+- **Changes:** the generator is xoshiro256++ seeded with 256 bits and the ranges use Lemire's method,
+  so every sequence differs. There is no seed API, so no sequence was reproducible before either;
+  ranges, inclusiveness and the `random_string` alphabet are unchanged.
+- **Detect:** tests that assert exact draws.
+- **What you get:** gate 3.02 / 5.65; `random_int(0, 999999)` 2.50 ns against 4.43 (M4 Pro).
+
+### reactor
+
+Start `ef26c30`, fixes `67e22a6`, `76c32b4`; head `c6b2c3e`.
+[CHANGELOG](https://github.com/Kronuz/reactor/blob/main/CHANGELOG.md) (it begins on 2026-11-01; the
+rest comes from the commits)
+
+- **Changes:** the accept loop keeps accepting after a connection that reset while queued (on macOS
+  `accept` returned `EINVAL`, and the listener disappeared). `TcpServer::stop()` aborts every tracked
+  request, waits up to a grace (5 s), then forces what a stalled peer still holds.
+- **Build and API (code change, `67e22a6`):** nothing runs off a reactor's loop: `Reactor::pool()`, the
+  `workers` arguments and the worker pools are gone, and `OffloadGate` is `AdmissionGate`. The
+  constructors are `TcpServer(reactors, admission_limit, session)` and `UdpServer(on_datagram)`;
+  `Reactor::track` takes an `Abortable&`.
+- **Detect:** the build.
+- **What you get:** not measured against start; level with plain Asio on the M4 Pro (README).
+
+### repr
+
+Start `2063945`, fix `3191c08`; head `12ea880`.
+[CHANGELOG](https://github.com/Kronuz/repr/blob/main/CHANGELOG.md)
+
+- **Changes:** `repr(..., max_size = 1)` with a quote wrote both quotes past a one-byte buffer; it
+  returns the two quotes. Every other output is byte-identical.
+- **Detect:** calls with `max_size` 1.
+- **What you get:** gate 4.40 / 3.85.
+
+### scheduler
+
+Start `ae3f0f9`, fixes `36afada`, `62a4fe8`, `34631ec`, `eb2483b`, `e7b4f83`; head `6b8d754`.
+[CHANGELOG](https://github.com/Kronuz/scheduler/blob/main/CHANGELOG.md)
+
+- **Changes:** a task added between the worker's last look at the wheel and its sleep could wait up
+  to the 30 s idle target; it runs when due. A `finish()` that landed between two steps of the worker
+  is no longer lost (`34631ec`).
+- **Build and API (code change, `e7b4f83`):** `ScheduledTask` no longer derives
+  `std::enable_shared_from_this`, so `shared_from_this()` and `weak_from_this()` on a task do not
+  compile; a task that needs them derives `std::enable_shared_from_this` on its own type. Xapiand and
+  every catalog library were checked: none calls them on a task. `ScheduledTask` is 56 bytes (48 at
+  start, 96 with `post()`): rebuild every translation unit. `post()` and `post_ordered()` are new.
+- **Detect:** the build; timers that fired late fire on time.
+- **What you get:** gate 1.06 / 1.17; "make only" is 10 to 15% faster than start (30.7 ns against 35.9
+  on the M4 Pro, 119.8 against 134.8 on the i9), and `post()` costs a producer a sixth of `add()`
+  (57 ns against 367 on an Apple M1 Pro).
+
+### soundex
+
+Start `89f9d51`, head `119055b`. [CHANGELOG](https://github.com/Kronuz/soundex/blob/main/CHANGELOG.md)
+
+- **Changes:** none; every code equals start's.
+- **Build and API:** copying an encoder from a non-const lvalue or a const rvalue compiles (`407e7d1`).
+- **Detect:** nothing to detect.
+- **What you get:** gate 2.11 / 1.83.
+
+### stash
+
+Start `2e2b75f`, changes `78a18f3`, `528ccef`, `b0fce1c`; head `3bfc455`.
+[CHANGELOG](https://github.com/Kronuz/stash/blob/main/CHANGELOG.md)
+
+- **Changes:** none; results and orders are unchanged.
+- **Build and API:** a leaf is 16 bytes larger and each chain node 8 (`78a18f3`): rebuild every
+  translation unit. `STASH_CLAIM_HINT_HOOK` is a new test hook.
+- **Detect:** nothing to detect.
+- **What you get:** gate 1.75 / 1.80; filling one leaf is linear, not quadratic (4,000 inserts step over
+  1,000 nodes, not 1,998,000). Depth-64 p99 is 0.90 to 0.97 of start, a trade kept until the owner
+  rules ([stash#1](https://github.com/Kronuz/stash/issues/1)).
+
+### storage
+
+Start `7b9abd1`, fixes `90aec94`, `a1e49db`, `217e731`, `934b7d9`, `42b1053`, `b141849`; head
+`83f1896`. [CHANGELOG](https://github.com/Kronuz/storage/blob/main/CHANGELOG.md)
+
+- **Changes:** `read()` and `write()` of a record past 4 GiB of byte offset used a 32-bit product
+  (a read ended, a write put its blocks in the wrong place); `growfile()` overflowed past about 1.6
+  GiB; a damaged flags byte throws `StorageCorruptVolume`. A writable open holds a shared `flock` and
+  `reclaim_volumes` the exclusive one (`EWOULDBLOCK` when they meet); `commit()` syncs the volume
+  directory once after creating the file. macOS `fallocate` reserves the length, not offset plus
+  length. The vendored `normalize_path` follows [fs](#fs): `Storage("", ...)` opened `/vol.0` at the
+  root and opens `./vol.0`. The on-disk format is unchanged.
+- **Build and API:** `Storage::StreamWriter` and `reclaim_volumes` are new; an IO policy may provide
+  `lock_shared`, `lock_exclusive` and `ftruncate`.
+- **Detect:** volumes written or read past 4 GiB, damaged volumes, hosts that open a volume while
+  reclaiming, and base paths that are empty or hold `.` or `..`.
+- **What you get:** gate 1.01 / 0.98; compressed whole reads on the i9 1.17 to 1.65 times start's
+  speed; small-blob writes pay the directory fsync (0.70 to 0.92 on the M4 Pro).
+
+### strict-stox
+
+Start `f0f7374`, fixes `7d7f5dd`, `a1b03fb`; head `dc24d9f`.
+[CHANGELOG](https://github.com/Kronuz/strict-stox/blob/main/CHANGELOG.md)
+
+- **Changes:** valid input of 64 bytes or more (100 leading zeros, a long decimal) was rejected as
+  `EINVAL`, or parsed as its first 63 bytes with a wrong `idx`; it parses as libc `strto*` does. The
+  decimals its table cannot decide are converted by an exact comparison instead of libc: Apple's
+  `strtod` aborted the process on some texts, and FreeBSD's `strtof` returned the smallest normal
+  float with no `errno` for some subnormal texts, where `stof` gives `ERANGE`. Shorter input is
+  unchanged.
+- **Detect:** values of 64 bytes or more that reach a `strict_*` call. `STRICT_STOX_C_LOCALE` changes
+  results in a locale whose decimal point is not `.` and is off unless a consumer defines it.
+- **What you get:** gate 1.75 / 1.52; every row but `stod` of 800 digits is at least 1.07 times start's
+  speed on both machines.
+
+### string-similarity
+
+Start `ddfb8d1`, fixes `efba168`, `0939c0c`, `c0825ff`; head `a8cee7f`.
+[CHANGELOG](https://github.com/Kronuz/string-similarity/blob/main/CHANGELOG.md)
+
+- **Changes:** `Jaro_Winkler` adds the prefix boost (it returned the plain Jaro score); `Jaro` uses the
+  standard window and transposition count; weighted `Levenshtein` is right, and with both costs 0 gives
+  0, not NaN; `Sorensen_Dice` counts bigrams as a multiset, and a copied or moved bound one scores
+  against its own string; `PhoneticMetric` encodes both operands. Unit-cost Levenshtein, LCSubstr,
+  LCSubsequence and Jaccard are unchanged. Xapiand sorts by these metrics, so result order changes.
+- **Build and API:** copying a bound metric from a non-const lvalue compiles.
+- **Detect:** `test/legacy_metrics.h` holds the old Levenshtein, Jaro and Jaro_Winkler; run a sample of
+  sort queries before and after.
+- **What you get:** gate 20.8 / 23.2 on the rows whose answers did not change.
+
+### stringified
+
+Start `c8c9033`, fixes `1c1fb3e`, `0053465`; head `47a0bb6`.
+[CHANGELOG](https://github.com/Kronuz/stringified/blob/main/CHANGELOG.md)
+
+- **Changes:** a copy or move of a `stringified` that owned its text views its own storage (it kept
+  a view into the source, which dangled); `c_str()` of a bare view copies once instead of reading past
+  it. Valid programs get the same text.
+- **Build and API:** `stringified(const char*)` returns a C string from `c_str()` without a copy.
+- **Detect:** a program that read a copy after its source died sees the right text.
+- **What you get:** gate 0.80 / 0.85 with the rows whose behavior changed, 1.05 / 1.20 without them.
+
+### strings
+
+Start `62fb121`, fix `bb85615`; head `5c98ec5`.
+[CHANGELOG](https://github.com/Kronuz/strings/blob/main/CHANGELOG.md)
+
+- **Changes:** `indent` keeps blank lines and the trailing newline, with no prefix on blank lines
+  (`indent("a\n\nb", ' ', 2)` is `"  a\n\n  b"`); `replace` with an empty search inserts at every
+  position, as Python does (it never returned); `hasupper` tests ASCII `A`-`Z` only.
+- **Detect:** `indent` on text with blank lines, any empty search string (the old code hangs), and
+  `hasupper` on non-ASCII text in a program that sets a locale. traceback's crash dumps change through
+  `indent` ([traceback](#traceback)).
+- **What you get:** gate 2.10 / 1.67; joins and replaces with a few matches at parity with start
+  ([strings#2](https://github.com/Kronuz/strings/issues/2)).
+
+### term-color
+
+Start `032ef09`, addition `e2e6465`; head `215a23a`.
+[CHANGELOG](https://github.com/Kronuz/term-color/blob/main/CHANGELOG.md)
+
+- **Changes:** none; `collapse()` and `color::ansi()` give start's bytes.
+- **Build and API:** `resolve(mode, target, is_terminal)` returns a `policy` whose `apply()` decides
+  `NO_COLOR` and the depth once.
+- **Detect:** nothing to detect.
+- **What you get:** gate 6.10 / 4.59.
+
+### threadpool
+
+Start `e961e44`, changes `12f1516`, `5d97d35`; head `9d194fd`.
+[CHANGELOG](https://github.com/Kronuz/threadpool/blob/main/CHANGELOG.md)
+
+- **Changes:** results, order, `max_concurrency`, `cancel`, `wait`, `end` and `finish` are unchanged.
+  A `TaskGroup` burst runs on the workers that hold its tickets, and a group lists one ticket at a
+  time, so which worker runs a group's task can differ. A callable that throws while it is stored is
+  not counted, and `enqueue_bulk` wakes up to `count` sleepers.
+- **Build and API:** `TaskWrapper<std::function<void()>>` holds a `SmallTask` with 48 bytes inline
+  instead of a `std::function`: rebuild every translation unit. `post()` and `ending()` are new.
+- **Detect:** code that relies on which worker runs a group's tasks.
+- **What you get:** gate 2.01 / 2.34; a `TaskGroup` burst on 16 workers takes 125 ns a task against
+  490 on the M4 Pro and 515 against 1,725 on the i9. The i9's p99 delay for one task every microsecond
+  is 61 to 90 µs against start's 35 to 47, for a quarter of the pool's CPU, a trade kept until the
+  owner rules ([threadpool#3](https://github.com/Kronuz/threadpool/issues/3)).
+
+### time-point
+
+Start `2f1f7f9`, fix `624c2e9`; head `2876a56`.
+[CHANGELOG](https://github.com/Kronuz/time-point/blob/main/CHANGELOG.md)
+
+- **Changes:** a conversion that drops precision rounds toward negative infinity: only an instant
+  before the epoch on a clock finer than a nanosecond changes (-1500 ps was -1 ns and is -2 ns).
+  Nanosecond clocks give the same values bit for bit.
+- **Build and API:** `time_point_from_ullong<Clock>` builds for a clock coarser than a nanosecond
+  (libc++'s `system_clock`), rounding down to the tick, and `time_point_to_ullong` takes any duration;
+  `time_point_to_llong` and `time_point_from_llong` are new.
+- **Detect:** `test/diff.cc` names the one class that changes.
+- **What you get:** gate 1.00 / 0.99.
+
+### times
+
+Start `666dfdd`, fixes `cb75580`, `1f1f9c0`, `c6d1a90`; head `c6d1a90`.
+[CHANGELOG](https://github.com/Kronuz/times/blob/main/CHANGELOG.md)
+
+- **Changes:** `timespec_t(double)` keeps whole seconds past `int` (`timespec_t(3e9)` was
+  `{2147483647, 2147483647}` on arm64 and `{INT_MIN, INT_MIN}` on x86); the fraction is scaled in
+  `double`, so on x86 `timespec_t(0.3)` is 300000000 ns (it was 299999999; 536,298 of 1,111,104
+  decimals change on x86, none on arm64); a negative value with a fraction is folded (`-0.5` is
+  `{-1, 500000000}`).
+- **Build and API:** comparisons with a `double` on the left take `const timespec_t&`, so
+  `0.5 < now()` compiles; `TIMES_CTOR_SHAPE` selects the constructor's shape.
+- **Detect:** `test/diff.cc` lists the classes against the frozen old code.
+- **What you get:** gate 1.17 / 1.06; construction over an array 0.92 / 0.89 of start, the cost of the
+  borrow ([times#1](https://github.com/Kronuz/times/issues/1)).
+
+### traceback
+
+Start `099d795`, head `8388580`. Its strings pin moves.
+
+- **Changes:** `dump_callstacks` (`TRACEBACK_HOOKS`) passes each traceback through `strings::indent`,
+  which keeps the leading blank line, so a blank line follows each `<Thread ...>` header.
+- **Detect:** parsers of crash dumps.
+- **What you get:** not measured.
+
+### uinteger_t
+
+Start `85316dd`, fixes `a39ede0`, `bd7bab1`, `6ff439f`, `d50f9bd`, `204eed1`, `8f1345e`, `10cf088`,
+`eb588dc`, `819daa4`, `b012716`; head `d2c95db` (on `master`; `uinteger_t.hh` unchanged since
+`afdded1`). [CHANGELOG](https://github.com/Kronuz/uinteger_t/blob/master/CHANGELOG.md),
+[record](reviews/2026-10-31-uinteger_t-base-x.md)
+
+- **Changes:**
+  - A character that is not a digit below the base, or a byte 0x80 or above, throws
+    `std::invalid_argument` (`uinteger_t("9", 8)` was 9) (`bd7bab1`).
+  - Base-256 bytes with leading zeros parse right (an all-zero buffer was a zero unequal to 0, and 8 or
+    more zero bytes broke `==`, `<` and `bits()`); a division by such a zero throws `std::domain_error`
+    (`eb588dc`).
+  - `x *= 1`, or any self-assignment, after `x >>= 64` or more keeps the shifted value, and a
+    moved-from value is zero (`6ff439f`).
+  - A left shift by a `uinteger_t` count of 2^64 or more throws `std::length_error` ("Error: Shift too
+    large"), not `std::bad_alloc` (`6ff439f`, `d50f9bd`).
+  - Products without `unsigned __int128` and on MSVC are right (`a39ede0`); the bad-base message of
+    `str()` names 256 (`204eed1`); on a 32-bit `size_t` a conversion of 512 MiB or more throws
+    `std::length_error` before it allocates (`819daa4`, `b012716`).
+- **Build and API:** `sizeof(uinteger_t)` is 88 (56 at start) and an inline value points into itself,
+  so no `memcpy` or `realloc`; `container` is the library's own small vector with `digit*` iterators.
+  `UINTEGER_T_INLINE_LIMBS` and every tuning macro need one value per program. New: `digits()`,
+  `from_digits()`, public `compare`, `mul(r, a, b)` and `divmod(q, r, a, b)`; `5 << big` compiles. Copy
+  assignment allocates before it releases. The target, C++17 and the options are unchanged; a
+  translation unit that prints or parses costs about twice the compile work with the default
+  `UINTEGER_T_RADIX_UNROLL`.
+- **Detect:** text with characters outside its base or bytes 0x80 and above, base-256 buffers with
+  leading zero bytes and divisions by them, shifts by a `uinteger_t` count, and code that treats
+  `container` as a `std::vector` or copies a value with `memcpy`.
+- **What you get:** decimal `str()` 43 to 530 times and parsing 57 to 121 times faster than start on 2
+  to 4,096 limbs (Apple M1 Pro, [record](reviews/2026-10-31-uinteger_t-base-x.md)); 4,096-bit decimal
+  printing takes 0.57 (M4 Pro) and 0.76 (i9) of GMP 6.3.0's time, and the other rows 1.0 to 2.6 times
+  GMP's; Boost's `cpp_int` takes 1.05 to about 130 times uinteger_t's time except for decimal parsing up
+  to 4,096 bits (README).
+
+### url-parser
+
+Start `4424e25`, fixes `2c9ea8e`, `1cdcb53`; head `7989b7e`.
+[CHANGELOG](https://github.com/Kronuz/url-parser/blob/main/CHANGELOG.md)
+
+- **Changes:** its `normalize_path` follows [fs](#fs) byte for byte (start returned `""` for the empty
+  path and for `.` with `keep_slash`, `x` for `x/..`, and kept the last component as written with
+  `keep_slash`). `PathParser` follows it, with the current directory as the empty path: `a/..` is the
+  empty path (it was the path `a/..` with the id `..`), `a/b/..` is the path `a`, `a/../b` is no path and
+  the id `b` (it was the path `a` and the id `b`), and `../a` is the path `..` with the id `a` (it was the
+  path `.`). `PathParser::init(std::string_view())` no longer crashes.
+- **Detect:** request paths with `.`, `..` or `...` components; Xapiand's search views parse paths
+  with `PathParser`. `test/normalize_path_test.cc` holds `os.path.normpath`'s output for 55 inputs.
+- **What you get:** gate 7.99 / 7.75.

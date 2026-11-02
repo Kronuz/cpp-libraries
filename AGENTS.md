@@ -97,8 +97,11 @@ Facts worth knowing before you wire anything up:
   library into your build does not build its test suite.
 - **`GIT_TAG main` tracks the tip.** For anything reproducible, pin a commit SHA.
 - **Moving a pin past 2026-10-30 can change results.**
-  [docs/UPGRADING-2026-10.md](docs/UPGRADING-2026-10.md) lists every such change with its start
-  and fix commits, the inputs it changes, how to detect them, and the commits not to pin.
+  [docs/UPGRADING-2026-10.md](docs/UPGRADING-2026-10.md) has a row for every library: what changes
+  (with its start and fix commits, the inputs, how to detect them), what the move buys in speed,
+  and the commits not to pin. An agent that owns an application follows its
+  [Updating an application (for agents)](docs/UPGRADING-2026-10.md#updating-an-application-for-agents)
+  steps to move the application's pins.
 - **Licensing is MIT** across the collection, with `btree` under Apache 2.0,
   `static-string` under the Boost Software License 1.0, and `namegen` in the public domain
   (Unlicense). Bundled
