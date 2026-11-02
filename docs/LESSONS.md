@@ -595,7 +595,8 @@ A separate campaign (2026-10-30 to 2026-11-01) covered uinteger_t and base-x; it
    blog post. Check the literature before calling a fast kernel new. The method's error bound needs a guard limb for some
    bases, and the edge inputs (b^j and D^j plus and minus one, runs of 0xff) are what reach it: without the guard limb
    they fail 37,691 times.
-4. Subquadratic above a size. Above 8,192 bits `digits()` and `from_digits()` run a tree of divisions and products
+4. Subquadratic above a size. Above 8,192 bits (printing above 14,336 on Apple's arm64 cores, parsing above 12,288 at
+   64-bit limbs on x86-64) `digits()` and `from_digits()` run a tree of divisions and products
    (Brent and Zimmermann, *Modern Computer Arithmetic*, 1.7), O(M(n) log n): decimal `str()` of 65,536 limbs went from
    9.2 s to 145 ms (GMP 48 ms) and parsing 1,024 limbs from 234 to 132 us (GMP 76), on the Apple M4 Pro. A scaled
    remainder tree would replace each division by a middle product, but with only full products a middle product costs
@@ -689,6 +690,14 @@ A separate campaign (2026-10-30 to 2026-11-01) covered uinteger_t and base-x; it
 17. A merge can drop tests without an error. A rebase took one side of `CMakeLists.txt`, and 39 targets lost the Debug
     arguments that keep the sanitizer job short; nothing failed, and a review found it. After resolving a conflict
     there, compare `ctest -N -V` per test name with `master`'s.
+18. A cutoff set at a kernel's size limit hides where the kernel stops winning, and that point depends on the core. The
+    conversion tree took over at 8,192 bits because the encoding kernel's tables stopped there. With the limit raised
+    in a test build, the kernel stayed ahead of the tree to about 13,000 to 20,000 bits on an Apple M4 Pro and M1 Pro
+    but only to 8,700 to 11,000 on an Intel i9. Decoding went the other way: Horner stayed ahead of the tree to 12,000
+    to 16,000 bits on the i9 and lost from 8,700 on the Apple chips. The defaults became per core, which moved the M4 Pro's crossover with
+    GMP's decimal printing from about 13,000 bits to 14,336. What kept the raised limit cheap was the table build:
+    R = floor(B^(L+n) / D^K) as one division instead of K single-limb ones, the same value, 94.7 to 11.5 us at 128
+    limbs. Sweep a tier past its current limit on each machine before calling the limit its cutoff.
 
 See also the [themes](#the-themes) 1 and 6 (items 1 and 9), 8 (items 10 and 11), 10 and 11 (items 14 and 15), 12 (item
 16) and 14 (item 2); [hashes](#hashes) item 1 and [cuuid](#cuuid) item 1 (a serial chain is the floor); [base-x](#base-x);
