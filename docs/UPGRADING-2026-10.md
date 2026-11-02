@@ -105,7 +105,7 @@ results" means a frozen-copy differential test holds every output to start's.
 | [crc32c](#crc32c) | `b60a8e5` | `f004191` | Same values; the hashes `crc32c.hh` it replaces is gone | gate 1.48 / 1.39; 1 MiB 29.8 GB/s against 19.9 (i9) | journal, residency, strata |
 | ctrie | `4b6eb1b` | `c6c2887` | Docs only | unchanged | constexpr-phf (bench) |
 | cuuid | `d46c825` | `b2243cb` | Same wire bytes | gate 2.27 / 1.97 | none |
-| [datetime](#datetime) | `fce3d4d` | `f46ecb8` | **Owner decision:** which strings parse; `+12M`; `is_utc`; fractions before 1970; field widths | gate 6.44 / 7.44 | Xapiand |
+| [datetime](#datetime) | `fce3d4d` | `0087af7` | **Owner decision:** which strings parse; `+12M`; `is_utc`; fractions before 1970; field widths | gate 6.44 / 7.44 | Xapiand |
 | docset | `cd38597` | `dcbd528` | Same results | gate 1.31 / 1.15 | prospect |
 | [double-metaphone](#double-metaphone) | `91c17a2` | `ba395a3` | Same keys; copying from a non-const lvalue compiles | gate 1.90 / 2.26 | none |
 | endian | `a625b94` | `a24942e` | Docs only | unchanged | cuuid, md5, sha256, Detent |
@@ -115,21 +115,21 @@ results" means a frozen-copy differential test holds every output to start's.
 | escape | `f4efd99` | `b5d9f30` | Same output | gate 2.88 / 2.43 | none |
 | flat-map | `a9a52b0` | `9fe0bd9` | Same answers | gate 1.46 / 1.91 | Detent |
 | [flume](#flume) | `7184cb4` | `8761e9f` | `Receiver(sink, max_block)`; big-endian XXH32 footer through compressors | gate 1.00 / 1.01 | none |
-| [fs](#fs) | `ce16118` | `452d737` | `copy_file` truncates, refuses the same file, reports short writes; empty paths; `normalize_path` is `os.path.normpath` | `normalize_path` 1.25 / 1.66 geomean (the gate's 0.84 / 0.76 was before the one-pass loop) | Xapiand |
+| [fs](#fs) | `ce16118` | `6f0f711` | `copy_file` truncates, refuses the same file, reports short writes; empty paths; `normalize_path` is `os.path.normpath` | `normalize_path` 1.25 / 1.66 geomean (the gate's 0.84 / 0.76 was before the one-pass loop) | Xapiand |
 | fst | `12657aa` | `7338f56` | Same bytes | gate 2.13 / 2.14 | strata, termdict |
 | fusefilter | `a42bd15` | `77ab0a7` | Docs and bench only | unchanged | strata |
 | [generation-cache](#generation-cache) | `00762bd` | `bc22169` | Exception paths; writers no longer starve; layout | gate 3.22 / 4.35 | Detent |
 | [hashes](#hashes) | `de5b3ac` | `033957e` | Same values; `crc32c.hh` gone since `aba7865` (2026-10-20) | unchanged | bloom-filter, enum-reflection, msgpack, strata, Detent |
-| [htm](#htm) | `a0321ab` | `37c4830` | Ids of points near a cell edge on fusing builds | gate 1.00 / 1.06; `getId` 591 ns against 914 (M4 Pro) | Xapiand |
-| [http](#http) | `c23bb99` | `8c5c668` | **Code change:** coroutine handlers; trailers; `CONNECT`; the disconnect watch | gate parser 1.25 / 1.33; i9 end to end 1.08 / 0.99 at 8 / 64 connections | http-log, prism, Detent |
-| [http-log](#http-log) | `6ee47af` | `d020974` | **Code change:** `AccessLog::handle` is a coroutine | not measured | prism, Detent |
-| [http-parser](#http-parser) | `52a30d0` | `c7023b0` | Rejects request smuggling unless lenient; two new error numbers | gate 1.78 / 2.17 | http, Detent |
+| [htm](#htm) | `a0321ab` | `ee7c011` | Ids of points near a cell edge on fusing builds | gate 1.00 / 1.06; `getId` 591 ns against 914 (M4 Pro) | Xapiand |
+| [http](#http) | `c23bb99` | `d76c5ef` | **Code change:** coroutine handlers; trailers; `CONNECT`; the disconnect watch | gate parser 1.25 / 1.33; i9 end to end 1.08 / 0.99 at 8 / 64 connections | http-log, prism, Detent |
+| [http-log](#http-log) | `6ee47af` | `b203bdd` | **Code change:** `AccessLog::handle` is a coroutine | not measured | prism, Detent |
+| [http-parser](#http-parser) | `52a30d0` | `5c8b8f4` | Rejects request smuggling unless lenient; two new error numbers | gate 1.78 / 2.17 | http, Detent |
 | [io](#io) | `3893d47` | `9f68e5f` | `pread` reads to the full count | gate 0.94 / 0.96 (the extra `pread` at end of file) | fs, pki, system, Xapiand |
 | [iterators](#iterators) | `55cd86b` | `2e2c6cf` | Same types; no `std::iterator` base | unchanged | none |
 | [journal](#journal) | `d564dfe` | `eb99e70` | Its completion pin moves; fetches allocators and crc32c | not measured | consensus, Detent |
 | lazy | `78a8281` | `b7d840a` | Docs only | unchanged | none |
 | located-exception | `4dcb2b4` | `9cce2c7` | Docs only | unchanged | msgpack |
-| [logger](#logger) | `ce27b90` | `bb2d16c` | Write delay of a burst; timestamps; order across threads | gate 2.88 / 2.45; producer `L_INFO` 225 ns against 715 (i9) | http-log, prism, Detent |
+| [logger](#logger) | `ce27b90` | `dec78b5` | Write delay of a burst; timestamps; order across threads | gate 2.88 / 2.45; producer `L_INFO` 225 ns against 715 (i9) | http-log, prism, Detent |
 | lru-cache | `7dd23eb` | `df0ebc8` | Docs and bench only | gate 0.97 / 1.14 (placement) | Detent |
 | [math](#math) | `2730483` | `9739089` | 8- and 16-bit overflow; `modulus` of the lowest value and of zero; `min<double>` | gate 0.99 / 0.99 (the zero-modulus guard) | Xapiand |
 | md5 | `fbb8ff0` | `3c7fe15` | Same output | gate 1.13 / 1.16 | none |
@@ -152,24 +152,24 @@ results" means a frozen-copy differential test holds every output to start's.
 | sha256 | `e440b98` | `55a44ca` | Same output | gate 1.41 / 1.11 | Detent |
 | snowball | `51582e3` | `3efcd0f` | Docs and bench only | unchanged | analysis, prospect |
 | sortable | `1aa2f98` | `33ed972` | Docs only | unchanged | none |
-| [soundex](#soundex) | `89f9d51` | `119055b` | Same codes; copying an encoder compiles | gate 2.11 / 1.83 | string-similarity |
+| [soundex](#soundex) | `89f9d51` | `fac413e` | Same codes; copying an encoder compiles | gate 2.11 / 1.83 | string-similarity |
 | split | `27dbc41` | `40af1a2` | Docs only | gate 1.00 / 1.01 | fs, strings, Detent |
 | [stash](#stash) | `2e2b75f` | `3bfc455` | Same results; leaf and chain-node layout | gate 1.75 / 1.80 | scheduler, Detent |
 | static-string | `e0a3d6e` | `46561fa` | Docs only | unchanged | hashes, strings, term-color, Detent |
 | [storage](#storage) | `7b9abd1` | `83f1896` | Records past 4 GiB; damaged records; volume locks; base paths | gate 1.01 / 0.98; i9 compressed whole reads 1.17 to 1.65x start | Xapiand |
 | strata | | | The owner's active work: its formats change between phases; read its [CHANGELOG](https://github.com/Kronuz/strata/blob/main/CHANGELOG.md) | | prospect |
 | [strict-stox](#strict-stox) | `f0f7374` | `dc24d9f` | Input of 64 bytes or more parses; no libc for undecided decimals | gate 1.75 / 1.52; every row at least 1.07x start | datetime, msgpack, storage, Detent, Xapiand |
-| [string-similarity](#string-similarity) | `ddfb8d1` | `a8cee7f` | Jaro, Jaro-Winkler, Dice, weighted Levenshtein, phonetic scores | gate 20.8 / 23.2 on unchanged answers | Xapiand |
+| [string-similarity](#string-similarity) | `ddfb8d1` | `e33ba53` | Jaro, Jaro-Winkler, Dice, weighted Levenshtein, phonetic scores | gate 20.8 / 23.2 on unchanged answers | Xapiand |
 | [stringified](#stringified) | `c8c9033` | `47a0bb6` | Copies no longer dangle; `c_str()` stays in bounds | gate 1.05 / 1.20 on unchanged rows | fs, storage, Xapiand |
 | [strings](#strings) | `62fb121` | `5c98ec5` | `indent`, empty-search `replace`, `hasupper` | gate 2.10 / 1.67 | fs, http-log, soundex, string-similarity, system, traceback, Detent, Xapiand |
-| system | `c5b8e50` | `4eb2cea` | Same results (io and strings pins) | unchanged | none |
+| system | `c5b8e50` | `c1e19ab` | Same results (io and strings pins) | unchanged | none |
 | task | `9a85e89` | `8cad661` | Docs only | unchanged | prospect, residency, strata |
 | [term-color](#term-color) | `032ef09` | `215a23a` | Same output; `resolve()` and `policy` | gate 6.10 / 4.59 | logger, strings, traceback, Detent |
 | termdict | `cdb8042` | `d7f5954` | Same results (fst and varint pins) | unchanged | strata |
 | [threadpool](#threadpool) | `e961e44` | `9d194fd` | Same results; `TaskGroup` scheduling; queued task type; `post()`, `ending()` | gate 2.01 / 2.34; `TaskGroup` burst 3 to 4x start | scheduler, strata, Detent |
 | [time-point](#time-point) | `2f1f7f9` | `2876a56` | Instants before the epoch on clocks finer than a nanosecond; coarse clocks build | gate 1.00 / 0.99 | none |
 | [times](#times) | `666dfdd` | `c6d1a90` | Seconds past `int`; fractions on x86; negative values folded | gate 1.17 / 1.06 | none |
-| [traceback](#traceback) | `099d795` | `8388580` | `dump_callstacks` prints a blank line after each thread header | not measured | prism |
+| [traceback](#traceback) | `099d795` | `b607242` | `dump_callstacks` prints a blank line after each thread header | not measured | prism |
 | [uinteger_t](#uinteger_t) | `85316dd` | `d2c95db` | Digits outside the base throw; base-256 leading zero bytes; `x *= 1` after a right shift; `sizeof` 88 and its own container | decimal `str()` 43 to 530x and parsing 57 to 121x start (M1 Pro) | base-x, Xapiand |
 | unicode | `d80b6bb` | `297413c` | Same tables and decoding | gate 1.31 / 1.22 | analysis, prospect |
 | [url-parser](#url-parser) | `4424e25` | `7989b7e` | `normalize_path` and `PathParser` on empty, `.` and `..` paths | gate 7.99 / 7.75 | Xapiand |
@@ -419,7 +419,7 @@ Start `b60a8e5`, changes `ce14992`, `f004191`; head `f004191`.
 
 ### datetime
 
-Start `fce3d4d`, fixes `fe618d8`, `03f36fa`, `773205b`, `22d1f6a`, `0dc7345`; head `f46ecb8`.
+Start `fce3d4d`, fixes `fe618d8`, `03f36fa`, `773205b`, `22d1f6a`, `0dc7345`; head `0087af7`.
 [CHANGELOG](https://github.com/Kronuz/datetime/blob/main/CHANGELOG.md)
 
 - **Changes (owner decision):** a negative hour, minute or second is `OUT_OF_RANGE`; a fraction dot
@@ -491,7 +491,7 @@ Start `7184cb4`, change `d34313e`; head `8761e9f`.
 ### fs
 
 Start `ce16118`, fixes `14932b9`, `0b5f78e`, `d6d8bc2`, `8848b49`, `bf10f39`, `7a10a04`, `d172a13`,
-`8e5f3d2`; head `452d737`. [CHANGELOG](https://github.com/Kronuz/fs/blob/main/CHANGELOG.md)
+`8e5f3d2`; head `6f0f711`. [CHANGELOG](https://github.com/Kronuz/fs/blob/main/CHANGELOG.md)
 
 - **Changes:**
   - `copy_file` truncates a longer destination, returns `-1` on a failed open, a short write (a full
@@ -545,7 +545,7 @@ Start `de5b3ac`, head `033957e`. Same values.
 
 ### htm
 
-Start `a0321ab`, fixes `cf5177b`, `9006a84`; head `37c4830`.
+Start `a0321ab`, fixes `cf5177b`, `9006a84`; head `ee7c011`.
 [CHANGELOG](https://github.com/Kronuz/htm/blob/main/CHANGELOG.md)
 
 - **Changes:** `getId(Cartesian)` turns floating-point contraction off. A compiler that fused a
@@ -559,7 +559,7 @@ Start `a0321ab`, fixes `cf5177b`, `9006a84`; head `37c4830`.
 
 ### http
 
-Start `c23bb99`, fixes `bda9b5a`, `fce24c6`, `25f4b99`, `3caaeda`, `c37474a`; head `8c5c668`.
+Start `c23bb99`, fixes `bda9b5a`, `fce24c6`, `25f4b99`, `3caaeda`, `c37474a`; head `d76c5ef`.
 [CHANGELOG](https://github.com/Kronuz/http/blob/main/CHANGELOG.md)
 
 - **Changes:** trailer fields go to `Request::trailers`, and `header()` reads the header section only
@@ -586,7 +586,7 @@ Start `c23bb99`, fixes `bda9b5a`, `fce24c6`, `25f4b99`, `3caaeda`, `c37474a`; he
 
 ### http-log
 
-Start `6ee47af`, fix `c7772ab`; head `d020974`.
+Start `6ee47af`, fix `c7772ab`; head `b203bdd`.
 [CHANGELOG](https://github.com/Kronuz/http-log/blob/main/CHANGELOG.md)
 
 - **Changes:** none in what it logs.
@@ -599,7 +599,7 @@ Start `6ee47af`, fix `c7772ab`; head `d020974`.
 ### http-parser
 
 Start `52a30d0`, fixes `21c8f30`, `ab8377c`, `62ac7f3`, `0aeec14`, `e2f23b9`, `5cb4409`; head
-`c7023b0`. [CHANGELOG](https://github.com/Kronuz/http-parser/blob/main/CHANGELOG.md)
+`5c8b8f4`. [CHANGELOG](https://github.com/Kronuz/http-parser/blob/main/CHANGELOG.md)
 
 - **Changes:** unless a consumer sets `parser->lenient_http_headers = 1` after `http_parser_init()`,
   the parser rejects what request smuggling relies on, as upstream http_parser 2.8 to 2.9.4 and llhttp
@@ -658,7 +658,7 @@ Start `d564dfe`, head `eb99e70`. Its pins move.
 
 ### logger
 
-Start `ce27b90`, changes `dc1fe62`, `c7332d6`, `bb2d16c`; head `bb2d16c`.
+Start `ce27b90`, changes `dc1fe62`, `c7332d6`, `bb2d16c`; head `dec78b5`.
 [CHANGELOG](https://github.com/Kronuz/logger/blob/main/CHANGELOG.md)
 
 - **Changes:** a line that finds nothing pending is written at once (`bb2d16c`); a burst of routine,
@@ -817,7 +817,7 @@ Start `ae3f0f9`, fixes `36afada`, `62a4fe8`, `34631ec`, `eb2483b`, `e7b4f83`; he
 
 ### soundex
 
-Start `89f9d51`, head `119055b`. [CHANGELOG](https://github.com/Kronuz/soundex/blob/main/CHANGELOG.md)
+Start `89f9d51`, head `fac413e`. [CHANGELOG](https://github.com/Kronuz/soundex/blob/main/CHANGELOG.md)
 
 - **Changes:** none; every code equals start's.
 - **Build and API:** copying an encoder from a non-const lvalue or a const rvalue compiles (`407e7d1`).
@@ -874,7 +874,7 @@ Start `f0f7374`, fixes `7d7f5dd`, `a1b03fb`; head `dc24d9f`.
 
 ### string-similarity
 
-Start `ddfb8d1`, fixes `efba168`, `0939c0c`, `c0825ff`; head `a8cee7f`.
+Start `ddfb8d1`, fixes `efba168`, `0939c0c`, `c0825ff`; head `e33ba53`.
 [CHANGELOG](https://github.com/Kronuz/string-similarity/blob/main/CHANGELOG.md)
 
 - **Changes:** `Jaro_Winkler` adds the prefix boost (it returned the plain Jaro score); `Jaro` uses the
@@ -973,7 +973,7 @@ Start `666dfdd`, fixes `cb75580`, `1f1f9c0`, `c6d1a90`; head `c6d1a90`.
 
 ### traceback
 
-Start `099d795`, head `8388580`. Its strings pin moves.
+Start `099d795`, head `b607242`. Its strings pin moves.
 
 - **Changes:** `dump_callstacks` (`TRACEBACK_HOOKS`) passes each traceback through `strings::indent`,
   which keeps the leading blank line, so a blank line follows each `<Thread ...>` header.
