@@ -2456,7 +2456,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - It is not a general structured logging framework with arbitrary sinks and routing.
   - A delayed message must be cleared or unlogged according to the intended macro behavior before the operation completes.
   - Call `Logging::finish()` during orderly shutdown to drain and stop the logging thread.
-  - A routine, deferred or `clears` line due within 1 ms of the call is written 1 ms after it, so producers rarely signal the LOG thread (`bench/lg.cc`). A hard crash inside that millisecond loses the line. Lines due in the order they were logged are written in that order.
+  - A line due within 1 ms of the call is written at once when nothing is pending (the LOG thread is woken for it; `bench/latency.cc`), and 1 ms after the call while lines are pending, so a burst needs no signal per line (`bench/lg.cc`). A `clears` line always waits the full 1 ms. A hard crash inside that millisecond loses the line. Lines due in the order they were logged are written in that order.
   - The timestamp's local time is cached per thread per whole second and keyed on `TZ`, so a `TZ` change takes effect at the next line.
 
 ### metrics
