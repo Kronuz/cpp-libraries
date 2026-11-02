@@ -54,7 +54,7 @@ None.
 ## Notes
 
 - Every row has equal answers at START and HEAD (the `chk` of the results matches), so none is VOID.
-- `bench/bench.cc` at HEAD times a frozen copy (`test/frozen.h`) against the library; it is the reference encoder from before the single-pass rewrite, not START's header, so it is not used here: START's own header is built instead.
+- `bench/bench.cc` at HEAD times a frozen copy (`test/frozen.h`) against the library; it is the encoder from before the single-pass rewrite, not START's header, so it is not used here: START's own header is built instead.
 
 - M4 session (Sun Nov  1 12:15:31 PST 2026): 5 rounds; per-round geomean of the START/START ratios over all rows: 1.007, 0.999, 0.999, 0.994, 1.009 (load average at start / end: 7.60 8.12 8.57 / 7.56 8.10 8.56; row ratios are medians over the rounds, so a disturbed round does not move them).
 - i9 session (Sun Nov  1 12:55:25 PST 2026): 5 rounds; per-round geomean of the START/START ratios over all rows: 1.023, 0.981, 0.989, 1.001, 1.005 (load average at start / end: 9.00 7.43 7.04 / 8.44 7.34 7.01; row ratios are medians over the rounds, so a disturbed round does not move them).

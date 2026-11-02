@@ -31,7 +31,7 @@ initialization no longer pins the run to slice-by-8). Values and the public inte
   are not what changed).
 - A (START) = HEAD's tree with `include/crc32c/crc32c.hh` put back to `b60a8e5` (`git checkout b60a8e5 -- include/crc32c/crc32c.hh`),
   HEAD's CMakeLists; B (HEAD) = HEAD's tree. `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCRC32C_BUILD_BENCHMARKS=ON && cmake
-  --build build --target crc32c_bench` (`-O3 -DNDEBUG`; the Google-crc32c reference rows are opt-in and off).
+  --build build --target crc32c_bench` (`-O3 -DNDEBUG`; the google/crc32c comparator rows are opt-in and off).
 - Rounds: `gate-run.sh crc32c crc32c_bench`: per round A, B, A again (the A/A control), interleaved, in one `quiet strict` hold (`gate-hold.sh
   crc32c`; M4 12:50:31 to 12:59:33, the build ran inside the hold). A run takes 59 s, so the planned 4 rounds would not fit the 10-minute hold:
   the run was stopped after round 3 (and the partial fourth `a` removed) to end inside it. On the i9 the plan's run estimate was set to 60 s (it said 32)

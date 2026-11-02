@@ -57,7 +57,7 @@ None.
 ## Correctness changes that affect comparability
 
 - HEAD's `normalize_path` (the helper `PathParser::init` runs first) pops `..` like any other component (`a/..` is `.`, `a/../b` is `b`) and accepts a null view; the bench's paths contain no `..`, so the PathParser rows do the same work on both sides.
-- START is itself slower than the pre-campaign reference decoder on short input (the bench's `frozen old` row: START 18.3 ns against 11.6 ns at 8 B clean on the M4), so START/HEAD ratios above overstate the gain against the original; the table 'Context' gives HEAD against that original.
+- START is itself slower than the decoder from before the campaign on short input (the bench's `frozen old` row: START 18.3 ns against 11.6 ns at 8 B clean on the M4), so START/HEAD ratios above overstate the gain against the original; the table 'Context' gives HEAD against that original.
 
 ## Verdict
 

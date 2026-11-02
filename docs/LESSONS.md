@@ -1162,7 +1162,7 @@ See also [bloom-filter](#bloom-filter), item 1.
 1. An unconditional `notify_one` per operation was the whole 2-3x gap to a 30-line
    mutex+deque: notify only when a waiter count (kept under the same mutex) is non-zero.
    An unbounded queue then never touches its push-side condvar. 12.8 -> 44.8 Mitems/s 1x1,
-   9.4 -> 30.6 at 8x8; now at or above the naive baseline and 4-6x moodycamel Blocking.
+   9.4 -> 30.6 at 8x8; now at or above the mutex+deque and 4-6x moodycamel's `BlockingConcurrentQueue`.
 2. A 1 s `wait_for` polling loop is a lost-wake-up workaround that also reads the clock on
    every call. Fix the cause (take the mutex around the flag store before `notify_all`,
    so a waiter between predicate and block cannot miss it) and use plain `wait(lk, pred)`.
@@ -1171,11 +1171,11 @@ See also [bloom-filter](#bloom-filter), item 1.
 4. ...but the store must be release, not the default seq_cst: that is an `xchg` on x86, a
    full barrier inside the critical section (a `mov` with release; arm64 compiles both to
    `stlr`). Worth about 10% at 2x2 to 8x8 on x86.
-5. The real x86 gap (Apple clang, Intel Core i9-9980HK: 0.92, 0.71, 0.57, 0.55 of a mutex+deque
-   baseline at 1x1 to 8x8) was the call boundary, not the algorithm. `push_back` and
+5. The real x86 gap (Apple clang, Intel Core i9-9980HK: 0.92, 0.71, 0.57, 0.55 of the mutex+deque
+   queue at 1x1 to 8x8) was the call boundary, not the algorithm. `push_back` and
    `pop_front` were out-of-line templates that called an out-of-line `_push_wait` with a
    `unique_lock&`, so the lock lived in memory on every operation. Reading the code found
-   nothing; two bisections found it in four runs: grow the baseline one feature at a time
+   nothing; two bisections found it in four runs: grow the mutex+deque one feature at a time
    (waiter-gated notify +30%, atomic count -12%, flags in the predicate -20%, state behind
    a shared_ptr 0, all together parity), then swap one path of the real class for the
    simplest code (simple push + real pop: parity; real push + simple pop: 0.5x). Deciding
@@ -1226,9 +1226,9 @@ See also [bloom-filter](#bloom-filter), item 1.
     `end()` carry the parked producer through, so the clear-on-ended and destructor mutants
     lived until the queue was stopped before the producer parked.
 13. A contended, oversubscribed throughput bench is bimodal and order dependent. Three
-    consecutive best-of-3 runs of one binary gave Queue/baseline at 8x8 of 0.53, 0.48 and
+    consecutive best-of-3 runs of one binary gave `Queue` over the mutex+deque at 8x8 of 0.53, 0.48 and
     2.36, so a "0.64x on x86" verdict was noise on the shared Linux x86-64 VM under load. Interleave the
-    candidates in rotated order, add an A/A column (the baseline twice), and report the
+    candidates in rotated order, add an A/A column (the mutex+deque twice), and report the
     median of per-round ratios with its quartiles.
 14. Shared runners are not timing hosts: GitHub Actions' macOS runners (3-4 vCPUs) gave A/A spreads of
     10-27% at 8x8 and once showed a 40% "regression" that the i9 did not. They are fine for
@@ -1331,17 +1331,17 @@ See also [bloom-filter](#bloom-filter), item 1.
     their own widths, while `TimeParser` and `TimedeltaParser` still handed a fraction of any width to
     `strict_stod`, so their limit was whatever strict-stox read. The pin bump to a strict-stox that
     reads any width went red on the differential test (19,985 mismatches in 13.9M checks) because the
-    frozen reference calls strict-stox too: its answer on a wide field moved with the pin, and the test
-    treated the reference as fixed. The first diagnosis of the red run had the direction reversed (new
-    strict-stox "rejects"; it accepts, the old one rejected): run the reference at both pins before
+    frozen copy of the old parsers calls strict-stox too: its answer on a wide field moved with the pin,
+    and the test treated the copy as fixed. The first diagnosis of the red run had the direction reversed (new
+    strict-stox "rejects"; it accepts, the old one rejected): run the frozen copy at both pins before
     deciding which side is wrong. The fix bounds every field in the library's scanners, lists the class
-    in the test (assert the library against the oracle, not the reference, where the reference's answer
+    in the test (assert the library against the oracle, not the frozen copy, where the copy's answer
     is the dependency's), and passes at both pins. The audit of "who calls the dependency with an
     unbounded field" found that the time parsers had no differential test at all; they have one now. A
-    pin bump is a change of the reference and of the library at once: diff the dependency on the inputs
+    pin bump is a change of the frozen copy and of the library at once: diff the dependency on the inputs
     you hand it first (here 95,000 strings, identical below 63 digits), then the dependents.
 16. (fix round) New differential coverage of the time and timedelta parsers found a read of
-    `timedelta[0]` on an empty view, in the library and in the frozen reference alike, which only the
+    `timedelta[0]` on an empty view, in the library and in the frozen copy alike, which only the
     hardened-standard-library jobs trap (every CI job but TSan went red together). A test that has never
     run a parser cannot say it is safe; run new coverage under `_GLIBCXX_ASSERTIONS` before the push.
     The same push took the ASan job from 5 to 17 minutes while the release jobs stayed at 12 s: the test
@@ -2147,7 +2147,7 @@ The one-block pool pair (the no-slower round of 2026-11-01):
    0.78-0.98x on most rows, 1.06-1.08x on two that ten layouts could not fix. Time a security change
    like a speed change: every machine, a same-binary multi-arm bench (each variant's symbols renamed),
    A/A in the run.
-7. **A differential oracle is only as strict as its reference.** llhttp's suite showed 32 request
+7. **A differential oracle is only as strict as the parser it compares against.** llhttp's suite showed 32 request
    divergences and the hardening closed them, but the security review found two more from the RFC
    (HTTP/1.0 with Transfer-Encoding kept alive, a request line without a version read with headers) that
    llhttp shares, so no comparison with llhttp could show them. Keep the spec as a second oracle, case
@@ -2603,14 +2603,14 @@ The one-block pool pair (the no-slower round of 2026-11-01):
 4. Memory was never measured across sizes (introduced; [engine audit](reviews/2026-10-31-audit-engine.md)
    E3). The flat table of 16-byte (hash, address) slots at load <= 1/2 won on time at one
    dictionary size, but the table doubles, so bytes per node swing between 32 and 64 and the old
-   and new table coexist while it grows: 300k random keys peaked at 1.34x the reference's RSS and
+   and new table coexist while it grows: 300k random keys peaked at 1.34x the old registry's RSS and
    3M at 1.47x (M4 Pro). A memory claim needs a sweep that straddles the doublings. `fst_memory`
    counts the heap through `operator new` over 15 sizes and fails for the old registry at 6 of
    them (1.48x at 5,000 keys, which no RSS probe at round sizes would have caught).
 5. A slot of 32 hash bits plus a 32-bit address is 8 bytes and the table can grow from the
    stored bits alone (the tag is the index). A 24-bit tag with a 40-bit address would have
    re-decoded every node from the output at each doubling. Past 4 GiB of output the slots
-   widen to 16 bytes. Peak RSS: 0.49-0.81x the reference at 100k-3M keys, builds as fast
+   widen to 16 bytes. Peak RSS: 0.49-0.81x the old registry's at 100k-3M keys, builds as fast
    or faster on every host. A 3/4 load looked better (memory 0.35-0.5x, 1.6x faster at 300k
    on the shared Linux x86-64 VM) and was 8% slower at 300k on arm64: keep the old probe lengths.
 6. `same_node()` is the check that makes a 64-bit hash safe, and with a good hash its rejecting
@@ -2798,10 +2798,10 @@ The one-block pool pair (the no-slower round of 2026-11-01):
    geometric mean, ruled on rows the bench's own table could not. A row can also depend on the
    buffers' relative alignment (4 KiB aliasing between loads and stores), so a single row from
    one binary is not a regression until another binary or layout agrees.
-9. The benchmark reference has to build on the host that is measured: the survey's gap to
-   simdcomp on arm64 came from a scratch harness because the repo's reference was SSE-only
+9. A benchmark's comparator has to build on the host that is measured: the survey's gap to
+   simdcomp on arm64 came from a scratch harness because the repository built simdcomp SSE-only
    (-msse4.1). The bench now builds simdcomp (it carries a NEON shim) on AArch64. Check a
-   reference's edge semantics before comparing at the edges: simdcomp's d1 decoder at width 32
+   comparator's edge semantics before comparing at the edges: simdcomp's d1 decoder at width 32
    copies without adding the base, so a 3.7x gap there was not a gap.
 10. Time every ISA a change touches while its host can be reached: the SSE2 width 32 memcpy
     (item 5) stayed out of main for lack of an x86 number, because the i9 was unavailable for
@@ -3076,8 +3076,8 @@ The prototype is on branch `perf/build` and stopped at the scope freeze with not
    faster, and makes a seed's names portable; a golden test (seed 42) pins them on every CI platform.
 4. A frozen-copy differential test proves sameness, not correctness: it agreed with the original's
    biased choice (a draw over [0, n - 1] rounded to the nearest integer gives the first and last
-   alternatives half weight). An independent reference interpreter plus an exhaustive sweep of the draw
-   (2^20 points per n) found and pinned it; the reference first had to reproduce the original exactly
+   alternatives half weight). An independent interpreter of the templates plus an exhaustive sweep of the draw
+   (2^20 points per n) found and pinned it; the interpreter first had to reproduce the original exactly
    (21,280 names) to count as an oracle.
 5. Make the draw stream the contract: one draw per choice, single-alternative choices included, so no
    optimization can shift a seeded sequence. The uniform-choice fix kept it, which let the differential
@@ -3105,9 +3105,9 @@ The prototype is on branch `perf/build` and stopped at the scope freeze with not
    struct let the compiler fuse `a*b - c*d` into one FMA (clang within an expression on FMA
    hardware, GCC by default on arm64 and with `-mfma`). The ids then differed from those of
    plain IEEE arithmetic on 0.83% of random points, 4% of special values and 57% of points on
-   trixel edges, and `htm_diff` passed because its frozen reference was built with the same
+   trixel edges, and `htm_diff` passed because its frozen copy of the old code was built with the same
    flags in the same run. The audit found it by comparing builds with different flags. A stored
-   key needs an oracle that does not depend on the compiler's FP mode (a reference that rounds
+   key needs an oracle that does not depend on the compiler's FP mode (an implementation that rounds
    every operation through a `volatile`, the old code built with `-ffp-contract=off`, a
    checked-in golden table) and a CTest that builds the code under `-ffp-contract=fast`.
 5. **A pragma does not stop contraction everywhere; a barrier does, at a price; a probe

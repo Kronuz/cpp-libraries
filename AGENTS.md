@@ -624,7 +624,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   static_assert(words.find("banana") == 1);
   ```
 - **Use it when:**
-  - A reference or benchmark contender for fixed-set string membership.
+  - A benchmark contender for fixed-set string membership (constexpr-phf's dispatch benchmark times it).
   - A fixed vocabulary needs indexes at compile time, with no tables at runtime.
 - **Do not use it when / gotchas:**
   - Production keyword dispatch: `constexpr-phf` is faster.
@@ -1883,7 +1883,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - You need multi-volume discovery, optional compression, or injected durability policies.
 - **Do not use it when / gotchas:**
   - It is not a transactional database or key/value index.
-  - The reference footer has no checksum; supply a footer policy if corruption detection is required.
+  - `StorageBinFooter`, the footer of the default framing (`Blobs`), has no checksum; supply a footer type if corruption detection is required.
 
 ### strata
 [github.com/Kronuz/strata](https://github.com/Kronuz/strata) &middot; depends on: `hashes`, `crc32c`, `residency`, `varint`, `termdict` (and through it `fst`), `fusefilter`, `compressors` (zstd), `completion`, `task`, `threadpool`

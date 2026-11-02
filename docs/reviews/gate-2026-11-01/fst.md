@@ -14,7 +14,7 @@ START is the last commit on `main` before 2026-10-30 (`git log --before=2026-10-
 - Both sides: `/usr/bin/clang++`, `-DCMAKE_BUILD_TYPE=Release` (`-O3 -DNDEBUG`), C++20 from the target, no `-march`. fst is header-only: `fst.hh` is the only library file.
 - START tree = HEAD's tree (HEAD's `bench/`, `test/`, `CMakeLists.txt`) with only `fst.hh` replaced by START's. `git diff --cached --stat HEAD` of the START tree: `fst.hh | 329 ++++---- 1 file changed, 47 insertions(+), 282 deletions(-)`. No dependencies (no FetchContent).
 - Bench: HEAD's `bench/cmp_bench.cc` (`fst_cmp_bench`: word-list rows and edge rows, 20 rows), `bench/bench.cc` (`fst_bench`: build rate, lookup p50 and block-index floor of the fst row, 3 rows) and `bench/build_rss.cc` (`fst_build_rss`, an extra). Corpus: `/usr/share/dict/words` (235,976 keys, sha256 `be41ad97...bbab9`, identical on both machines). Every HEAD bench source compiles and runs against START's `fst.hh`; no row was dropped.
-- `fst_cmp_bench` prints a `new` column (the `fst::` code of the binary) next to an `old` column (the frozen reference `test/fst_old.hh`). `diff <(git show 12657aa:fst.hh) test/fst_old.hh` differs only in the `namespace` line and one comment line, so `old` is START's code. The ratios below are cross-binary: the `new` column of the START binary (A) against the `new` column of the HEAD binary (B), through a wrapper (`fstw.py`) that prints only that column. The HEAD binary's own in-process `old/new` ratio is a cross-check below. `fst_build_rss.start` reports builder/reference 1.00x at every size, which also shows `fst_old.hh` is START.
+- `fst_cmp_bench` prints a `new` column (the `fst::` code of the binary) next to an `old` column (the frozen copy of START's code, `test/fst_old.hh`). `diff <(git show 12657aa:fst.hh) test/fst_old.hh` differs only in the `namespace` line and one comment line, so `old` is START's code. The ratios below are cross-binary: the `new` column of the START binary (A) against the `new` column of the HEAD binary (B), through a wrapper (`fstw.py`) that prints only that column. The HEAD binary's own in-process `old/new` ratio is a cross-check below. `fst_build_rss.start` reports builder/reference 1.00x at every size, which also shows `fst_old.hh` is START.
 - Each round runs A (START binary), B (HEAD binary), then A again (the A/A control) through `ab_compare.py run`, in one `quiet strict` hold (strict acts as exclusive on macOS). Ratio = START time / HEAD time: above 1 means HEAD is faster; range = min-max over the paired rounds; A/A is the median ratio of START against START again.
 
 ## Commands
@@ -213,13 +213,13 @@ Cross-check, the HEAD binary's own in-process ratio (median of the runs of the h
 
 ## Extra: peak resident set of one build (not in the geomean)
 
-`fst_build_rss` (peak RSS of a process that builds one FST from N sorted random 12-letter keys, the sorted keys included; each measurement in its own process). "reference" is START's builder (`fst_old.hh`), "builder" is HEAD's. Run unheld at nice 19 (a memory measurement does not depend on the load; the light holds starved for over 15 minutes). The START binary row set shows builder = reference (1.00x), the HEAD binary shows the saving.
+`fst_build_rss` (peak RSS of a process that builds one FST from N sorted random 12-letter keys, the sorted keys included; each measurement in its own process). "START" is START's builder (`fst_old.hh`; the tool prints that column as `reference`), "builder" is HEAD's. Run unheld at nice 19 (a memory measurement does not depend on the load; the light holds starved for over 15 minutes). The START binary row set shows builder = START (1.00x), the HEAD binary shows the saving.
 
 M4:
 ```
 == fst_build_rss.head (unheld, nice 19; peak RSS is not a timing)
 peak RSS of a process that builds one FST from N random 12-letter keys, the sorted keys included
-      keys    fst bytes     keys MiB  reference MiB    builder MiB     ratio
+      keys    fst bytes     keys MiB      START MiB    builder MiB     ratio
     100000      2118529          3.7           46.0           22.9     0.50x
     300000      6106550          8.3          110.0           75.5     0.69x
    1000000     18207568         24.3          343.5          155.5     0.45x
@@ -227,7 +227,7 @@ peak RSS of a process that builds one FST from N random 12-letter keys, the sort
    3000000     47508164         70.1          809.7          585.0     0.72x
 == fst_build_rss.start (unheld, nice 19; peak RSS is not a timing)
 peak RSS of a process that builds one FST from N random 12-letter keys, the sorted keys included
-      keys    fst bytes     keys MiB  reference MiB    builder MiB     ratio
+      keys    fst bytes     keys MiB      START MiB    builder MiB     ratio
     100000      2118529          3.7           46.0           46.0     1.00x
     300000      6106550          8.3          110.1          110.4     1.00x
    1000000     18207568         24.3          344.9          345.0     1.00x
@@ -238,7 +238,7 @@ i9:
 ```
 == fst_build_rss.head (unheld, nice 19; peak RSS is not a timing)
 peak RSS of a process that builds one FST from N random 12-letter keys, the sorted keys included
-      keys    fst bytes     keys MiB  reference MiB    builder MiB     ratio
+      keys    fst bytes     keys MiB      START MiB    builder MiB     ratio
     100000      2118529          3.0           45.2           23.9     0.53x
     300000      6106550          7.6          109.5           75.1     0.69x
    1000000     18207568         23.6          343.6          162.7     0.47x
@@ -246,7 +246,7 @@ peak RSS of a process that builds one FST from N random 12-letter keys, the sort
    3000000     47508164         69.3          809.0          592.5     0.73x
 == fst_build_rss.start (unheld, nice 19; peak RSS is not a timing)
 peak RSS of a process that builds one FST from N random 12-letter keys, the sorted keys included
-      keys    fst bytes     keys MiB  reference MiB    builder MiB     ratio
+      keys    fst bytes     keys MiB      START MiB    builder MiB     ratio
     100000      2118529          3.0           44.9           45.0     1.00x
     300000      6106550          7.6          108.6          108.7     1.00x
    1000000     18207568         23.6          343.7          343.7     1.00x

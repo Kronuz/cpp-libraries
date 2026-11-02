@@ -57,6 +57,12 @@ reader would otherwise use. Its shape is the same in every repository:
   what every column and row label means. A label that names a mode, a target or an option
   (for example `none` and `truecolor` as term-color's output depths) is explained there,
   so no reader mistakes it for a competing library.
+- **Every row and column label is the thing's real name:** `xor_singleheader`, not
+  `reference`; `std::map`, not `baseline`; `mutex + condvar + deque`, not `naive`. When the
+  name alone does not say what it is, the sentence above the table explains it once
+  (`xor_singleheader` is FastFilter's C implementation of the binary fuse filter, by the
+  filter's designers). A label that says only the role a row plays (`reference`, `baseline`,
+  `ours`, `old`) tells the reader nothing.
 - **Comparators.** When the domain has a well-known alternative (the standard library, a
   widely used library, the obvious hand-written loop), at least one is in the table. Each
   comparator names its version (release tag or commit), links to its project, and is
