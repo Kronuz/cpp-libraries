@@ -249,19 +249,20 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/char-classify](https://github.com/Kronuz/char-classify) &middot; depends on: none
 - **What it is:** Header-only constexpr classification and case folding for ASCII bytes, with no locale and no `<cctype>`.
 - **Header / target:** `#include "chars.hh"`; target `char_classify::char_classify`; C++20.
-- **How it works:** A constexpr 256-entry table packs character properties and hex values into bit fields, so every query is one indexed load and a mask. All classification and case conversion helpers are inline constexpr, which makes them usable inside constant expressions and inside other constexpr parsers. `char_repr` produces an escaped printable form for a single byte.
+- **How it works:** A constexpr 256-entry table packs character properties and hex values into bit fields, so every query is one indexed load and a mask. Everything lives in namespace `chars`. All classification and case conversion helpers are inline constexpr, which makes them usable inside constant expressions and inside other constexpr parsers. `char_repr` produces an escaped printable form for a single byte. Two more headers work on blocks: `chars_simd.hh` finds delimiters and folds case 16 bytes at a time (NEON or SSE2, 8 with the portable 64-bit backend), and `chars_escape.hh` is the C escaping kernel behind `escape` and `repr`.
 - **Key API:**
-  - `is_space`, `is_alpha`, `is_upper`, `is_digit`, `is_alnum`, `is_ascii`, `is_keyword`, `is_hexdigit`
-  - `hexdigit(char) -> unsigned`, `hexdec(const char**) -> int`
-  - `tolower(char)`, `toupper(char)`
+  - `chars::is_space`, `is_alpha`, `is_upper`, `is_digit`, `is_alnum`, `is_ascii`, `is_keyword`, `is_hexdigit`
+  - `chars::hexdigit(char) -> unsigned` (`NO_HEXDIGIT` when not hex), `hexdec(const char**) -> int`, `hex_value(char)` (`NO_HEX_VALUE` when not hex)
+  - `chars::tolower(char)`, `chars::toupper(char)`
   - Flags: `IS_SPACE`, `IS_ALPHA`, `IS_UPPER`, `IS_DIGIT`, `IS_HEX_DIGIT`, `IS_ASCII`, `IS_KEYWORD`, `IS_NON_HEX`
+  - `chars_simd.hh`: `FirstOf<N>`, `Outside<N>`, `find_outside`, `ascii_lower`, `ascii_upper`
 - **Example:**
   ```cpp
   #include "chars.hh"
 
-  static_assert(is_digit('7'));
-  static_assert(hexdigit('A') == 10);
-  constexpr char c = toupper('x');
+  static_assert(chars::is_digit('7'));
+  static_assert(chars::hexdigit('A') == 10);
+  constexpr char c = chars::toupper('x');
   ```
 - **Use it when:**
   - Parsing ASCII protocol syntax where locale must not matter.
@@ -360,7 +361,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/repr](https://github.com/Kronuz/repr) &middot; depends on: `char-classify`
 - **What it is:** Turns arbitrary bytes into a single-line printable representation for logs and diagnostics.
 - **Header / target:** `#include "repr.hh"`; target `repr::repr`; C++20. Compiled (`repr.cc`).
-- **How it works:** Overloads accept pointer plus size, pointer ranges, strings, string views, literals and byte arrays. Printable ASCII passes through, everything else is escaped. A 256-entry table gives each byte's output length, so the result is allocated once at its exact size; the writer then copies clean eight-byte blocks with one store and escapes the rest byte by byte. Options control friendly formatting, the quote character, and a maximum size: with `max_size` the middle is skipped by arithmetic and replaced by `...`, two-thirds of the budget for the head and one-third for the tail.
+- **How it works:** Overloads accept pointer plus size, pointer ranges, strings, string views, literals and byte arrays. Printable ASCII passes through, everything else is escaped. A 256-entry table gives each byte's output length, so the result is allocated once at its exact size; the writer scans 16 bytes per step with NEON or SSE2 (8 with the portable 64-bit backend) through char-classify's escaping kernel (`chars_escape.hh`), copies clean blocks whole and escapes the rest byte by byte. Options control friendly formatting, the quote character, and a maximum size: with `max_size` the middle is skipped by arithmetic and replaced by `...`, two-thirds of the budget for the head and one-third for the tail.
 - **Key API:**
   - `repr(const void*, size_t, bool friendly = true, char quote = '\'', size_t max_size = 0) -> string`
   - `repr(const void* begin, const void* end, ...) -> string`
@@ -386,7 +387,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/escape](https://github.com/Kronuz/escape) &middot; depends on: `char-classify`
 - **What it is:** C-string style escaping of a byte buffer, with a configurable quote character.
 - **Header / target:** `#include "escape.hh"`; target `escape::escape`; C++20.
-- **How it works:** The raw overload measures the output with a 256-entry length table, allocates the `std::string` once at its exact size, and writes it eight bytes at a time: a clean block is one 8-byte store, any other goes byte by byte through the table. Convenience overloads take `std::string`, `std::string_view` and char arrays. `repr` is the higher-level presentation layer built on the same idea, so prefer `repr` for logging and `escape` when you specifically want quoted C-style output.
+- **How it works:** The raw overload measures the output with a 256-entry length table, allocates the `std::string` once at its exact size, and writes it through char-classify's escaping kernel (`chars_escape.hh`), 16 bytes per step with NEON or SSE2 (8 with the portable 64-bit backend): a clean block is copied whole, any other goes byte by byte through the table. Convenience overloads take `std::string`, `std::string_view` and char arrays. `repr` is the higher-level presentation layer on the same kernel, so prefer `repr` for logging and `escape` when you specifically want quoted C-style output.
 - **Key API:**
   - `escape(const void*, size_t, char quote = '\'') -> string`
   - `escape(string/string_view, char quote = '\'') -> string`
@@ -433,7 +434,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/strict-stox](https://github.com/Kronuz/strict-stox) &middot; depends on: none
 - **What it is:** Whole-string numeric parsing that rejects trailing junk, overflow and partial consumption, unlike `std::stoi`.
 - **Header / target:** `#include "strict_stox.hh"`; target `strict_stox::strict_stox`; C++20.
-- **How it works:** `Stox<F>` wraps the C conversion functions and centralizes the three checks people forget: `errno`, the end pointer, and the range. Each `strict_*` function takes a `std::string_view`, optionally reports the consumed index, and has a `noexcept` overload that writes the saved `errno` instead of throwing. Integer overloads take an explicit base. Clean input (an optional `-` and digits, or a short decimal that one correctly rounded multiply or divide can produce) is parsed directly with no buffer copy and no `errno` traffic; everything else is copied whole into a NUL-terminated buffer (128 bytes on the stack, heap above that) and handed to `strto*`. Both paths give identical values, `errno`, `idx` and exceptions.
+- **How it works:** `Stox<F>` wraps the C conversion functions and centralizes the three checks people forget: `errno`, the end pointer, and the range. Each `strict_*` function takes a `std::string_view`, optionally reports the consumed index, and has a `noexcept` overload that writes the saved `errno` instead of throwing. Integer overloads take an explicit base. Plain input (an optional `-`, digits, and for floating point a fraction and an exponent) is parsed by the header with no copy and no `errno` traffic: floats through a table of powers of five and, where the table cannot decide, an exact big-integer comparison with the halfway point, so every `double` and `float` is bit for bit what libc's `strtod` and `strtof` return. libc's `strto*` decides the rest (trailing text, leading white space, `+`, base prefixes, integer overflow, `inf`, `nan`, hex floats, `stold`, a directed rounding mode, a locale whose decimal point is not `.`) on a NUL-terminated copy (128 bytes on the stack, heap above that). Both paths give identical values, `errno`, `idx` and exceptions.
 - **Key API:**
   - `strict_stoi`, `strict_stou`, `strict_stol`, `strict_stoul`, `strict_stoll`, `strict_stoull`, `strict_stoz`
   - `strict_stof`, `strict_stod`, `strict_stold`
@@ -452,9 +453,9 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - You need the `noexcept`/errno form on a path that must not throw.
 - **Do not use it when / gotchas:**
   - Input is a `string_view`; the caller owns the storage.
-  - Strictness is the point: whitespace and trailing characters are rejected, not skipped.
+  - Trailing text, trailing white space included, is an error. Leading white space and `+` are accepted, as `strto*` accepts them: `strict_stoi(" 42")` and `strict_stoi("+42")` are 42.
   - Input of any length parses like libc `strto*` on the same bytes; an embedded NUL ends the number there.
-  - `stold` and full-precision 17-digit doubles always take the `strto*` path; the fast path covers short clean input (`bench/bench.cc`).
+  - The decimal point follows the current locale, as in `strtod`; a program that stays in the `"C"` locale can define `STRICT_STOX_C_LOCALE` to skip the locale query and read `.` everywhere. `stold` always takes the `strto*` path; 17-digit doubles take the header's own parser (`bench/bench.cc`).
 
 ### utype
 [github.com/Kronuz/utype](https://github.com/Kronuz/utype) &middot; depends on: none
@@ -1709,14 +1710,14 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 ### radix-router
 [github.com/Kronuz/radix-router](https://github.com/Kronuz/radix-router) &middot; depends on: none
 - **What it is:** A header-only generic radix-tree router for static paths, named parameters, and catch-all segments.
-- **Header / target:** `#include "radix_router.h"`; target `radix-router::radix-router`; C++20.
-- **How it works:** `Router<T>` stores route values in a compressed radix tree, splitting common static prefixes instead of allocating one node per character. Static branches are checked before parameter and catch-all branches. Matching is transport-agnostic and writes captured values into a reusable `Params` object, avoiding URL or HTTP dependencies.
+- **Header / target:** `#include "radix_router.h"`; target `radix_router::radix_router`; header-only; C++20.
+- **How it works:** `Router<T>` stores route values in a compressed radix tree, splitting common static prefixes instead of allocating one node per character. Static branches are checked before parameter and catch-all branches at every node, so `/users/new` and `/users/:id` can both be registered; backtracking, where a node needs it, is bounded by the number of segments. Matching is transport-agnostic and writes captured values into a reusable `Params` object, avoiding URL or HTTP dependencies.
 - **Key API:**
   - `template <typename T> class Router`
   - `void Router<T>::insert(std::string_view pattern, T value)`
   - `const T* Router<T>::find(std::string_view path, Params&) const`
   - `class Params`: `add`, `get`, `clear`, `truncate`, `size`
-  - Patterns: `/static`, `/:name`, `/*name`
+  - Patterns: `/static`, `/:name`, `/*name`; a catch-all before more segments (`/files/*path/raw`) takes the run of segments that lets the rest match
 - **Example:**
   ```cpp
   #include "radix_router.h"
@@ -1730,8 +1731,9 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Dispatching HTTP, RPC, or command paths with low allocation overhead.
   - You need named single-segment or remainder captures.
 - **Do not use it when / gotchas:**
-  - Wildcards must be named and only one wildcard is allowed per path segment.
-  - Conflicting parameter names or catch-all modes at the same position are rejected.
+  - Wildcards must be named and only one wildcard is allowed per path segment (`/:a-:b` throws).
+  - `insert()` throws on a duplicate pattern, two names for one parameter position, or an unnamed wildcard.
+  - No constraints on a segment (no regex, no `:id{[0-9]+}`): validate the captured value in the handler.
 
 ### url-parser
 [github.com/Kronuz/url-parser](https://github.com/Kronuz/url-parser) &middot; depends on: `char-classify`
@@ -1995,7 +1997,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Filter caches, live-docs masks, and set algebra over document ids.
 - **Do not use it when / gotchas:**
   - No run-length containers: long consecutive ranges cost a bitmap per chunk.
-  - The SIMD union is x86-only; AArch64 uses NEON for intersection and difference.
+  - Array union is a vectorized merge with SSE4.1 or NEON, and intersection and difference use SSE4.2 (SSSE3 without it) or NEON; other targets run the scalar merge, and `DOCSET_NO_SIMD` makes every kernel scalar.
 
 ### msgpack
 [github.com/Kronuz/msgpack](https://github.com/Kronuz/msgpack) &middot; depends on: `atomic-shared-ptr`, `constexpr-phf`, `enum-reflection`, `hashes`, `located-exception`, `repr`, `strict-stox`
