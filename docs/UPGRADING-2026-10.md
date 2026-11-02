@@ -118,7 +118,7 @@ results" means a frozen-copy differential test holds every output to start's.
 | [flume](#flume) | `7184cb4` | `defd5a1` | `Receiver(sink, max_block)`; big-endian XXH32 footer through compressors | gate 1.00 / 1.01 | none |
 | [fs](#fs) | `ce16118` | `aa06315` | `copy_file` truncates, refuses the same file, reports short writes; empty paths; `normalize_path` is `os.path.normpath` | `normalize_path` 1.25 / 1.66 geomean (the gate's 0.84 / 0.76 was before the one-pass loop) | Xapiand |
 | fst | `12657aa` | `7338f56` | Same bytes | gate 2.13 / 2.14 | strata, termdict |
-| fusefilter | `a42bd15` | `9ae6df6` | Docs and bench only | unchanged | strata |
+| fusefilter | `a42bd15` | `0665ee0` | Same results; `filter8::build` reorders its work | build 3.9x and 2.9x faster at 1M and 10M keys on the M4 Pro, 3.9x and 3.2x on the i9; faster than xor_singleheader (9.7 vs 18.8 ns per key at 1M, M4 Pro) | strata |
 | [generation-cache](#generation-cache) | `00762bd` | `38a2d39` | Exception paths; writers no longer starve; layout | gate 3.22 / 4.35 | Detent |
 | [hashes](#hashes) | `de5b3ac` | `a050f6b` | Same values; `crc32c.hh` gone since `aba7865` (2026-10-20) | unchanged | bloom-filter, enum-reflection, msgpack, strata, Detent |
 | [htm](#htm) | `a0321ab` | `1e041ef` | Ids of points near a cell edge on fusing builds | gate 1.00 / 1.06; `getId` 591 ns against 914 (M4 Pro) | Xapiand |
