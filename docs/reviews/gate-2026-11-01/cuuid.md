@@ -125,7 +125,7 @@ serialise 900 to 590 ns, i9 not given there).
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - i9 `cuuid_compare` v1 without compaction 0.945: placement. The same operation reads 1.000 in
   `cuuid_v1_bench` in the same hold.

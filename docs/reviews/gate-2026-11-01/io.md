@@ -115,7 +115,7 @@ SUMMARY repo=io m4_geomean=0.935 i9_geomean=0.959 m4_slow=1/0.543 i9_slow=1/0.55
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - `pread_4K_tail_100B` (M4 0.543, i9 0.551): accepted. `io::pread` loops to the full count
   (`io:6524ce0`), so a read that reaches end of file makes a second `pread`, which returns 0

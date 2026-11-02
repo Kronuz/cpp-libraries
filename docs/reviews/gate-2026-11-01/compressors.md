@@ -482,9 +482,11 @@ SUMMARY repo=compressors m4_geomean=1.273 i9_geomean=1.281 m4_slow=1/0.639 i9_sl
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
-- M4 `xxh32 n=256 one-update` 0.639: fixed in `compressors:430870c`. Short updates run in one NEON
-  register: 256 B in one update took 10.8 ns before `533bee4`, 16.7 ns at the gate's head and 7.5 ns
-  now (M4 Pro). A hash that waits for the previous digest is slower, 26.2 ns before `533bee4` and
-  38.0 now: open, [compressors#5](https://github.com/Kronuz/compressors/issues/5).
+- M4 `xxh32 n=256 one-update` 0.639: fixed in `compressors:430870c`, `5203edb` and `94a3758`: short
+  updates run start's inlined update on AArch64 and stay inline on x86, and the NEON kernel is gone.
+  Every XXH32 row is at or above start on both machines: 256 B in one update takes 10.9 ns at start
+  and 8.4 now on the M4 Pro, 42.8 and 32.6 on the i9. The bench has the chained-hash row (a hash that
+  waits for the previous digest), and [compressors#5](https://github.com/Kronuz/compressors/issues/5)
+  is closed.

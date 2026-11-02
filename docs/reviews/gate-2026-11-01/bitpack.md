@@ -344,7 +344,7 @@ SUMMARY repo=bitpack m4_geomean=1.042 i9_geomean=0.993 m4_slow=6/0.815 i9_slow=1
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - M4 `scalar` widths 8, 18, 20, 21 and 24 (0.815 to 0.940): placement. `unpack_scalar` is
   unchanged and all 33 instantiations have identical machine code in both binaries.

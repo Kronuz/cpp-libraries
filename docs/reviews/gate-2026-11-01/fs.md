@@ -214,14 +214,17 @@ SUMMARY repo=fs m4_geomean=0.835 i9_geomean=0.763 m4_slow=15/0.692 i9_slow=16/0.
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - Every `normalize_path` row (M4 0.692 to 0.837 on 15 of 16; i9 0.447 to 0.877): fixed in
-  `fs:c91b457` and `fs:f4439d8`. The three correctness fixes (an empty path, a default-constructed
-  view, `..` popping the first component of a relative path) left it 1.3 to 2.2 times slower than
-  start; the fixed loop makes one pass and builds the result on the stack. On an Apple M1 Pro
-  every comparable row but `np_keep_slash` (0.95) is faster than start (`np_relative` 1.06,
-  `np_dot` 1.4); not yet re-timed on the M4 Pro and the i9. `storage` and `url-parser` carry the same loop (`storage:f6e011c`,
-  `storage:452aad9`, `url-parser:2a03c21`, `url-parser:eb0717e`).
+  `fs:c91b457`, restored in `fs:32e564e` after `f4439d8` (CHANGELOG `a6cd8bb`). The three correctness
+  fixes (an empty path, a default-constructed view, `..` popping the first component of a relative
+  path) left it 1.3 to 2.2 times slower than start; the one-pass loop builds the result on the
+  stack. It is faster than start on all 14 comparable rows on the i9 (1.33 to 1.94 times) and on 12
+  rows on the M4 Pro (1.10 to 1.65 times, one tie), except `np_relative` at 0.92 on the M4 Pro, the
+  cost of the relative-path `..` fix: accepted, [fs#1](https://github.com/Kronuz/fs/issues/1).
+  `tools/normpath_oracle.py` generates the oracle table. storage (`d8d7b38`) and url-parser
+  (`4dc3556`) carry the same loop.
 - `np_empty`, `np_relative_pop`, `np_relative_pop_all` and the `copy_file` overwrite rows: not
-  comparable (an empty path, a `..` that pops, `O_TRUNC`).
+  comparable (an empty path, a `..` that pops, `O_TRUNC`). `copy_file`'s identity check and
+  `ftruncate` are an accepted correctness cost.

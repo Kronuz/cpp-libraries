@@ -269,7 +269,7 @@ Anchor rows (msgpack-c 1.3 bundled in the bench, same code on both sides), i9:
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - M4 medium document `write` 0.953: placement. The unchanged msgpack-c rows move by the same amount
   (0.950), and with every function aligned to 64 bytes the row reads 0.98 to 1.00 (CHANGELOG).

@@ -92,9 +92,11 @@ FASTER on the request parser (micro geomean 1.25x on the M4 and 1.33x on the i9:
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
-- i9 end to end, keep-alive, 64 connections 0.836 and 8 connections 0.856: the whole stack differs
-  (see the geomean note). Fix in progress. Head's request parser is faster on both machines (1.253,
-  1.327), and head's one-connection latency against Boost.Beast is
-  [http#1](https://github.com/Kronuz/http/issues/1).
+- i9 end to end, keep-alive, 64 connections 0.836 and 8 connections 0.856: fixed in `http:c37474a`
+  (on plain TCP the disconnect watch starts when the handler first asks about cancellation, and a
+  buffered reply leaves in one write; `ea388ef` records the M4 Pro numbers). The i9 serves 93.7k and
+  98.7k req/s at 8 and 64 connections against start's 87.3k and 98.0k; on the M4 Pro `wrk` sets the
+  rate (about 37,000 req/s) and the CPU per request is 21.7 µs against start's 22.5. One-connection
+  latency against Boost.Beast is [http#1](https://github.com/Kronuz/http/issues/1).

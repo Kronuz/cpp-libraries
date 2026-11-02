@@ -74,7 +74,7 @@ Rows below 0.97 whose ratio is inside the A/A spread (not counted above; the ses
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - M4 `Cartesian(lat, lon, h, DEGREES)` WGS84 0.874 and OSGB36 0.899, i9 `operator==` 0.860:
   placement. `cartesian.cc`'s instruction streams are identical at start and head; each row reads

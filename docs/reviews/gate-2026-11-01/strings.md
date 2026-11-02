@@ -357,7 +357,9 @@ A/A geomean 1.007
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - `join(vector<string>)` of 2, 3 and 4 short strings (M4 0.920, 0.934 and 0.880; i9 0.893) and
-  `replace` 1 to 3 characters, 256 B, 3 matches (M4 0.944): in the CHANGELOG. Fix in progress.
+  `replace` 1 to 3 characters, 256 B, 3 matches (M4 0.944): fixed in `strings:4f7fd80`, which runs
+  the original's code for small joins and a few matches. They are at parity with start; rows at 0.94
+  to 0.96 move with the layout: open, [strings#2](https://github.com/Kronuz/strings/issues/2).

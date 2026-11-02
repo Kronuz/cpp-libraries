@@ -364,12 +364,12 @@ SUMMARY repo=storage m4_geomean=1.007 i9_geomean=0.983 m4_slow=2/0.704 i9_slow=3
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - M4 small blobs, lz4 write 0.704 and deflate write 0.915: accepted. `commit()` syncs the volume
   directory once after creating the file (`storage:217e731`), a durability fix; the CHANGELOG records
   the cost.
-- i9 large blobs, whole read: lz4 0.719, zstd 0.763, deflate 0.789: fixed in `storage:890cc71`. A
-  whole `read()` is sized once from the record and decoded in place; per MiB on the i9, start,
-  gate head and now: lz4 929,661, 1,401,993 and 591,983 ns; zstd 1,198,584, 1,672,803 and 988,217;
-  deflate 1,458,653, 1,942,153 and 1,060,176.
+- i9 large blobs, whole read: lz4 0.719, zstd 0.763, deflate 0.789: fixed in `storage:890cc71` (test
+  `9e8c856`). A whole `read()` is sized once from the record and decoded in place; compressed whole
+  reads on the i9 are 1.17 to 1.65 times start's speed (lz4 per MiB: 929,661 ns at start, 1,401,993
+  at the gate's head, 591,983 now).

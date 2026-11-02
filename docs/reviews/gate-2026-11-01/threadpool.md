@@ -405,12 +405,14 @@ SUMMARY repo=threadpool m4_geomean=2.009 i9_geomean=2.342 m4_slow=3/0.181 i9_slo
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - `TaskGroup` burst of tiny tasks on 14 to 16 workers, wall, user and system time (M4 0.181 to
   0.608, i9 0.278 to 0.642): fixed in `threadpool:5d97d35`. A group lists one ticket at a time, and
-  a worker runs the group's next task while only the group's tickets wait: 115 to 125 ns a task on
-  4 to 16 workers of the M4 Pro (start 345 to 490) and 475 to 525 on the i9 (start 1,140 to
-  1,950).
-- i9 trickle, one task every microsecond, p99 delay 0.651 (0.617 in a second hold): the coalesced
-  wake trades tail latency for CPU. Fix in progress.
+  a worker runs the group's next task while only the group's tickets wait. 3 to 4 times faster than
+  start on both machines: 125 ns a task on 16 workers of the M4 Pro (start 490), 515 on the i9 (start
+  1,725).
+- i9 trickle, one task every microsecond, p99 delay 0.651 (0.617 in a second hold): owner decision,
+  [threadpool#3](https://github.com/Kronuz/threadpool/issues/3). The p99 is 61 to 90 µs against
+  start's 35 to 47, for a quarter of start's pool CPU per task (2.0 µs against 7.4), and the median
+  is lower (6.2 to 6.6 µs against 6.9 to 7.0). On the M4 Pro the row is 3 times better than start.

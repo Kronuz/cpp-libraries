@@ -149,7 +149,7 @@ A/A geomean 0.997
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - i9 Jaccard on 300 characters 0.750: placement. The kernel is unchanged, it reads 1.10 to 1.15 in
   an isolated build, and the M4 Pro reads 0.99.

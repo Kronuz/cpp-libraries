@@ -163,6 +163,6 @@ A/A geomean 1.001
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - M4 iterator over 65,536 B with the `memchr` loop 0.946: placement. `split.h` is byte-identical.

@@ -352,9 +352,11 @@ SUMMARY repo=stash m4_geomean=1.745 i9_geomean=1.800 m4_slow=2/0.884 i9_slow=2/0
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
-- `steady D=64` p99 with 4 and 14 arming threads (M4 0.884 and 0.889, i9 0.928 and 0.924):
-  accepted. `put` loads the leaf's claim hint and makes one compare-exchange on a leaf's first
-  claim, and a leaf is 16 bytes larger (CHANGELOG). The same change removed a quadratic chain walk,
-  which is most of the 1.745 and 1.800. On the i9 the rows are inside the spread in a second hold.
+- `steady D=64` p99 with 4 and 14 arming threads (M4 0.884 and 0.889, i9 0.928 and 0.924): owner
+  decision, [stash#1](https://github.com/Kronuz/stash/issues/1). `put` loads the leaf's claim hint and
+  makes one compare-exchange on a leaf's first claim, and a leaf is 16 bytes larger; the fallback of
+  `b0fce1c` (recorded in `4187183` and `3bfc455`) brings the rows to 0.90 to 0.97 of start. The same
+  change removed a quadratic chain walk, which is the 1.745 and 1.800 geomeans and up to 9 times
+  faster elsewhere.

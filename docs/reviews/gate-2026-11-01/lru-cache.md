@@ -73,7 +73,7 @@ Rows >1.03: 3; within 0.97-1.03: 1; <0.97: 0 (0 outside the A/A spread, 0 inside
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - M4 string keys, capacity 65,536, `lru::lru` 0.793: placement. The code is identical and the
   `std::list` + `unordered_map` control moved the same way (0.759).

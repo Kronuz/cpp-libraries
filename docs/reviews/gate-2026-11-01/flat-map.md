@@ -248,10 +248,9 @@ Rows >1.03: 31; within 0.97-1.03: 3; <0.97: 3 (1 outside the A/A spread, 2 insid
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
-- i9 `<i8,u64>` n=100 `find`, keys replayed in one order, 0.758: accepted (CHANGELOG). The branch
-  predictor learns start's `std::lower_bound` on a short table queried in the same order; head's
-  compare is marked unpredictable, so it has no branch to learn.
+- i9 `<i8,u64>` n=100 `find`, keys replayed in one order, 0.758: fixed in `flat-map:9fe0bd9` (an
+  unrolled branchless lower bound for short integer tables): 4.66 ns against start's 5.14.
 - M4 `<string,u64>` n=32 `insert` 0.959: open, probably the index-based `insert`; not isolated. No
   issue filed.

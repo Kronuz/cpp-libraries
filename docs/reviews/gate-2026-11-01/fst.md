@@ -303,7 +303,7 @@ SUMMARY repo=fst m4_geomean=2.131 i9_geomean=2.136 m4_slow=1/0.953 i9_slow=0/- u
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - M4 `intersect`, 3-byte prefix, all keys, 0.953 (0.972 in the first hold): placement. `intersect`
   is unchanged; the new header code beside it moves it.

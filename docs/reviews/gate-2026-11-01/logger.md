@@ -247,10 +247,10 @@ SUMMARY repo=logger m4_geomean=2.878 i9_geomean=2.454 m4_slow=2/0.016 i9_slow=2/
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - Single-line latency, from an isolated `L_INFO` to the handler, median and p90 (M4 0.016 and
-  0.029, i9 0.037 and 0.062): accepted. A line due within one 1 ms wheel tick is written 1 ms after
-  the call, so producers rarely signal the LOG thread. These rows come from the gate's own
-  micro-bench and are not in the geomean of 2.878 and 2.454. A change that
-  writes an isolated line at once is in progress.
+  0.029, i9 0.037 and 0.062): fixed in `logger:bb2d16c`. A line that finds nothing pending is written
+  at once again: 16.8 µs on the M4 Pro and 42.5 µs on the i9 from call to handler, against start's
+  21.7 and 58.5 (about 1.5 ms at the gate's head). A burst still batches at 1 ms, so producers rarely
+  signal the LOG thread.

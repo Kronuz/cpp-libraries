@@ -221,11 +221,12 @@ SUMMARY repo=docset m4_geomean=1.306 i9_geomean=1.145 m4_slow=4/0.843 i9_slow=2/
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
-- AND of two bitmaps with 40 members per chunk (M4 0.843), 80 (M4 0.919), ANDNOT with 40 (M4
-  0.900): above `extract_loop_max` (32 on arm64) head takes the branch-free extraction. Fix in
-  progress.
-- AND with 20 members per chunk (M4 0.955, i9 0.819) and 40 (i9 0.930): the array conversion moved
-  out of line (`container::fill_array`), about 28 ns per chunk; the size on the i9 is unexplained.
-  Fix in progress.
+- AND and ANDNOT of two bitmaps with 20 to 80 members per chunk on the M4 Pro (0.843 to 0.955):
+  fixed in `docset:969d78e` (the plain loop runs to 80 members on arm64 and a loop result is sized
+  exactly; `dcbd528` records it). The rows are at or above start: 40 members 43.6 µs at start and 43.4
+  now.
+- i9 AND with 20 members per chunk (0.819) and 40 (0.930): placement. The extraction's 21-byte outer
+  loop is slow when it starts at 48 modulo 64, and the current build places it elsewhere and measures
+  at start: open for a guard, [docset#1](https://github.com/Kronuz/docset/issues/1).

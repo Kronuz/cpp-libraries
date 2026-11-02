@@ -101,7 +101,7 @@ None for the timed rows (values identical; tests against a bitwise oracle at eve
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
-- i9 `hw (crc32c) 16 B` 0.957: placement. The control `instruction loop 16 B` reads 0.936 in the
-  same runs.
+- i9 `hw (crc32c) 16 B` 0.957: fixed in `crc32c:f004191` (`update()` inlines into `crc32c()`, so the
+  short path is one call): 4.45 GB/s against start's 3.76.

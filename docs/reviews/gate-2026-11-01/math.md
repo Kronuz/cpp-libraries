@@ -253,7 +253,7 @@ SUMMARY repo=math m4_geomean=0.991 i9_geomean=0.992 m4_slow=1/0.954 i9_slow=4/0.
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - M4 `modulus_u64` 0.954 and i9 `modulus_u32` 0.891: accepted. `modulus` tests for a zero
   modulus on every call, about 0.24 ns, and throws `std::invalid_argument` where start was

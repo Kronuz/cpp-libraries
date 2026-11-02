@@ -93,7 +93,7 @@ A/A geomean 0.992
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - Construction from a `std::string_view` plus `c_str()` (M4 0.051, i9 0.035) and the i9 copy of
   an owned 200-byte string (0.933): not comparable. Start's `c_str()` aliased the view, and its copy

@@ -256,7 +256,7 @@ Rows >1.03: 15; within 0.97-1.03: 27; <0.97: 3 (1 outside the A/A spread, 2 insi
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - M4 `map<u64,u64>` `find` n=100,000 0.966, `set<u64>` copy and erase n=100,000 0.966,
   `map<u64,u64>` `insert` n=1,000 0.967, `insert-erase` with 16-byte keys 0.968: open, within 3.4%;

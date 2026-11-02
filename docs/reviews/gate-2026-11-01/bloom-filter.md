@@ -78,7 +78,7 @@ Rows >1.03: 1; within 0.97-1.03: 6; <0.97: 2 (2 outside the A/A spread, 0 inside
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - i9 `N=8192 keylen=16` `add` 0.900 and `hit` 0.940: placement. The source of `BloomFilter` is
   unchanged; the i9 shows up to 12% between builds of the same code.

@@ -101,12 +101,12 @@ non-const copy.
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
-- M4 `timespec_t(double)` over an array, positive 0.917 and negative 0.918: accepted. Start's loop
-  vectorized through `int`; head converts to `time_t`, which keeps whole seconds past `INT_MAX`,
-  and borrows into a positive `tv_nsec`.
-- i9 `double < timespec_t` 0.925: accepted. The comparison waits for the nanosecond conversion that
-  makes the borrow (CHANGELOG).
-- i9 chains through `tv_nsec` only, positive 0.821 and negative 0.827: open; head produces
-  `tv_nsec` later (a 64-bit conversion, `trunc`, the borrow), not measured. No issue filed.
+- M4 `timespec_t(double)` over an array, positive 0.917 and negative 0.918, and the same on the i9
+  (0.89): accepted, [times#1](https://github.com/Kronuz/times/issues/1). Start's loop vectorized
+  through `int`; head converts to `time_t`, which keeps whole seconds past `INT_MAX`, and borrows into
+  a positive `tv_nsec`.
+- i9 chains through `tv_nsec` (0.821, 0.827) and `double < timespec_t` (0.925): fixed in
+  `times:c6d1a90`. The rows timed a loop of single constructions, and x86 builds one value in 64-bit
+  arithmetic as arm64 does: a loop of single constructions on the i9 is at start.

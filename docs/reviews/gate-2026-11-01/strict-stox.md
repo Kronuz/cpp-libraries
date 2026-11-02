@@ -231,11 +231,15 @@ A/A geomean 0.999
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - `stod` of 800 digits (M4 0.509, i9 0.429): not comparable. Start parsed only the first 63
   bytes; head parses all 800 and returns the right value.
-- Declined text, which tries the fast path and then calls `strto*`: `inf, nan` (M4 0.808 and 0.825,
-  i9 0.734 and 0.761), `" 1.5"` with leading space (M4 0.828 and 0.833, i9 0.820 and 0.854), `stoll`
-  of 20 digits, `ERANGE` (M4 0.861, i9 0.881): accepted in `docs/perf/`. Fix in progress.
-- i9 `stod` of odd integers between 2^53 and 2^54 (ties) 0.821: open, i9 only. Fix in progress.
+- Declined text (`inf`, `nan`, leading white space) and `stoll` of 20 digits (`ERANGE`), M4 0.808 to
+  0.861 and i9 0.734 to 0.881, and the i9 odd-integer ties row (0.821): fixed in
+  `strict-stox:dc24d9f`. Text that cannot be decimal goes straight to `strto*` and an integer out of
+  range is decided without it: `stod` of `inf` and `nan` takes 12.9 ns on the M4 Pro against start's
+  17.3 and 28.5 on the i9 against 30.6; `stoll` of 20 digits 18.6 against 27.7 and 41.3 against
+  72.1; the ties row 28.2 ns on the i9 against 32.8. Every row but `stod` of 800 digits is at least
+  1.07 times start's speed on both machines (CHANGELOG). What remains against the previous head is
+  [strict-stox#2](https://github.com/Kronuz/strict-stox/issues/2).

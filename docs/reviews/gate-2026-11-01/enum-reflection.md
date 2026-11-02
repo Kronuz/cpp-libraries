@@ -170,11 +170,12 @@ Not comparable (shim or comparator rows), i9:
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
 - `enum_type` hits on 8- to 128-member enums and on `Status` and `Method` (M4 0.483 to 0.759, i9
-  0.422 to 0.755): accepted. A hit compares the name, ASCII case-insensitively, after the hash
-  matches; start returned a member for any 15-byte string built to share its 64-bit hash. A faster
-  check is in progress.
-- i9 `enum_name` of a 128-member dense enum 0.879: open. The change does not touch it, and the 8- and
-  32-member rows read 1.05 and 0.99. No issue filed.
+  0.422 to 0.755): fixed in `enum-reflection:36cf117` (names looked up in a table and verified with
+  wide loads; `8a9e1d8` documents it). Hits are 1.01 to 1.35 times start's speed, except the 8-member
+  hit on the M4 Pro at 0.94, the cost of verifying a hit, which start skipped and so accepted a forged
+  15-byte name: accepted, [enum-reflection#1](https://github.com/Kronuz/enum-reflection/issues/1).
+- i9 `enum_name` of a 128-member dense enum 0.879: placement. The code is unchanged, and the row reads
+  0.89 to 0.93 across binaries (CHANGELOG).

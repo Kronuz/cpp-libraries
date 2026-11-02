@@ -234,11 +234,10 @@ SUMMARY repo=scheduler m4_geomean=1.064 i9_geomean=1.173 m4_slow=2/0.909 i9_slow
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
-- M4 "make only" with 1 producer 0.965 and 4 producers 0.909: `ScheduledTask` grew from 48 to 96
-  bytes to carry `post()`'s hand-off fields. Partly fixed in `scheduler:eb2483b`: the hand-off and
-  filing fields share one union and the task is 72 bytes. START over the row, 15 runs: M4 Pro 0.987
-  with 1 producer and 0.957 with 4, i9 1.015 and 1.017. The M4 Pro's 4-producer row needs a 56-byte
-  task to reach start's allocation class: open,
-  [scheduler#2](https://github.com/Kronuz/scheduler/issues/2).
+- M4 "make only" with 1 producer 0.965 and 4 producers 0.909: fixed in `scheduler:eb2483b` and
+  `e7b4f83`. The hand-off and filing fields share one union, and `ScheduledTask` no longer derives
+  `std::enable_shared_from_this`, so a task is 56 bytes. "make only" is 10% to 15% faster than start:
+  30.7 and 35.6 ns on the M4 Pro (start 35.9 and 40.4), 119.8 and 125.8 ns on the i9 (start 134.8 and
+  139.5). [scheduler#2](https://github.com/Kronuz/scheduler/issues/2) is closed.

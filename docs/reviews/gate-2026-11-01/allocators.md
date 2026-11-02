@@ -116,9 +116,14 @@ Rows >1.03: 8; within 0.97-1.03: 3; <0.97: 1 (1 outside the A/A spread, 0 inside
 
 ## Status since the gate
 
-Checked against the default branch on GitHub on 2026-11-01 at 16:40 PST; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
+Checked against the default branch on GitHub on 2026-11-01 at 19:15 PST, after the last fixes of the day; the [summary](../gate-2026-11-01.md#slower-rows) uses the same words.
 
-- i9 `pool_direct` steady state (allocate one block, free it) 0.352: cause not isolated. Fix in
-  progress.
+- i9 `pool_direct` steady state (allocate one block, free it) 0.352: fixed on the M4 Pro and narrowed
+  on the i9 in `allocators:6eb7fb2` (an allocator alone in its family keeps its freed blocks in a
+  local list, `88c5ae6` adds the row to the bench). The pair takes 0.66 ns on the M4 Pro against
+  start's 1.16, and 1.00 ns on the i9 against start's 0.74 (2.03 at the gate's head). The i9
+  remainder is the cost of the AL1 fix, which stopped copy assignment from sharing a pool: accepted,
+  [allocators#1](https://github.com/Kronuz/allocators/issues/1). `allocators:6975ee8` also aligns the
+  tracked allocator's blocks to 16 bytes, misaligned under UBSan at start too.
 - M4 `vector<int>` n=1000 0.963: accepted. `construct`'s `noexcept` clause follows the element's
   constructor (the forwarding fix), a few percent of a 0.5 ns operation; in the CHANGELOG.
