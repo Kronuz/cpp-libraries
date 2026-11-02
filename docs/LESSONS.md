@@ -992,7 +992,7 @@ See also [bloom-filter](#bloom-filter), item 1.
     (control bytes, 16-slot SSE2 or NEON groups; 1.03 groups and 1.05 key compares per hit at 100000
     keys) passes its tests, ASan, UBSan and TSan, but was never timed: every host's timing queue was
     held by other holds for the whole window. Queue the timing request first, with the build inside the
-    hold, before writing the tests (branch `perf/swiss-table`,
+    hold, before writing the tests (tag `archive/perf/swiss-table` in generation-cache,
     [generation-cache#1](https://github.com/Kronuz/generation-cache/issues/1)).
 
 ### flat-map
