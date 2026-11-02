@@ -249,6 +249,35 @@ See also [repr](#repr), item 2 (the empty search in `replace`, found by the diff
     the same amount. Two structure experiments (inline short join + out-of-line sized join: 1000-element
     joins 0.63x with identical loop code; inline front for replace) were measured on the three targets
     and both dropped. Time-box the layout lottery and explain the residue with numbers.
+15. **When two reshapings of the new code leave a row at 0.93, stop reshaping and run the old code.**
+    The first two passes of the third fix round moved join of two to four strings and replace with a
+    few matches between 0.88 and 0.98 of START by changing where the branches sat. The pass that
+    worked copied the original's body (`join_original`, the loop of `str.replace`) and put the new
+    code behind a test of the size: the work per call is then the original's plus the test.
+16. **Count the instructions of the test in front of the old code.** A dispatch that looked free
+    (`values.size() <= 4 && first.size() < 16`) was a multiplication by the inverse of 24 (the
+    element count), two compares and a load of the first string's size, 12 to 14 instructions in
+    front of a 20 ns call: 6 to 9%. Read the size of a vector in bytes, test the first string only
+    where the call is long enough to pay for it (three or four strings), and compare against the same
+    call compiled from START, not against the previous pass.
+17. **Do not move the large path into its own function to make the small path smaller.** Four
+    separate attempts (the sized join out of line, the original's body forced inline, the whole join
+    of strings as one non-inlined function, and that function with the count alone) each ran 0.60 to
+    0.85 of START on the join rows of both machines, rows that never reach the moved code included.
+    Structure experiments on a function that returns a `std::string` are not predictable; the
+    variants cost one slot each, so measure them together and keep the one that is plainly best.
+18. **Add a row at every threshold.** The ladder that hands the first three matches to the original's
+    calls and the rest to the general path was fine at 3 and at 8 matches and 8% slower at 4, because
+    the general path searched for the matches the caller had just found. The bench had no row at 4.
+    Pass what the caller found, and put a row on each side of every `if (count <= N)`.
+19. **The same code in two binaries differs by 3 to 6% on a 5 to 30 ns row.** The frozen original in
+    the same binary moves by as much (the anchor column), so a row at 0.95 with an anchor at 1.04 is
+    the layout, not the code. Quote both ([strings#2](https://github.com/Kronuz/strings/issues/2)).
+20. **The earlier explanation was wrong, and the assembly said so.** The second round blamed "the
+    original's few lines inline into the call site". In the bench rows START's `join` and
+    `inplace_replace` are calls, with the delimiter and the search passed at run time; the new code
+    lost its few percent in what stood in front of the same call. Read the assembly of the row before
+    writing the cause into a CHANGELOG.
 
 ### stringified
 
@@ -422,6 +451,34 @@ See also [repr](#repr), item 2 (the empty search in `replace`, found by the diff
     scale the loops by a constant under `__SANITIZE_*`, and keep the full run for the native build. A cross-compiled
     bench binary built with the macOS 26 SDK fails at load on macOS 15 (`from_chars` symbols in libc++.dylib): build
     with `-mmacosx-version-min` and leave the missing comparator out.
+25. A cheap fast path leaves a bill for the text it declines, and the bill is mostly not the attempt.
+    The gate showed `inf`/`nan`, leading white space and 20-digit overflow at 0.43-0.88x of START. Of
+    the 4-9 ns each cost over START, about 4-5 was the failed attempt, 3-5 was `errno` (on macOS every
+    spelling of `errno` calls `__error()`; name it once as `int& err = errno`) and about 2 was the
+    `memcpy` call and the `std::string` built before the copy. So: test the first byte at the entry,
+    send what cannot start a decimal straight to the libc path, keep that path out of line, copy a
+    short text with two overlapping loads, and answer an out-of-range integer from the digit loop,
+    with no libc call. Count the routes with a test seam (`STRICT_STOX_COUNT_LIBC`) and kill each
+    with a mutant: a timing-only fix is undone by the next refactor without a failure.
+26. On a table-driven hot path every added branch is paid by every row, and the price differs by
+    machine. Putting the first-byte check inside `fast_fp` or `_fast`, or making `fast_int`
+    three-valued, cost the short rows 2-8% on the M4 Pro and 23-37% on the i9's integers; making
+    `stox_nothrow` `noinline` cost the M4 Pro 8-25%. The check at the entry points
+    (`stox_nothrow_fp`, `stox_throw_fp`), with `fast_int` and `_fast` byte for byte as they were, was
+    the only placement that passed every named row on both machines. Try three placements and compare
+    the geomean against HEAD on both machines before choosing, and keep the loser's numbers in the
+    CHANGELOG.
+27. Passing a base by reference to an out-of-line function can cost more than the call: by value fixed
+    `stoull` and `stoul` on the i9 and did nothing for `stoi` 1-9 digits (10.5 to 13.8 ns, still 3.1x
+    faster than START), which stayed slower in every variant. Treat an unexplained residual as an
+    alignment or inlining lottery (JCC erratum, code layout), record it in an issue with the variant
+    list ([strict-stox#2](https://github.com/Kronuz/strict-stox/issues/2)), and do not chase it past
+    the deadline.
+28. Work in a checkout of your own (a `git worktree`): a documentation pass that committed in the same
+    checkout pushed this round's work in progress to `main`. Check the timing script's prerequisites
+    and include paths before its hold: two holds were lost to a missing binary and the wrong
+    `fast_float` include directory.
+
 ### math
 
 [CHANGELOG](https://github.com/Kronuz/math/blob/main/CHANGELOG.md)
@@ -979,6 +1036,32 @@ See also [bloom-filter](#bloom-filter), item 1.
     `std::lower_bound`: `<i8,u64>` n=100 took 4.7 ns with it and 6.4 ns branchless, but 26 vs 6.8 ns
     on a random stream. A single replayed column was hiding a 4x win and showing a 28% loss. Time
     both, say which one a number comes from, and decide the trade on the stream the callers run.
+11. The replayed-table row was lost on instructions, not on latency (i9, `<i8,u64>` 100: START
+    5.14 ns, the branchless loop 6.19, an unrolled search 4.66). The loop's step is nine
+    instructions to the unrolled step's three (compare against a constant offset, `lea`, `cmov`), and
+    once a predictor has learned the order the branchy `std::lower_bound` costs only its
+    instructions, so the loop lost by about the instruction count. Count instructions per query
+    from the assembly before reaching for SIMD. Everything that followed kept those three: the
+    lookup had to be `always_inline` through four layers (clang 21 outlined it on size alone, and a
+    leaf call took the gain back); the select had to be hidden behind an empty `asm` (clang folds
+    `c ? p + S : p` into compare, shift, add); g++ turned the first and the last select into
+    branches (random 10 to 17 ns on a g++ 11 VM) and needed the same hiding; and
+    `top = bit_floor(n)` spends one probe too many at every power of two, where `bit_floor(n - 1)`
+    spends none (`<u32,u32>` 16 random went from 3-7% slower than the loop on the M1 Pro and M4 Pro
+    to 13% faster on the M1 Pro).
+12. One timing hold per machine means the first hold decides, so it ran every kernel variant, the
+    revert and a string-insert form, screened on `find` alone, and confirmed the pick with the full
+    bench: 162 s on the M4 Pro and 304 s on the i9, with the script dry-run first against a fake
+    compiler. The M4 Pro's hold ran before the last kernel edit, so its numbers are of the kernel
+    one probe longer at powers of two; the final kernel was checked on the M1 Pro instead. Freeze
+    the kernel before the first hold, or keep a variant of every edit still in flight in the screen.
+13. A byte copy of the START binary read 11% slower than START on the replayed row (5.60 against
+    5.14 ns), and `<string,string>` 1024 `find` is bimodal between 25 and 42 ns on the M4 Pro across
+    binaries that differ only elsewhere: on rows this small or this layout-sensitive an A/A copy,
+    not a second run, sets the noise. An in-place `emplace` for entries that are not byte-shifted
+    (the START form) recovered 3-5% of `<string,u64>` 32 `insert` on the M4 Pro, M1 Pro and i9 and
+    cost `<u64,string>` 1024 `insert` 19% on the i9, so it was dropped; the M4 Pro's 0.96 on that
+    row stays inside its spread.
 
 ### btree
 
@@ -1354,6 +1437,25 @@ See also [bloom-filter](#bloom-filter), item 1.
     first) so one slot measures every candidate, put the final header in place before the queued slot
     starts, and run the host's load check before a compile, not after (twice a compile ran because the
     check's exit code was printed instead of tested).
+11. **A bench row can measure something other than its name.** The gate's "chain through tv_nsec
+    only" compiled the compare with `LONG_MAX` to a branch (`cmp; je`), which is a predicted control
+    dependence, so it timed the throughput of a scalar loop, not a latency chain (0.83 on the i9). A
+    real chain through the same field (`x = p[i] + tv_nsec * 0.0`) is 11 to 13% faster than START on
+    the i9 and 33% on the M4 Pro. Read the assembly of any row that disagrees with the model before
+    believing it. Corollary: `v * 0.0` is not foldable only while the compiler cannot prove `v >= 0`;
+    with unsigned arithmetic it folded and the row ran 30 times faster on arm64.
+12. **32-bit lanes cost two sign extensions per construction.** The x86 shape that converted an array
+    packed (a 32-bit nanosecond count) added two `movslq` to every scalar construction: 15 to 18% on
+    a loop of single constructions. The 64-bit shape is at START on the scalar rows and loses the
+    array row, which the compiler can only vectorize with the 32-bit one. No shape wins both; the
+    scalar one is what a call site does, so it is the default and the packed one is selectable.
+13. **Take the seconds from the input, not from the rounded value.** `(long long)other` truncates the
+    same way as `(long long)trunc(other)` and does not wait for the rounding instruction.
+14. **A vectorized array row is not a floor to defend at any price.** On arm64 the new loop has the
+    same nine vector instructions per pair as START's and runs 8% slower; eight formulations
+    (conversion, ternary, 32-bit lanes, unsigned) all landed between 0.77 and 0.92. When the
+    correctness fix adds the borrow, measure the formulations in one hold and stop; the cost is the
+    fix ([times#1](https://github.com/Kronuz/times/issues/1)).
 
 ### scheduler
 
@@ -1411,6 +1513,16 @@ See also [bloom-filter](#bloom-filter), item 1.
    in the size class the allocator rounds to, time it with four threads as well as one, and take the
    fields that are only used by one call out of the type every caller builds before they land
    ([scheduler#2](https://github.com/Kronuz/scheduler/issues/2)).
+9. **The same row had a second cost, in a base class nobody read.** The M4 Pro's four-producer `make
+   only` row stayed 4% above the old commit at 72 bytes, and START's header with 8, 16 and 24 bytes
+   of padding confirmed the allocation size class (1.01, 0.95, 0.97 of START: 56 bytes is the 80-byte
+   class, 64 and 72 are the 96-byte one). The way to 56 bytes that the plan named (a per-thread node
+   arena) would have cost `post()` a cold cache line per call. The other 16 bytes were
+   `std::enable_shared_from_this`, which `make_shared` fills with an atomic increment of the weak
+   count on every task: dropping it took the row from 4% above START to 10 to 15% below it (M4 Pro
+   and i9), and the 56-byte task without it is 14% faster than 56 bytes with it. Probe the size with
+   padding before designing around it, and ask what each inherited base costs every object, not only
+   in bytes. It was an API removal, so the CHANGELOG, the upgrade note and the issue say so.
 
 ### stash
 
@@ -1429,6 +1541,20 @@ See also [bloom-filter](#bloom-filter), item 1.
    LLVM 12's runtime ignores the failure order (`(void)fmo`; LLVM 13 applies it). The same stress with `acq_rel` on
    success, which changes nothing for a failed CAS, gave 0 reports in 12 minutes against 13. Prove a suspected false
    positive with a variant that differs only in what the tool models.
+3. **A hint that saves hops is an ordered write on the line every producer contends; keep it off
+   short chains (no-slower round).** The claim hint cost `bench_steady`'s depth-64 p99 4% to 12%
+   (about 64 values a leaf, a few chunks). Variants in one exclusive hold, against the code before
+   the hint (M4 Pro, t=4 / t=14): no CAS on a leaf's first claim 0.920 / 0.941, a release store
+   instead of the CAS 0.919 / 0.980, the hint's 16 bytes alone 1.000 / 1.000, a relaxed store 1.000
+   / 1.022. So the cost is the ordering of the publish, not the CAS as such, the first claim, or the
+   size; on the i9 (x86, where a release store is a plain store) the release store was enough (0.988
+   / 1.009), on the M4 Pro it was not (0.940 / 0.934). A relaxed store would not order the node's
+   index for its reader. The fallback walked a leaf's first eight chunks from the head on the belief
+   that depth-64 leaves hold about 64 values; they hold about 120 (a finest slot drains whole, so a
+   value waits half a millisecond), 34.6% of inserts still used the hint, and its proof hold had it
+   at 0.898 (M4 Pro t=4) and 0.963 (i9 t=14) against START. Count the occupancy the threshold
+   depends on (a hook, one run) before choosing it, and put the fallback in the same hold as the
+   candidate ([stash#1](https://github.com/Kronuz/stash/issues/1)).
 
 ### threadpool
 
@@ -1495,6 +1621,13 @@ now 34 (Intel Core i9-9980HK: 533 / 226 / 389 / 146). One producer into 8 worker
     2026-10-31 change was measured with 1-8 workers on the bare pool; the slow row was a `TaskGroup` at
     14-16 workers, found only by the gate's full `kernel_time` run. A burst row through each layer at 4
     and at all cores (`kernel_time 5 16 burst`) belongs in the change's own A/B.
+16. **Know what a latency row measures before you chase it.** The trickle p99 is taken from the
+    moment of submit, so a pool whose submit is slow (START: a mutex and a signal per enqueue) falls
+    behind schedule, builds short backlogs that workers drain awake, and shows a better tail than a
+    pool with a cheap submit. A polling consumer halved the i9's median and kept the CPU 3.4x below
+    START but did not reach START's p99, and polling the producers' line slowed the 4 x 1 enqueue row
+    to 0.6x. One hold per machine allowed no second variant: add the delay from the due time to the
+    bench before the next attempt ([threadpool#3](https://github.com/Kronuz/threadpool/issues/3)).
 
 ### allocators
 
@@ -1552,6 +1685,49 @@ now 34 (Intel Core i9-9980HK: 533 / 226 / 389 / 146). One producer into 8 worker
    also [logger](#logger), item 20.
 11. Benchmark the non-trivial type: `vector<int>` tied `std::allocator`, `vector<std::string>` showed the bug.
 
+The one-block pool pair (the no-slower round of 2026-11-01):
+
+12. A loop that allocates and frees one block measures the longest dependency chain through memory,
+    not the allocator. START kept the free-list head in the allocator value, so a local allocator
+    held it in a register and the loop was one forwarded load of the block's link (0.83 ns on the
+    i9). Sharing the pool for correctness (copies and rebinds must see one free list) moved the head
+    to the heap, the compiler reloads it after the caller's store, and the same loop waited on two
+    chained forwards (2.04 ns, 2.6 times slower) while every refill row got 1.2 to 1.8 times faster.
+    The gate's first guess (a cached size-class pointer) was wrong; the loop's assembly and a
+    store-forwarding probe (a load and a store of one cell: 1.08 ns on the i9, 0.25 ns on an M4 Pro,
+    which renames a fixed address) settled it in one hold. Read the loop's assembly and probe the
+    core before guessing a cause.
+13. A fix that shortens the one chain (a slot for the newest freed block: i9 pair 2.04 to 1.21 ns)
+    adds work to every other path and made the refill rows of 1,000 and 100,000 blocks 26 to 31
+    percent slower on the i9, below START (0.98 and 0.94, from 1.27 and 1.19). Four variants, three
+    machines: none fixed the row without losing others, and the machines disagree (the M4 Pro hides
+    the chain and pays in instructions: 8 to 13 percent on the refills). Time every candidate against
+    the whole row set, on each machine, in the same hold; a win on the named row is not a result.
+14. A micro that is bimodal by memory placement (an M4 Pro loop runs in 0.4 or 1.15 ns from one
+    process, and one pool, to the next) cannot be gated by one pool: START itself reads 0.42 or 1.27
+    ns. Run the loop on nine pools placed differently by padding allocations and report the median,
+    next to the single-pool row; the paired ratio of the single row has a range of 0.3 to 1.8 and the
+    A/A cannot tell.
+15. A control the compiler can fold is not a control. A variant with a branch added to `deallocate`
+    whose two arms did the same ran at HEAD's speed and said nothing about branches; the split that
+    located the cost (HEAD's allocate with the new deallocate, and the reverse) needed two real
+    variants, one per function.
+16. The tracked build's size header was `alignof(std::max_align_t)` bytes, 8 on Apple arm64 where the
+    default new alignment is 16, so every block from the global `operator new` was 8 modulo 16. It
+    was in START too; nothing noticed because START's tests built no object with a new-expression,
+    and UBSan checks the constructor call, not an allocation. The pool's `make_unique` made the first
+    one and the M1 Pro ASan and UBSan run aborted. Take the alignment a replacement `operator new`
+    owes from `__STDCPP_DEFAULT_NEW_ALIGNMENT__`, and test it in the build that owns it: the same
+    check in the untracked build aborted FreeBSD, whose jemalloc hands out 8-aligned tiny blocks.
+17. Keeping the free-list head in the allocator while it is the only handle of its family (handed to
+    the family by the first copy, rebind or assignment) took the i9 pair from 2.03 to 1.00 ns, START
+    0.74, and left every other row at HEAD's; on the M4 Pro it is 1.8 times START. The rest was
+    stores: Apple clang kept two spills of the head per iteration, four stores against START's three.
+    A branch-free push written in the other order (head first, link second) stopped the compiler from
+    merging it with the pool's and made the head addressable; the first order measured 2.01 ns, no
+    better than HEAD. Look at the loop's assembly after every variant, and reorder statements before
+    restructuring ([allocators#1](https://github.com/Kronuz/allocators/issues/1)).
+
 ### fs
 
 [CHANGELOG](https://github.com/Kronuz/fs/blob/main/CHANGELOG.md)
@@ -1602,6 +1778,51 @@ now 34 (Intel Core i9-9980HK: 533 / 226 / 389 / 146). One producer into 8 worker
    `.`, where it never differed. Deviation kept on purpose and documented: a run of leading `/` is one
    root (Python keeps two). The output can be two bytes longer than the input (`""` with `slashed` is
    `"./"`), so the buffer is `n + 2`, in every copy.
+
+`normalize_path`, speed after the correctness rewrites (2026-11-01):
+
+7. (Introduced by the campaign's own fixes.) Three correctness rewrites of a hot pure function, each
+   tested for results only, left `normalize_path` 0.45x to 0.88x of START on the i9 and 0.69x to
+   0.84x on the M4 Pro (a 40-name path 502 ns to 1116 ns): each added a state variable or a per-byte
+   test, small in one commit and large in the sum, and nothing timed the function until the final
+   gate. A rewrite of a hot function needs a bench row and a comparison with START in the same
+   commit as its oracle.
+8. What recovered the time was removing state, not tuning it. The component loop that replaced the
+   flags (`8e5f3d2`) took a 40-name path from 1037 ns to 492 ns (Linux VM, START 426); copying each
+   name to the output as it is read, and keeping or dropping it at its `/`, took it to 200 ns on the
+   M4 Pro (START 293, `8934dbc` 352) and 396 ns on the i9 (START 725, `8934dbc` 576).
+9. The wrapper is part of the function. `resize(size + 2)` then shrinking zero-fills and, with
+   libstdc++, allocates for any path of 14 bytes or more (the small string is 15) for a result that
+   fits: a stack buffer and one string construction took `np_trailing_slash` from 45 ns to 20 ns on
+   the VM. Time the public overload.
+10. A change that wins on one architecture can lose on another. A do-while that copies the first
+    byte of a name without a test took `np_relative` from 0.95x to 1.06x of START on an Apple M1
+    Pro, did nothing on the M4 Pro, and made `np_long` 1.5x slower on the i9 (396 ns to 596 ns). It
+    was pushed on the M1 Pro and M4 Pro numbers and reverted after the i9 hold. A loop change needs
+    the i9 and the M4 Pro timings before it lands.
+11. Rows under 10 ns move by 5% with code layout: two wrappers that run the same instructions for a
+    7-byte path were 0.934x and 0.988x of START in one hold. Judge a candidate by the worst row of
+    one hold that holds all the candidates, and when the gap is 5% get counters (instructions,
+    store-forwarding stalls) instead of another variant. A dozen variants (four loops, five
+    wrappers, on the M1 Pro, the M4 Pro and the i9) did not move `np_relative` out of the noise on
+    the M4 Pro ([fs#1](https://github.com/Kronuz/fs/issues/1)).
+12. Two rigs, two answers at that size: the gate's micro-bench folds every result byte into an
+    FNV-1a inside the timed loop and has `np_relative` at 1.05x of START on the M4 Pro; the bare-call
+    bench has it at 0.92x. Say which rig is the acceptance, and keep the rig in the repository.
+13. A digest in a test without its generator cannot be regenerated: the script behind
+    `0xef8fe9971d37494b` was lost. `tools/normpath_oracle.py` reproduces it (and the 55-row table),
+    CTest checks the test file against Python, and dropping the one-root rule from the script moves
+    the digest to `0xdabff250adf3dd8f`.
+14. Exact-size heap blocks make the bound a test. A `std::string` result hides a 2-byte over-write in
+    its small-string buffer and allocator slack; `malloc(n + 2)` blocks make AddressSanitizer fail on
+    it, and the mutant "stack buffer two bytes short" is caught only by the sanitizer build. Ten
+    mutants of the loop, one per branch and bound, are killed by the differential test.
+15. A vendored copy's tests can anchor on its text: url-parser's `tools/mutants.py` replaces exact
+    lines and CTest `url_parser_mutants_anchors` failed CI when the loop was rewritten. Porting a loop
+    there means running `--check` and the nine normalize mutants (all killed).
+16. LeakSanitizer hung a test for 15 minutes on a shared Linux VM, where `detect_leaks=0` ran it in 9
+    s; the VM cannot build `fs.cc` (no `<format>`), so the function was extracted from it, byte for
+    byte, into the test.
 
 ### io
 
@@ -1738,6 +1959,18 @@ now 34 (Intel Core i9-9980HK: 533 / 226 / 389 / 146). One producer into 8 worker
     58 ns into a reused string, `make_shared` of the record 21.5 ns, a CAS 6.5 ns, a relaxed `fetch_add` 2 ns. A call that
     cost 476 ns was the wheel insert (announce, descent, chain walk, heap box), a counter the LOG thread also wrote, six clock reads
     and the formatting; no single piece was more than a third.
+24. A batching delay that saves a signal per item must not apply to the item that starts the batch.
+    Holding every line 1 ms so the LOG thread needs no signal made an isolated `L_INFO` take 1.5 ms
+    instead of 20 to 55 µs, and the throughput benches could not show it (only a call-to-handler
+    latency bench did, and it was the gate's, not the repository's). Batch only while items are
+    pending: a line that finds nothing pending (and whose thread is not in a burst, checked first so
+    a burst reads no shared counters) keeps its own due time and pays the one wake. Isolated lines
+    then beat START (16.8 against 21.7 µs on the M4 Pro, 42.5 against 58.5 on the i9) with every
+    throughput row within the A/A noise. Put the latency bench in the repository beside the
+    throughput ones, and pin both sides in a test: with the change reverted the isolated line waits
+    the full tick, and with the pending check removed a line logged while one is pending skips the
+    batch.
+
 ## Networking, serialization, storage
 
 ### url-parser
@@ -2240,6 +2473,36 @@ now 34 (Intel Core i9-9980HK: 533 / 226 / 389 / 146). One producer into 8 worker
     at -O2 and stalled under g++ 11's ASan+UBSan at -O1 for 15 minutes of CPU. Rewriting it with lengths
     (`rest >= 16`, `p + (rest - 16)`) removed the hang and the undefined behavior in one edit; the hang
     was found only because the sanitizer build ran under a hold with a time limit.
+18. Adding code to a function can slow its callers. The tail copies (item 15) made the XXH32 update
+    too large for clang to inline on x86, and 16 B went from 7.3 ns to 15-17 on the i9: a fresh
+    state's lanes were immediates in the inlined code and became loads through memory behind a call.
+    The A/B of the x86 target caught it (the reasoning "x86 is unchanged" had not been checked), and
+    the assembly of the bench loop (cross-compiled for x86-64 on the M1 Pro: calls to the update, 2
+    then 0) showed the cause in minutes. A change that is "for one architecture" is diffed on the
+    other too; `always_inline` on the update brought it back (6.4 ns). The gate's old bench, compiled
+    by hand and not through CMake, still showed 10-25% on the longer one-update rows with the same hot
+    loops (no spills in the assembly; the cause was not isolated), while the bench the repository
+    builds showed none: a gate row is read in the binary the repository builds.
+19. START's short-hash speed was the compiler's per-call-site choice: with the lanes unpinned, clang 17
+    packed them into one NEON vector where the hashes were independent (10.9 ns for 256 B) and kept
+    them scalar where the digest was used at once (25 ns). Hand-written kernels lost one of the two:
+    the explicit NEON one the chained row (38 ns), a plain loop in an out-of-line function both (49
+    ns: compiled without the caller's context, it is vectorized and its result goes through memory).
+    What kept every row at or above START was START's exact update, `always_inline`, for updates
+    under 1 KiB, and the pinned scalar kernel above. The M1 Pro could not stand in for it: its clang
+    21 compiled START scalar everywhere, so only the M4 Pro's clang 17 reproduced START's rows, and
+    the AArch64 assembly of the cleaned header was diffed against the measured variant (0 lines)
+    instead of timing it again.
+20. g++ 11.2's ASan+UBSan binaries on a Linux x86-64 VM crash at start-up in about a quarter of the
+    runs, whatever the program: `int main(){}` failed 7 of 30, the `5203edb` test 5 of 12, the final
+    one 4 of 5. ASan's own SEGV handler then faults in the dynamic linker (`do_lookup_x` under
+    `AsanOnDeadlySignal`) and spins, 4 of 5 minutes in the kernel, which looks like a hang. With ASLR
+    off (`setarch x86_64 -R`) both XXH32 tests pass at -O1 in under a second. This is the known
+    libasan and high `mmap_rnd_bits` collision, not the header. Try a "hang" under a sanitizer on an
+    empty `main` and with `setarch -R` before rewriting anything; item 17's 15 CPU-minute hang had the
+    same signature (kernel time, a handler storm) and was probably this, so the rewrite it describes
+    is a cleanup, not the proven cause. clang 12's ThreadSanitizer on the same kernel aborts with
+    "unexpected memory mapping" unless run under `setarch x86_64 -R` too.
 
 ### storage
 
@@ -3009,6 +3272,41 @@ The prototype is on branch `perf/build` and stopped at the scope freeze with not
    one-letter mutation that lands on the same letter in the other case is a member, not a false accept
    (2 of 251 probes). The bench now skips those and fails on any other accepted probe (`--check`, CTest,
    no timing).
+7. The check cost twice START's time because of where it sat, not what it compared. A comparison
+   written in each `case` of a 14 to 128 way switch is one block of code per member behind a jump
+   table, an indirect branch per lookup that the shuffled bench mispredicts; the 128-member hit went
+   from 3.9 to 8.0 ns on the M4 Pro. One table row per hash slot (value, length, the name as words)
+   and one comparison for every member put it back: START / now 0.94 to 1.35 on the M4 Pro and 1.01
+   to 1.28 on the i9 (it was 0.48 to 0.77 and 0.50 to 0.79). Look at what a check does to the code
+   around it before tuning the check.
+8. Read the input once and use the words twice. The hash read the last n % 8 bytes one at a time
+   through a table and was a third of a lookup; reading a name with two overlapping wide loads (or
+   three bytes, or two halves) and lower-casing the words once gives the same hash, and the
+   verification compares the words it already has. For names of up to 16 bytes the check is then
+   free; it costs ALU only for the words.
+9. On arm64 the busy part of this lookup is the integer pipes, not the latency: moving the
+   lower-casing of two words into a vector register and of a 1 to 3 byte name into table loads
+   bought 5% to 10% on the M4 Pro and lost 8% on one i9 row, so the table form is arm64 only. Count
+   the work per pipe before shaving instructions, and keep both forms under test.
+10. A branch on "does this slot belong to a member" is unpredictable on a stream of misses (the
+    perfect hash fills 80% of its slots): it cost 1.5 to 2 ns on the miss rows. A last table entry
+    that matches nothing (its first word is eight capitals, which a lower-cased input never has)
+    removes the branch.
+11. Compile time halved with no effort: the old `case enum_find<E>(names[i])` evaluated the whole
+    perfect-hash build for every member, and a table built once does not. A 300-member enum took
+    183 s to 50 s on clang 12.
+12. A timing script that builds with the wrong compiler measures the wrong thing: two rounds of "M4
+    Pro" numbers were Rosetta, from a universal `clang++` that ran as x86_64 under an x86 `python3`.
+    Put `file` of every benchmark binary in the timing output, and set the compiler and `-arch` in
+    the script ([Measurement method](#the-gate-and-the-comparators), item 4).
+13. Time variants against each other in one process on a noisy shared machine: a harness that links
+    every variant into one binary and times short blocks of each in rotation, keeping the minimum per
+    row, gave ratios that repeated within 2% where an A/A between runs varied by 70%.
+14. To test a verification, make the inputs land on the entry instead of forging a hash: a one-member
+    perfect hash built over the input's own hash sends any pair (member, input) to the comparison,
+    so runs of one letter, every byte value and every length are reached. The mutation harness
+    showed "length check removed" survived three of four tests until a test had inputs whose words
+    equal a member's at another length.
 
 ### unicode
 
@@ -3128,7 +3426,8 @@ commit before the campaign's first change in a repository, and its default branc
    mutex, fmt under a mutex, and one write plus one flush beat the scheduler, the logger and the journal
    on rows their own benches never ran.
 4. On Apple Silicon with Intel Homebrew installed, `/usr/local/bin/cmake` is x86_64 and builds x86_64
-   binaries that run under Rosetta. Check `file` on every benchmark binary before timing.
+   binaries that run under Rosetta; so does a `c++` driven by an x86_64 `python3`. Two rounds of
+   enum-reflection numbers were Rosetta. Check `file` on every benchmark binary before timing.
 5. Pick crossovers from the end-to-end bench, not an isolated micro: docset's extraction limit came from
    a micro's 39-43 member crossover, while end to end the plain loop won up to 80-160. Both need inputs
    a predictor cannot memorize: with 24 inputs instead of 4 the end-to-end crossover fell to about 55
@@ -3188,6 +3487,19 @@ commit before the campaign's first change in a repository, and its default branc
    Clang and a slower local clone passed. Strip the pragma from the fetched copies.
 6. The old side of a benchmark has to be the whole old header, not the differential test's frozen
    subset: `test/old/times_old.h` has no `now()` or comparisons, two of the table's rows.
+7. Give every queued background job a unique name and check that its log exists before waiting on it:
+   a job started under a name another session had used returned "already running", and nothing ran
+   for 40 minutes while the wait looked healthy.
+8. `gh auth switch` changes the account for every process on the machine: another session's switch
+   broke a push mid-run. A per-command `GH_TOKEN=$(gh auth token --user ...)` does not.
+9. Build a batch of tests with `-k 0` so one compile error does not cost the others their turn: the
+   first run of a new http test file had a wrong namespace and still produced the 11 other results.
+10. A remote terminal is not a file transfer. A command line past the terminal's line length (450 to
+    about 1,000 characters) arrives truncated or corrupted, so ship scripts through a branch or a file
+    push and check the byte count; a session to a machine that went away still looks open and hangs a
+    command without an error, so check it before relying on one left open for hours; and a full `/tmp`
+    on a shared VM breaks shell here-documents, so point `TMPDIR` at the home directory for CMake and
+    the compiler.
 
 ## Delivery
 
@@ -3248,7 +3560,8 @@ What it takes for a fix to reach the code that runs, and the process mistakes th
     machines; batch each workstream's builds, tests, mutants and assembly counts into one script per
     machine; keep each hold to minutes with only the timed command inside it; and time every
     instruction set a change touches while its machine is reachable (bitpack's SSE2 width-32 `memcpy`
-    stayed out of `main` for lack of an x86 number: [bitpack](#bitpack) item 10).
+    stayed out of `main` for lack of an x86 number: [bitpack](#bitpack) item 10). A binary swapped under a
+    queued hold (the hold runs whatever file is there when it starts) saves a cycle.
 11. **A pin moves with the API it needs, and a consumer that pins both aligns them.** base-x pins uinteger_t by
     commit, while its CMake comment and AGENTS.md said it tracked `master`, so the first base-x push that used a new
     uinteger_t API went red until the pin moved. Bump base-x's pin in the series that starts using a uinteger_t API.
