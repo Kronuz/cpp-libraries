@@ -1547,13 +1547,13 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/reactor](https://github.com/Kronuz/reactor) &middot; depends on: none
 - **What it is:** A header-only standalone Asio runtime that accepts TCP connections, distributes them across reactor threads, and shuts them down cleanly.
 - **Header / target:** `#include "reactor.h"`, and optionally `#include "reactor_udp.h"` and `#include "reactor_tls.h"`; CMake targets `reactor::reactor` and, when OpenSSL 3 is found, `reactor::tls`; C++20; requires standalone Asio.
-- **How it works:** `TcpServer` runs shared-nothing Asio `io_context` reactors, normally one per core, and invokes a coroutine `Session` for each accepted socket. Linux uses `SO_REUSEPORT`; macOS and BSD use a shared acceptor fallback. Each reactor has an offload thread pool and bounded `gate()`, while tracked `Abortable` operations are cancelled before reactor shutdown. `UdpServer` provides one receive loop, multicast options, and an exposed `io()` for timers and protocol state. Escaped posted/timer callback failures are reported through `L_EXC` without ending its owner loop or reviving an explicit stop; repeating timers rearm before propagating a callback failure.
+- **How it works:** `TcpServer` runs shared-nothing Asio `io_context` reactors, normally one per core, and invokes a coroutine `Session` for each accepted socket. Linux uses `SO_REUSEPORT`; macOS and BSD use a shared acceptor fallback. Nothing runs off a reactor's loop: there is no worker pool, and each reactor's `AdmissionGate` (`gate()`) caps the requests in flight. `stop()` aborts every tracked `Abortable`, waits up to a grace (5 s by default), then forces what a stalled peer still holds. `UdpServer` provides one receive loop, multicast options, and an exposed `io()` for timers and protocol state. Escaped posted/timer callback failures are reported through `L_EXC` without ending its owner loop or reviving an explicit stop; repeating timers rearm before propagating a callback failure.
 - **Key API:**
-  - `reactor::TcpServer(reactors, workers, queue, Session)`
+  - `reactor::TcpServer(reactors, admission_limit, Session)` (`admission_limit` requests in flight per reactor, 0 for no cap)
   - `void TcpServer::start(port)`
   - `void TcpServer::stop()`
   - `asio::awaitable<void> Session(asio::ip::tcp::socket, reactor::Reactor&)`
-  - `Reactor::pool()`, `Reactor::gate()`, `Reactor::track(Abortable&)`
+  - `Reactor::gate()` (an `AdmissionGate`: `enter()` returns a move-only `Lease`), `Reactor::track(Abortable&)`, `untrack(Abortable&)`
   - `reactor::UdpServer(Datagram)`, `set_options(UdpOptions)`, `start(port)`, `send(bytes)`
   - `reactor::tls::configure(context, Options, Role::{Peer, Server, Client})`: TLS 1.2+, no renegotiation or 0-RTT, certificates and verification per role; `reactor::tls::bind_hostname(ssl, name)` for clients
 - **Example:**
@@ -1564,14 +1564,14 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
       auto n = co_await s.async_read_some(asio::buffer(buf), asio::use_awaitable);
       co_await asio::async_write(s, asio::buffer(buf, n), asio::use_awaitable);
   }
-  int main() { reactor::TcpServer s(4, 2, 256, echo); s.start(8080); }
+  int main() { reactor::TcpServer s(4, 256, echo); s.start(8080); /* ... */ s.stop(); }
   ```
 - **Use it when:**
   - Building a custom TCP protocol or coroutine-based network service.
-  - You need per-core reactors, bounded blocking work, or graceful cancellation.
+  - You need per-core reactors, admission control, or graceful cancellation.
 - **Do not use it when / gotchas:**
   - It does not parse HTTP or provide application framing.
-  - Sessions must cooperate with cancellation and must offload blocking work.
+  - Sessions must cooperate with cancellation, and blocking work runs on the host's own pool: nothing runs off the loop, and a blocked loop stalls every connection on it.
   - Loop timers live on the owning loop: `reactor::PeriodicTimer` (`reactor_events.h`: `start`, `again`, `stop`, `set_repeat`) over `steady_timer`. Use them, not `scheduler`, for per-connection and protocol timers.
 
 ### server
@@ -1608,16 +1608,16 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/http](https://github.com/Kronuz/http) &middot; depends on: `compressors`, `http-parser`, `radix-router`, `reactor`
 - **What it is:** A C++20 coroutine HTTP/1.1 framework that turns parsed requests into `HttpHandler` calls and writes buffered or streamed responses.
 - **Header / target:** `#include "http_handler.h"`, `#include "http_message.h"`, `#include "http_router.h"`, and `#include "http_asio.h"`; target `http::http`; C++20; requires standalone Asio.
-- **How it works:** `HttpAsioService` adapts a `reactor::TcpServer` session to HTTP. `RequestParser` wraps the callback-driven zero-copy parser and either buffers the body or sends chunks to a `BodySink`. `HttpHandler` receives a value-like `Request`, and `ResponseWriter` supports fixed `Content-Length` responses or chunked streaming, with optional offload to a bounded Asio thread pool. Router dispatch, content negotiation, compression, ETags, and single-range responses are separate helpers.
+- **How it works:** `HttpAsioService` adapts a `reactor::TcpServer` session to HTTP. `RequestParser` wraps the callback-driven zero-copy parser and either buffers the body or sends chunks to a `BodySink`. `HttpHandler::handle` is a coroutine awaited on the connection's loop; it gets the `Request` and a `ResponseWriter` that supports fixed `Content-Length` responses or chunked streaming. A request is admitted at the end of its headers through reactor's `AdmissionGate` (503 with `Retry-After: 1` when refused), a buffered body is capped (16 MiB by default, 413), and a hang-up or shutdown cancels the request (`Request::cancelled()`, `on_cancel`) without destroying the handler's frame. Router dispatch, content negotiation, compression, ETags, and single-range responses are separate helpers.
 - **Key API:**
-  - `struct HttpHandler { virtual void handle(const Request&, ResponseWriter&) = 0; }`
+  - `struct HttpHandler { virtual asio::awaitable<void> handle(Request&, ResponseWriter&) = 0; }`, plus `on_request_body()` (a `BodySink`) or `wants_body_stream()` (a `BodyStream` read with `co_await`)
   - `class ResponseWriter`: `send(status, body)`, `status(code)`, `set_header(name, value)`, `write(chunk)`, `end()`
   - `BufferedResponse::response_ended()` reports successful `end()` in Asio; existing custom writers default to their started approximation. The virtual-interface addition requires a complete consumer rebuild.
   - `class BodySink`
   - `class Router`
   - `class RequestParser`
-  - `class HttpAsioService`
-  - `bool HttpHandler::should_offload(const Request&) const`
+  - `HttpAsioService(handler, reactors, in_flight_limit)`, `start(port)`, `stop()`
+  - `Request::trailers`: a chunked request's trailer fields; `header()` reads the header section only
 - **Example:**
   ```cpp
   #include "http_asio.h"
@@ -1627,16 +1627,19 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
       http::Router router_;
   public:
       App() {
-          router_.route("GET", "/", [](const http::Request&, http::ResponseWriter& r,
-                                       const http::Params&) { r.send(200, "hello\n"); });
+          router_.route("GET", "/", [](http::Request&, http::ResponseWriter& r,
+                                       const http::Params&) -> asio::awaitable<void> {
+              r.send(200, "hello\n");
+              co_return;
+          });
       }
-      void handle(const http::Request& q, http::ResponseWriter& r) override {
-          router_.handle(q, r);
+      asio::awaitable<void> handle(http::Request& q, http::ResponseWriter& r) override {
+          co_await router_.handle(q, r);
       }
   };
 
   App app;
-  http::HttpAsioService service(app, 4, 2, 256);
+  http::HttpAsioService service(app, /*reactors=*/4, /*in_flight_limit=*/256);
   service.start(8080);
   ```
 - **Use it when:**
@@ -1644,7 +1647,8 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Responses need streaming bodies, transparent compression, or request-body streaming.
 - **Do not use it when / gotchas:**
   - `ResponseWriter::end()` completes the response; returning from `handle()` does not.
-  - A handler that buffers the request body can consume unbounded application-sized input; use `BodySink` for large uploads.
+  - A buffered request body is capped at 16 MiB by default; use `BodySink` or `BodyStream` for large uploads.
+  - A `CONNECT` is answered and the connection closed, and so is an HTTP/1.0 request with `Transfer-Encoding`.
 
 ### http-parser
 [github.com/Kronuz/http-parser](https://github.com/Kronuz/http-parser) &middot; depends on: `enum-reflection`
@@ -1695,7 +1699,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
   App app;                       // your http::HttpHandler
   http_log::AccessLog logged(app);
-  http::HttpAsioService service(logged, 4, 2, 256);
+  http::HttpAsioService service(logged, /*reactors=*/4, /*in_flight_limit=*/256);
   service.start(8080);
   ```
 - **Use it when:**
@@ -2092,7 +2096,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 [github.com/Kronuz/prism](https://github.com/Kronuz/prism) &middot; depends on: `http`, `http-log`, `logger`, `traceback`
 - **What it is:** A C++20 HTTP application server that composes reactor, HTTP parsing/routing, compression, access logging, and error handling into a runnable service.
 - **Header / target:** Prism is primarily an executable worked example rather than a reusable public-header target; inspect `src/main.cc` and the CMake target `prism`; C++20; dependencies are fetched through CMake, including standalone Asio, `reactor`, `http`, `http-parser`, `radix-router`, `compressors`, `logger`, `term-color`, and `traceback`.
-- **How it works:** Prism builds a plain `http::Router` of views on top of `HttpAsioService`. Reactor owns the per-core Asio loops and off-reactor worker pool; HTTP owns parser integration, request/response framing, negotiation, conditional requests, ranges, and compression. Access logging wraps the handler, captures response metadata and bounded bodies, and converts uncaught handler failures into logged 500 responses with optional tracebacks. The demo routes show content negotiation, echoing, JSON logging, image previews, and compression.
+- **How it works:** Prism builds a plain `http::Router` of views on top of `HttpAsioService`. Reactor owns the per-core Asio loops and admission; HTTP owns parser integration, request/response framing, negotiation, conditional requests, ranges, and compression. Access logging wraps the handler, captures response metadata and bounded bodies, and converts uncaught handler failures into logged 500 responses with optional tracebacks. The demo routes show content negotiation, echoing, JSON logging, image previews, and compression.
 - **Key API:**
   - `http::Router`
   - `http::HttpHandler`
@@ -2104,7 +2108,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   // prism wires router + access log + compression + traceback together.
   // See the repo's own main() for the assembled form; the shape is the
   // http::HttpHandler subclass shown under `http`, plus:
-  http::HttpAsioService service(logged, 4, 2, 256);
+  http::HttpAsioService service(logged, /*reactors=*/4, /*in_flight_limit=*/256);
   service.enable_compression();
   service.start(8880);
   ```
@@ -2656,8 +2660,8 @@ The shortest path from nothing to a running HTTP service, and what each layer ow
 
 The minimum viable service. Note the real shape: your application subclasses
 `http::HttpHandler`, owns a `Router`, and registers routes with
-`route(method, path, handler)` where the handler takes three arguments including
-`http::Params` for the named path parameters.
+`route(method, path, handler)` where the handler is a coroutine that takes three arguments
+including `http::Params` for the named path parameters.
 
 ```cpp
 #include "http_asio.h"
@@ -2668,22 +2672,23 @@ class App : public http::HttpHandler {
 public:
     App() {
         router_.route("GET", "/kv/:key",
-            [](const http::Request&, http::ResponseWriter& resp, const http::Params& p) {
+            [](http::Request&, http::ResponseWriter& resp, const http::Params& p) -> asio::awaitable<void> {
                 resp.send(200, std::string(p.get("key")));
+                co_return;
             });
     }
-    void handle(const http::Request& req, http::ResponseWriter& resp) override {
-        router_.handle(req, resp);
+    asio::awaitable<void> handle(http::Request& req, http::ResponseWriter& resp) override {
+        co_await router_.handle(req, resp);
     }
 };
 
 App app;
-http::HttpAsioService service(app, /*reactors=*/4, /*workers=*/2, /*queue_limit=*/256);
+http::HttpAsioService service(app, /*reactors=*/4, /*in_flight_limit=*/256);
 service.start(8080);
 ```
 
-Override `on_request_body` on your handler to stream a request body instead of buffering
-it. See [`examples/kv_store.cc`](https://github.com/Kronuz/http/blob/main/examples/kv_store.cc)
+Override `on_request_body` (a `BodySink`) or `wants_body_stream` (a `BodyStream` read with
+`co_await`) on your handler to stream a request body instead of buffering it. See [`examples/kv_store.cc`](https://github.com/Kronuz/http/blob/main/examples/kv_store.cc)
 for the complete version.
 
 Wrap the router in `http_log::AccessLog` to get request logging, add `traceback` for crash

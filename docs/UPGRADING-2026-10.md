@@ -906,7 +906,7 @@ threadpool and unicode.
 
 Three grow a type, so every translation unit of a program needs one revision: a stash leaf is 16
 bytes larger and each chain node 8 (`stash:78a18f3`), scheduler's `ScheduledTask` grows from 48 to
-96 bytes with `post()`, and threadpool's `TaskWrapper<std::function<void()>>` holds a `SmallTask`
+96 bytes with `post()` and is 72 from `eb2483b`, and threadpool's `TaskWrapper<std::function<void()>>` holds a `SmallTask`
 with 48 bytes of inline storage instead of a `std::function` (`threadpool:12f1516`). metrics' `AtomicCounter` is
 start's compare-exchange loop again, and `ContendedCounter` is a new type. bloom-filter keeps
 `BloomFilter<N>` bit for bit; `FastBloomFilter<N>` and `BlockedBloomFilter<N>` are new and set
