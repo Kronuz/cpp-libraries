@@ -12,7 +12,7 @@
   `cmake/dependencies.json`, and the cited call sites).
 - Checked against `AGENTS.md` at `d181ffe` (rule 1 and the catalog), strata's system review
   (SYS-2, SYS-8, SYS-12, SYS-13), and threadpool's `docs/research/scheduler.md`.
-- Probes (kept at `~/.scratch/consolidation/probes/`): `hash_rates` (Kronuz/sha256 against OpenSSL 3
+- Probes (not kept in the repository): `hash_rates` (Kronuz/sha256 against OpenSSL 3
   EVP; journal's CRC-32C against `hashes::crc32c`; 64 MiB, best of 3, digests compared; run at
   `nice -n 19` under a light hold, so absolute rates are indicative), `owner_locks` (whether the two
   owner locks exclude each other), `mk_opts` (whether `make_posix_io` accepts `PosixIOOptions`),
