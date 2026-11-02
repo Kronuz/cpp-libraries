@@ -123,7 +123,7 @@ results" means a frozen-copy differential test holds every output to start's.
 | [hashes](#hashes) | `de5b3ac` | `a050f6b` | Same values; `crc32c.hh` gone since `aba7865` (2026-10-20) | unchanged | bloom-filter, enum-reflection, msgpack, strata, Detent |
 | [htm](#htm) | `a0321ab` | `1e041ef` | Ids of points near a cell edge on fusing builds | gate 1.00 / 1.06; `getId` 591 ns against 914 (M4 Pro) | Xapiand |
 | [http](#http) | `c23bb99` | `df661f7` | **Code change:** coroutine handlers; trailers; `CONNECT`; the disconnect watch | gate parser 1.25 / 1.33; i9 end to end 1.08 / 0.99 at 8 / 64 connections | http-log, prism, Detent |
-| [http-log](#http-log) | `6ee47af` | `1c856fd` | **Code change:** `AccessLog::handle` is a coroutine | not measured | prism, Detent |
+| [http-log](#http-log) | `6ee47af` | `8a38bb0` | **Code change:** `AccessLog::handle` is a coroutine | not measured | prism, Detent |
 | [http-parser](#http-parser) | `52a30d0` | `145c905` | Rejects request smuggling unless lenient; two new error numbers | gate 1.78 / 2.17 | http, Detent |
 | [io](#io) | `3893d47` | `89d6b0f` | `pread` reads to the full count | gate 0.94 / 0.96 (the extra `pread` at end of file) | fs, pki, system, Xapiand |
 | [iterators](#iterators) | `55cd86b` | `c71360c` | Same types; no `std::iterator` base | unchanged | none |
@@ -140,7 +140,7 @@ results" means a frozen-copy differential test holds every output to start's.
 | nanosleep | `c894531` | `974680b` | Docs only | unchanged | time-point, traceback |
 | persistent-map | `938d65e` | `d7acbb5` | Docs only | unchanged | none |
 | pki | `cce99b0` | `c662da1` | Same results (io and char-classify pins) | unchanged | none |
-| prism | `17ce07e` | `bcc9860` | The application: coroutine handlers and its libraries' changes | not measured | none |
+| prism | `17ce07e` | `da169a9` | The application: coroutine handlers and its libraries' changes | not measured | none |
 | prospect | | `ec34afb` | The owner's active work: its formats change between phases; it has no CHANGELOG, so read its [docs/STATUS.md](https://github.com/Kronuz/prospect/blob/main/docs/STATUS.md) | | |
 | queryparser | `8a9798f` | `f554cd3` | Same results (analysis pin) | unchanged | none |
 | [queue](#queue) | `7df74b2` | `4fa1eb1` | Who a pop or `clear()` wakes; `count()` after move assignment | gate 3.67 / 4.45 | server, Xapiand |
@@ -171,7 +171,7 @@ results" means a frozen-copy differential test holds every output to start's.
 | [time-point](#time-point) | `2f1f7f9` | `fec2589` | Instants before the epoch on clocks finer than a nanosecond; coarse clocks build | gate 1.00 / 0.99 | none |
 | [times](#times) | `666dfdd` | `0403e5c` | Seconds past `int`; fractions on x86; negative values folded | gate 1.17 / 1.06 | none |
 | [traceback](#traceback) | `099d795` | `6846ee3` | `dump_callstacks` prints a blank line after each thread header | not measured | prism |
-| [uinteger_t](#uinteger_t) | `85316dd` | `f3203ab` | Digits outside the base throw; base-256 leading zero bytes; `x *= 1` after a right shift; `sizeof` 88 and its own container | decimal `str()` 43 to 530x and parsing 57 to 121x start (M1 Pro) | base-x, Xapiand |
+| [uinteger_t](#uinteger_t) | `85316dd` | `9cf3b41` | Digits outside the base throw; base-256 leading zero bytes; `x *= 1` after a right shift; `sizeof` 88 and its own container | decimal `str()` 43 to 530x and parsing 57 to 121x start (M1 Pro) | base-x, Xapiand |
 | unicode | `d80b6bb` | `297413c` | Same tables and decoding | gate 1.31 / 1.22 | analysis, prospect |
 | [url-parser](#url-parser) | `4424e25` | `e528e77` | `normalize_path` and `PathParser` on empty, `.` and `..` paths | gate 7.99 / 7.75 | Xapiand |
 | utype | `6e2c2a8` | `b2cac7a` | Docs only | unchanged | none |
