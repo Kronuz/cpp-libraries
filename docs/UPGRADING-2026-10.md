@@ -130,7 +130,7 @@ results" means a frozen-copy differential test holds every output to start's.
 | [journal](#journal) | `d564dfe` | `df25694` | Its completion pin moves; fetches allocators and crc32c | not measured | consensus, Detent |
 | lazy | `78a8281` | `b7d840a` | Docs only | unchanged | none |
 | located-exception | `4dcb2b4` | `9cce2c7` | Docs only | unchanged | msgpack |
-| [logger](#logger) | `ce27b90` | `a82454b` | Write delay of a burst; timestamps; order across threads | gate 2.88 / 2.45; producer `L_INFO` 225 ns against 715 (i9) | http-log, prism, Detent |
+| [logger](#logger) | `ce27b90` | `765528e` | Write delay of a burst; timestamps; order across threads (two threads' lines within one 41.67 ns stamp tick come out in either order); `clear()` on a routine line returns false | producer `L_INFO` 10x faster than START on the M4 Pro (254 to 22.7 ns) and 7-11x on the i9; 23x faster with 4 producers back to back (M4 Pro) | http-log, prism, Detent |
 | lru-cache | `7dd23eb` | `df0ebc8` | Docs and bench only | gate 0.97 / 1.14 (placement) | Detent |
 | [math](#math) | `2730483` | `e125467` | 8- and 16-bit overflow; `modulus` of the lowest value and of zero; `min<double>` | gate 0.99 / 0.99 (the zero-modulus guard) | Xapiand |
 | md5 | `fbb8ff0` | `3c7fe15` | Same output | gate 1.13 / 1.16 | none |
@@ -663,7 +663,7 @@ Start `d564dfe`, head `df25694`. Its pins move.
 
 ### logger
 
-Start `ce27b90`, changes `dc1fe62`, `c7332d6`, `bb2d16c`; head `a82454b`.
+Start `ce27b90`, changes `dc1fe62`, `c7332d6`, `bb2d16c`, `21e9642`; head `765528e`.
 [CHANGELOG](https://github.com/Kronuz/logger/blob/main/CHANGELOG.md)
 
 - **Changes:** a line that finds nothing pending is written at once (`bb2d16c`); a burst of routine,
@@ -671,14 +671,20 @@ Start `ce27b90`, changes `dc1fe62`, `c7332d6`, `bb2d16c`; head `a82454b`.
   inside that millisecond loses them. Timestamps come from the steady clock with a wall offset
   measured every 20 ms (within 2 µs of `system_clock`). Lines are ordered per thread; across threads a
   line may wait behind one due microseconds later. When the LOG thread cannot file a line it runs it
-  if due and drops it otherwise. Every other byte written is identical.
+  if due and drops it otherwise. Each logging thread formats its lines into its own queue, and the
+  LOG thread merges the queues in call order: two threads' lines stamped within one tick of the stamp
+  clock (41.67 ns on Apple silicon) come out in either order, and `clear()` on a routine line returns
+  false, as it does for a line already written (`21e9642`). Every other byte written is identical.
 - **Build and API:** logger needs a scheduler with `post()` (`5ad60fc` or later): a consumer that
-  declares scheduler itself pins it there or later. cppcodec is pinned at `8019b8b`.
+  declares scheduler itself pins it there or later. cppcodec is pinned at `8019b8b`. The handle of a
+  routine line keeps its stamp and call site, so `unlog()` still writes the swap after the line.
 - **Detect:** log readers that rely on nanosecond timestamps or on sub-millisecond order across
   threads, and the last lines before a crash.
-- **What you get:** gate 2.88 / 2.45; a producer's `L_INFO` costs 225 ns against 715 on the i9, and an
-  isolated line reaches the handler in 16.8 µs (M4 Pro) and 42.5 µs (i9) against start's 21.7 and
-  58.5.
+- **What you get:** a producer's `L_INFO` costs 22.7 ns against start's 254 on the M4 Pro and 59 against
+  636 on the i9 (bursts, one producer), 6.1 ns against 182 with four producers back to back (M4 Pro),
+  less than fmt + `std::mutex` everywhere except one i9 producer back to back (83 against 62,
+  [logger#1](https://github.com/Kronuz/logger/issues/1)); an isolated line reaches the handler in
+  16.8 µs (M4 Pro) and 42.5 µs (i9) against start's 21.7 and 58.5.
 
 ### math
 
