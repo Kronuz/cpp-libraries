@@ -87,7 +87,7 @@ results" means a frozen-copy differential test holds every output to start's.
 
 | Library | Start | Head | What changes | What you get | Consumers |
 |---|---|---|---|---|---|
-| [allocators](#allocators) | `e8fb173` | `6eb7fb2` | Pool sharing, equality, propagation; `construct` moves; tracked blocks 16-byte aligned; layout | gate 1.30 / 1.20; one-block pool pair 0.66 ns against 1.16 (M4 Pro) | completion, journal |
+| [allocators](#allocators) | `e8fb173` | `b01d3d7` | Pool sharing, equality, propagation; `construct` moves; tracked blocks 16-byte aligned; layout | gate 1.30 / 1.20; one-block pool pair 0.66 ns against 1.16 (M4 Pro) | completion, journal |
 | analysis | `991ff33` | `158c81b` | Same results (unicode and snowball pins move) | 1.8 to 2.7x Xapian's `TermGenerator` (README) | prospect, queryparser |
 | atomic-shared-ptr | `9a2582e` | `9af0aa7` | Docs only | unchanged | msgpack, Detent |
 | [base-x](#base-x) | `54a9326` | `14d086c` | RFC 4648 text and decoding; Bitcoin and Ripple leading zeros; all-zero bytes; stricter `decode` and `is_valid` | 32-byte base58 encode 49.7 ns, decode 52.1 (M4 Pro), over 10x start | Xapiand |
@@ -118,7 +118,7 @@ results" means a frozen-copy differential test holds every output to start's.
 | [flume](#flume) | `7184cb4` | `defd5a1` | `Receiver(sink, max_block)`; big-endian XXH32 footer through compressors | gate 1.00 / 1.01 | none |
 | [fs](#fs) | `ce16118` | `aa06315` | `copy_file` truncates, refuses the same file, reports short writes; empty paths; `normalize_path` is `os.path.normpath` | `normalize_path` 1.25 / 1.66 geomean (the gate's 0.84 / 0.76 was before the one-pass loop) | Xapiand |
 | fst | `12657aa` | `7338f56` | Same bytes | gate 2.13 / 2.14 | strata, termdict |
-| fusefilter | `a42bd15` | `77ab0a7` | Docs and bench only | unchanged | strata |
+| fusefilter | `a42bd15` | `9ae6df6` | Docs and bench only | unchanged | strata |
 | [generation-cache](#generation-cache) | `00762bd` | `38a2d39` | Exception paths; writers no longer starve; layout | gate 3.22 / 4.35 | Detent |
 | [hashes](#hashes) | `de5b3ac` | `a050f6b` | Same values; `crc32c.hh` gone since `aba7865` (2026-10-20) | unchanged | bloom-filter, enum-reflection, msgpack, strata, Detent |
 | [htm](#htm) | `a0321ab` | `1e041ef` | Ids of points near a cell edge on fusing builds | gate 1.00 / 1.06; `getId` 591 ns against 914 (M4 Pro) | Xapiand |
