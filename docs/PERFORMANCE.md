@@ -256,6 +256,52 @@ turns them into an exit status. A consumer keeps whatever its pin predates: the 
 [UPGRADING-2026-10.md](UPGRADING-2026-10.md) reach it when the pin moves, in waves, each green
 before the next.
 
+### The start-versus-head gate
+
+A gate closes a round of work by asking one question of every library it touched: is head at
+least as fast as the start on every row? [gate-2026-11-01.md](reviews/gate-2026-11-01.md) is the
+worked example: 51 libraries on two machines, with one report per library.
+
+1. **START is per repository:** the commit before the work's first change in it, on its default
+   branch (for the October work, `git log --before=2026-10-30T00:00 -1 origin/<default>`). HEAD
+   is the default branch at the gate.
+2. **One bench, two builds.** HEAD's bench sources are built twice, against START's library
+   sources and against HEAD's, with the same compiler and flags. A row that needs an API START
+   lacks is dropped and listed. A frozen copy of the old code already in the repository (an
+   old-against-new column) is used only when a diff shows it is START's code.
+3. **One exclusive hold per machine, with the build inside it.** The Apple M4 Pro and the Intel
+   Core i9-9980HK each get one hold of ten minutes or less that builds, runs a short test and
+   times. Every run interleaves START and HEAD with an A/A (START against START), at least three
+   rounds, through `tools/ab_compare.py`.
+4. **A slower row is outside the noise and reproduced:** START/HEAD below 0.97, outside the row's
+   A/A spread, and confirmed by a second build or run. The report gives each machine's geomean,
+   every slower row and its cause.
+5. **Each slower row gets one class.** *Fixed*: a commit, with START, before and after on both
+   machines. *Correctness cost*: the row does work START skipped because START was wrong.
+   *Code placement*: the same machine code, or the same instructions at another alignment; an
+   A/A copy of START's binary moves as much. *Kept trade*: the owner keeps the cost for a gain
+   elsewhere, and an issue holds the numbers.
+6. **The rule: a slower row is fixed or its path goes back to START's code, unless the cost buys
+   correctness.** Fixed means at least as fast as START on both machines, no other row of the
+   repository's bench more than 3% slower than HEAD, the tests passing, a test that fails with
+   the fix reverted, and one mutant of the new code caught. A fix that misses the bar by the
+   deadline is replaced by START's code on that path (keeping any correctness fix) and an issue
+   with what was learned.
+
+**Hosts.** macOS cannot set cores aside for a job, so an exclusive hold stops the whole machine
+and queues behind every other hold, and light work waits while any exclusive hold is pending.
+On shared machines the queue, not the timing, is the cost, so the machines get roles:
+
+- **Builders** take builds, tests and sanitizers at light priority and never an exclusive hold:
+  the Apple M1 Pro, the Linux VM and the CI runners.
+- **Timers** take only short exclusive holds with the build inside: the M4 Pro and the i9. No
+  separate light build is queued on them.
+- **`file` every binary before it is timed.** On an Apple machine with Intel Homebrew,
+  `/usr/local/bin/cmake` and an x86_64 `python3` build x86_64 binaries that run under Rosetta.
+- **Warm session pools.** A laptop's remote login can refuse new connections for hours; a pool of
+  sessions opened while it accepts them keeps working. A job leases one session, starts every
+  command in its own directory, never changes the session's shell, and releases it at the end.
+
 ## 7. Comparator matrix
 
 Where each library stands against what a reader would otherwise use, copied from the "Performance"
