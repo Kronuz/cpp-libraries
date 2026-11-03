@@ -71,6 +71,15 @@ jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    # ccache keeps recompiles of unchanged code out of the build; the cache dir is saved per job.
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: 500M
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -93,6 +102,28 @@ jobs:
       - name: LLVM (macOS)
         if: runner.os == 'macOS' && inputs.macos_llvm
         run: brew install llvm
+      - name: ccache
+        run: |
+          if [[ "${{ runner.os }}" == macOS ]]; then brew install ccache; else sudo apt-get update -q && sudo apt-get install -y -q ccache; fi
+      - uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.name }}-
+      - name: ccache
+        run: sudo apt-get update -q && sudo apt-get install -y -q ccache
+      - uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-linux-asan-ubsan-${{ github.sha }}
+          restore-keys: ccache-linux-asan-ubsan-
+      - name: ccache
+        run: sudo apt-get update -q && sudo apt-get install -y -q ccache
+      - uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-linux-tsan-${{ github.sha }}
+          restore-keys: ccache-linux-tsan-
       - name: Configure
         env: { CC: "${{ matrix.cc }}", CXX: "${{ matrix.cxx }}" }
         # RelWithDebInfo without NDEBUG: the tests' assert() calls must stay live.
@@ -105,7 +136,12 @@ jobs:
           fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -g" "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -g ${{ matrix.hardening }}" "${platform_args[@]}" ${{ inputs.cmake_args }}
       - name: Build
-        run: cmake --build build --parallel 4
+        run: |
+          ccache -z
+          cmake --build build --parallel 4
+      - name: ccache stats
+        if: always()
+        run: ccache -s
       - name: Test
         run: ctest --test-dir build --output-on-failure --no-tests=ignore --parallel ${{ inputs.test_parallel }}
 
@@ -114,6 +150,14 @@ jobs:
     if: inputs.sanitize
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.asan_timeout_minutes }}
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: 500M
     steps:
       - uses: actions/checkout@v5
       - name: Packages
@@ -126,7 +170,12 @@ jobs:
           "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -D_GLIBCXX_ASSERTIONS ${{ inputs.asan_cxx_flags }}"
           "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined" ${{ inputs.cmake_args }}
       - name: Build
-        run: cmake --build build --parallel 4
+        run: |
+          ccache -z
+          cmake --build build --parallel 4
+      - name: ccache stats
+        if: always()
+        run: ccache -s
       - name: Test
         env: { ASAN_OPTIONS: "detect_leaks=1", UBSAN_OPTIONS: "print_stacktrace=1" }
         run: ctest --test-dir build --output-on-failure --no-tests=ignore --parallel ${{ inputs.test_parallel }}
@@ -136,6 +185,14 @@ jobs:
     if: inputs.tsan
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.tsan_timeout_minutes }}
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: 500M
     steps:
       - uses: actions/checkout@v5
       - name: Packages
@@ -148,7 +205,12 @@ jobs:
           "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O1 -g -fsanitize=thread -fno-omit-frame-pointer"
           "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread" ${{ inputs.cmake_args }}
       - name: Build
-        run: cmake --build build --parallel 4
+        run: |
+          ccache -z
+          cmake --build build --parallel 4
+      - name: ccache stats
+        if: always()
+        run: ccache -s
       - name: Test
         env: { TSAN_OPTIONS: "halt_on_error=1 second_deadlock_stack=1" }
         run: ctest --test-dir build --output-on-failure --no-tests=ignore --parallel ${{ inputs.test_parallel }}
