@@ -9,7 +9,9 @@
 #
 #   consumer  file  dependency  pin  default-branch  status
 #
-# The status is `current` (the pin is the head), `behind N` (the head is N commits past the pin),
+# The status is `current` (the pin is the head), `current (+N ci/docs)` (the head is N commits past
+# the pin, and they change only .github/**, docs/** and top-level *.md, which cannot affect a
+# consumer's build), `behind N` (the head is N commits past the pin, some of them changing more),
 # `tracks BRANCH` (GIT_TAG names a branch, so the build follows its tip), `ahead N (not on
 # BRANCH)`, `diverged (+A on BRANCH, +B on the pin)`, `pin not found`, `unresolved: ${VAR}` (a
 # variable the file does not set), or `no GIT_TAG`. A `set(NAME value)` in the same file resolves
@@ -61,6 +63,8 @@ api_files() { gh api "repos/$OWNER/$1/git/trees/$2?recursive=1" --jq '.tree[] | 
 api_read() { gh api -H "Accept: application/vnd.github.raw" "repos/$OWNER/$1/contents/$3?ref=$2" 2>/dev/null; }
 # "A B": A commits the head has past the pin, B commits the pin has past the head.
 api_compare() { gh api "repos/$OWNER/$1/compare/$3...$2" --jq '"\(.ahead_by) \(.behind_by)"' 2>/dev/null; }
+# The files the commits from pin $3 to head $2 change; fails when the range cannot be read.
+api_changed() { gh api --paginate "repos/$OWNER/$1/compare/$3...$2" --jq '.files[].filename'; }
 api_branch() { awk -F'\t' -v d="$1" '$1 == d { print $2; exit }' "$PINS_OUT/.branches"; }
 
 # -- local clones ------------------------------------------------------------------------------
@@ -75,6 +79,7 @@ local_compare() {
 	set -- $counts
 	echo "$2 $1"
 }
+local_changed() { git -C "$PINS_ROOT/$1" diff --name-only "$3" "$(local_ref "$PINS_ROOT/$1")"; }
 local_branch() {
 	local dir="$PINS_ROOT/$1" name
 	name="$(git -C "$dir" symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null)" ||
@@ -85,6 +90,14 @@ local_branch() {
 # -- one consumer ------------------------------------------------------------------------------
 backend() { # function suffix
 	if [ -n "${PINS_ROOT:-}" ]; then echo "local_$1"; else echo "api_$1"; fi
+}
+
+# Succeeds when the commits from pin $3 to head $2 of dependency $1 change only files that cannot
+# affect a consumer's build: .github/**, docs/** and top-level *.md.
+only_inert() {
+	local files
+	files="$("$(backend changed)" "$1" "$2" "$3")" || return 1
+	! grep -q -v -E '^(\.github/|docs/)|^[^/]+\.md$' <<<"$files"
 }
 
 status_of() { # dependency tag
@@ -100,7 +113,8 @@ status_of() { # dependency tag
 	set -- $res
 	a=$1 b=$2
 	if [ "$a" -eq 0 ] && [ "$b" -eq 0 ]; then echo current
-	elif [ "$b" -eq 0 ]; then echo "behind $a"
+	elif [ "$b" -eq 0 ]; then
+		if only_inert "$dep" "$branch" "$tag"; then echo "current (+$a ci/docs)"; else echo "behind $a"; fi
 	elif [ "$a" -eq 0 ]; then echo "ahead $b (not on $branch)"
 	else echo "diverged (+$a on $branch, +$b on the pin)"; fi
 }

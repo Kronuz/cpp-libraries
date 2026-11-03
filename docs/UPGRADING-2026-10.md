@@ -40,7 +40,8 @@ The steps for an agent that owns an application built on these libraries (Xapian
 or any other).
 
 1. **List its pins.** `tools/pins.sh -c <app>` lists every first-party `FetchContent_Declare` of the
-   application on GitHub that is behind its library's head. A pin kept elsewhere (Detent's
+   application on GitHub that is behind its library's head (later commits that change only `.github/`,
+   `docs/` or top-level `*.md` leave a pin `current (+N ci/docs)`). A pin kept elsewhere (Detent's
    `cmake/dependencies.json`) is read by hand: the library, the commit, and who declares it first.
 2. **Read each pinned library's row and section.** The [Summary](#summary) has one row per library,
    and every library whose results, API or build change has a section below. Act first on the rows

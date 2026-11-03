@@ -2851,7 +2851,8 @@ tools/pins.sh -c storage datetime   # exit status 1 when one of these two has su
 
 A row gives the consumer, the file, the dependency, the pin, the dependency's default branch and
 the status: `current`, `behind N`, `tracks BRANCH`, `ahead`, `diverged`, `pin not found`,
-`unresolved` or `no GIT_TAG`. A pin on a SHA that is behind keeps the fixes made since out of the
+`unresolved` or `no GIT_TAG`. A pin whose later commits change only `.github/`, `docs/` or top-level `*.md` is `current (+N ci/docs)`.
+A pin on a SHA that is behind keeps the fixes made since out of the
 consumer; [docs/UPGRADING-2026-10.md](docs/UPGRADING-2026-10.md) says which of them change
 results.
 

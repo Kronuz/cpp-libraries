@@ -61,11 +61,37 @@ side="$(commit "$work/dep" side)"
 git_ "$work/dep" checkout -q main
 git_ "$work/dep" branch -q feature "$c3"
 
-consumer() {  # name, GIT_TAG
+# dep2: three commits past d1 that touch only CI, docs and a top-level markdown file.
+# dep3: a CI commit, then one that changes a CMakeLists.txt. dep4: one commit changing README.md
+# together with a source file.
+commit_file() {  # repo dir, path, content
+	mkdir -p "$(dirname "$1/$2")"
+	echo "$3" >"$1/$2"
+	git_ "$1" add "$2"
+	git_ "$1" commit -q -m "$2"
+}
+mkrepo dep2
+d1="$(commit "$work/dep2" one)"
+commit_file "$work/dep2" .github/workflows/ci.yml ci
+commit_file "$work/dep2" docs/notes.md docs
+commit_file "$work/dep2" README.md readme
+mkrepo dep3
+e1="$(commit "$work/dep3" one)"
+commit_file "$work/dep3" .github/workflows/ci.yml ci
+commit_file "$work/dep3" CMakeLists.txt cmake
+mkrepo dep4
+g1="$(commit "$work/dep4" one)"
+mkdir -p "$work/dep4/src"
+echo x >"$work/dep4/src/a.cpp"
+echo y >"$work/dep4/README.md"
+git_ "$work/dep4" add .
+git_ "$work/dep4" commit -q -m "src and readme"
+
+consumer() {  # name, GIT_TAG, dependency (default dep)
 	mkrepo "$1"
 	cat >"$work/$1/CMakeLists.txt" <<EOF
 include(FetchContent)
-FetchContent_Declare(dep GIT_REPOSITORY https://github.com/Kronuz/dep.git GIT_TAG $2)
+FetchContent_Declare(dep GIT_REPOSITORY https://github.com/Kronuz/${3:-dep}.git GIT_TAG $2)
 EOF
 	git_ "$work/$1" add CMakeLists.txt
 	git_ "$work/$1" commit -q -m cmake
@@ -75,6 +101,9 @@ consumer old "$c1"
 consumer tip main
 consumer split "$side"
 consumer lost 0123456789abcdef0123456789abcdef01234567
+consumer inert "$d1" dep2
+consumer cmakechg "$e1" dep3
+consumer mixed "$g1" dep4
 consumer nodep "$c3"
 sed -i.bak 's/dep.git/missing.git/' "$work/nodep/CMakeLists.txt"; rm "$work/nodep/CMakeLists.txt.bak"
 git_ "$work/nodep" commit -q -a -m missing
@@ -87,12 +116,19 @@ row tip | grep -q "dep  *main  *main  *tracks main$"; check "local: GIT_TAG main
 row split | grep -q "diverged (+2 on main, +1 on the pin)$"; check "local: a pin on a side branch is diverged" $?
 row lost | grep -q "pin not found$"; check "local: an unknown pin is not found" $?
 row nodep | grep -q "dependency not found$"; check "local: a missing dependency is reported" $?
-has "pins: 6 first-party pins in 7 repositories"; check "local: the summary counts pins and repositories" $?
+row inert | grep -q "dep2  *${d1:0:10}  *main  *current (+3 ci/docs)$"
+check "local: commits touching only CI, docs and top-level markdown leave a pin current" $?
+row cmakechg | grep -q "dep3  *${e1:0:10}  *main  *behind 2$"
+check "local: a range that changes a CMakeLists.txt is behind" $?
+row mixed | grep -q "dep4  *${g1:0:10}  *main  *behind 1$"
+check "local: a commit changing source with a README is behind" $?
+has "pins: 9 first-party pins in 13 repositories"; check "local: the summary counts pins and repositories" $?
 
 out="$("$tool" -r "$work" -b 2>&1)"
 lacks "current"; check "-b hides current pins" $?
 lacks "tracks"; check "-b hides tracking pins" $?
 has "behind 2"; check "-b keeps the behind pins" $?
+lacks "ci/docs"; check "-b hides pins that are current but for CI and docs" $?
 
 out="$("$tool" -r "$work" cur tip 2>&1)"; status=$?
 check "-c is off by default: exit status 0" $status
