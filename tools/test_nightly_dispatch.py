@@ -67,6 +67,8 @@ class Fake:
         self.owner: dict[int, str] = {}
         self.conclusion: dict[str, str] = {}
         self.clock = clock
+        self.expiry: str | None = None  # the token's expiration header
+        self.reject_token = False
 
     def add_repo(self, name: str, ci: str, head: str = SHA, branch: str = "main") -> None:
         self.repos.append(
@@ -94,6 +96,13 @@ class Fake:
         if args[0] == "workflow":
             return self.workflow_run(args)
         path = args[1]
+        if path == "-i":
+            if self.reject_token:
+                raise nd.GhError("gh api: HTTP 401: Bad credentials")
+            head = "HTTP/2.0 200 OK\nServer: github.com\n"
+            if self.expiry:
+                head += f"Github-Authentication-Token-Expiration: {self.expiry}\n"
+            return head + "\n" + '{"resources": {}}'
         if path == "graphql":
             query = args[3].removeprefix("query=")
             if "repositoryOwner" in query:
@@ -544,6 +553,70 @@ class PaceTest(unittest.TestCase):
         self.assertTrue(any(line.startswith("poll failed") for line in self.logs))
 
 
+class TokenTest(unittest.TestCase):
+    def check(self, expiry: str | None, reject: bool = False) -> tuple[bool, list[str]]:
+        github, fake, _ = make()
+        fake.expiry, fake.reject_token = expiry, reject
+        lines: list[str] = []
+        return nd.check_token(github, lines.append), lines
+
+    def test_no_header_means_no_expiration(self) -> None:
+        self.assertEqual(self.check(None), (True, ["Token: no expiration"]))
+
+    def test_far_expiry_is_only_noted(self) -> None:
+        ok, lines = self.check("2027-01-03 06:17:00 UTC")
+        self.assertTrue(ok)
+        self.assertEqual(lines, ["Token: expires 2027-01-03 (in 61 days)"])
+
+    def test_thirty_days_exactly_is_not_a_warning(self) -> None:
+        ok, lines = self.check("2026-12-03 06:17:00 UTC")
+        self.assertEqual((ok, lines), (True, ["Token: expires 2026-12-03 (in 30 days)"]))
+
+    def test_under_thirty_days_warns_with_the_date_and_the_runbook(self) -> None:
+        ok, lines = self.check("2026-11-11 00:00:00 UTC")
+        self.assertTrue(ok)
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("::warning::The token expires 2026-11-11 (in 8 days)"))
+        self.assertIn(nd.RUNBOOK, lines[0])
+
+    def test_under_seven_days_or_expired_fails(self) -> None:
+        for expiry in (
+            "2026-11-09 06:17:00 UTC",
+            "2026-11-03 06:17:01 UTC",
+            "2026-10-01 00:00:00 UTC",
+        ):
+            ok, lines = self.check(expiry)
+            self.assertFalse(ok, expiry)
+            self.assertTrue(lines[0].startswith("::error::The token expires"), lines)
+            self.assertIn(nd.RUNBOOK, lines[0])
+
+    def test_rejected_token_fails(self) -> None:
+        ok, lines = self.check(None, reject=True)
+        self.assertFalse(ok)
+        self.assertTrue(lines[0].startswith("::error::The token is rejected"))
+        self.assertIn("401", lines[0])
+
+    def test_main_stops_before_reading_or_dispatching(self) -> None:
+        for expiry, reject in (("2026-11-05 00:00:00 UTC", False), (None, True)):
+            _, fake, _ = make()
+            fake.expiry, fake.reject_token = expiry, reject
+            fake.add_repo("fresh", ENROLLED_CI)
+            code, out, _ = MainTest().run_main([], fake)
+            self.assertEqual(code, 1)
+            self.assertIn("::error::", out)
+            self.assertEqual([c for c in fake.calls if c[0] != "api" or c[1] != "-i"], [])
+
+    def test_main_warns_and_goes_on(self) -> None:
+        _, fake, _ = make()
+        fake.expiry = "2026-11-20 00:00:00 UTC"
+        fake.add_repo("fresh", ENROLLED_CI)
+        fake.files["fresh"] = cmake_for()
+        code, out, _ = MainTest().run_main(["--dry-run"], fake)
+        self.assertEqual(code, 0)
+        self.assertIn("::warning::The token expires 2026-11-20", out)
+        self.assertIn("dry run", out)
+
+
 class MainTest(unittest.TestCase):
     def run_main(self, argv: list[str], fake: Fake | None = None) -> tuple[int, str, Fake]:
         github, fake, _ = make(fake)
@@ -587,7 +660,9 @@ class MainTest(unittest.TestCase):
 
     def test_gh_failure_is_an_error_not_a_skip(self) -> None:
         def boom(args: Sequence[str]) -> str:
-            raise nd.GhError("HTTP 401")
+            if args[1] == "-i":
+                return "HTTP/2.0 200 OK\n\n{}"
+            raise nd.GhError("HTTP 500")
 
         github = nd.Github("Kronuz", boom, FakeClock())
         with contextlib.redirect_stderr(io.StringIO()):

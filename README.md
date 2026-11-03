@@ -50,7 +50,7 @@ Every library in the table below builds and runs its tests on Linux (x86_64 with
 macOS (arm64, x86_64), and FreeBSD, plus an ASan and UBSan build, through the shared
 workflow in [`.github/workflows/cmake.yml`](.github/workflows/cmake.yml).
 
-Test checks stay active, including in fixtures that deliberately compare debug/release translation units. Compiler jobs enable standard-library hardening; ThreadSanitizer runs where the library has a concurrent API. Active repositories run nightly.
+Test checks stay active, including in fixtures that deliberately compare debug/release translation units. Compiler jobs enable standard-library hardening; ThreadSanitizer runs where the library has a concurrent API. Active repositories run nightly, dispatched from one place ([docs/nightly-ci.md](docs/nightly-ci.md)).
 [`tools/preflight.sh`](tools/preflight.sh) runs the same matrix locally, on macOS and on
 Linux and FreeBSD VMs, before a push. The other scripts in [`tools/`](tools/) compare benchmark
 runs (`ab_compare.py`), check that every public header compiles alone (`selfcontained.sh`) and list

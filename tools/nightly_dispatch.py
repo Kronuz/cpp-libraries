@@ -22,8 +22,12 @@ GH_TOKEN must reach every repository (Actions read/write, Contents read).
 
   nightly_dispatch.py [--dry-run] [--parallel N] [--only NAME[,NAME...]] [--owner OWNER]
 
-Exit status: 0 ok; 1 a dispatched run did not succeed, a dispatch failed, or work was left over;
-2 unusable input or a failed read.
+At the start it reads the token's expiry (the github-authentication-token-expiration header): a
+warning under 30 days, a failed run (exit 1, nothing dispatched) under 7 days or when the token is
+rejected, so the owner is notified before the dispatch stops.
+
+Exit status: 0 ok; 1 a dispatched run did not succeed, a dispatch failed, work was left over, or
+the token is rejected or about to expire; 2 unusable input or a failed read.
 """
 
 from __future__ import annotations
@@ -45,6 +49,10 @@ from typing import Any
 CALLER = "Kronuz/cpp-libraries/.github/workflows/cmake.yml@main"
 WORKFLOW = "ci.yml"
 STALE_SECONDS = 12 * 3600
+WARN_DAYS = 30
+FAIL_DAYS = 7
+RUNBOOK = "https://github.com/Kronuz/cpp-libraries/blob/main/docs/nightly-ci.md#renewing-the-token"
+EXPIRY_HEADER = re.compile(r"^github-authentication-token-expiration:\s*(.+?)\s*$", re.I | re.M)
 FILES_PER_QUERY = 25
 
 Call = Callable[[Sequence[str]], str]
@@ -70,6 +78,28 @@ def parse_time(stamp: str) -> float:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.timestamp()
+
+
+def check_token(github: Github, log: Callable[[str], None]) -> bool:
+    """Reports the token's expiry; False when the run should fail (rejected or about to expire)."""
+    try:
+        expiry = github.token_expiry()
+    except GhError as error:
+        log(f"::error::The token is rejected ({error}). Renew it: {RUNBOOK}")
+        return False
+    if expiry is None:
+        log("Token: no expiration")
+        return True
+    days = (expiry - github.clock.time()) / 86400
+    date = datetime.fromtimestamp(expiry, timezone.utc).strftime("%Y-%m-%d")
+    if days < FAIL_DAYS:
+        log(f"::error::The token expires {date} (in {days:.0f} days). Renew it now: {RUNBOOK}")
+        return False
+    if days < WARN_DAYS:
+        log(f"::warning::The token expires {date} (in {days:.0f} days). Renew it: {RUNBOOK}")
+    else:
+        log(f"Token: expires {date} (in {days:.0f} days)")
+    return True
 
 
 @dataclass(frozen=True)
@@ -162,6 +192,14 @@ class Github:
         if reply.get("errors"):
             raise GhError(f"graphql: {reply['errors'][0].get('message', reply['errors'])}")
         return reply["data"]
+
+    def token_expiry(self) -> float | None:
+        """When the token expires (None when it never does); GhError when it is rejected."""
+        head = self.call(["api", "-i", "rate_limit"]).split("\n\n", 1)[0]
+        match = EXPIRY_HEADER.search(head)
+        if match is None:
+            return None
+        return parse_time(match.group(1).replace(" UTC", "").replace(" ", "T", 1) + "Z")
 
     def repos(self) -> list[Repo]:
         """The owner's non-archived, non-fork repositories with a default branch."""
@@ -542,6 +580,8 @@ def main(argv: Sequence[str] | None = None, github: Github | None = None) -> int
         print(message, flush=True)
 
     only = [name for name in args.only.split(",") if name]
+    if not check_token(github, log):
+        return 1
     try:
         repos = github.repos()
         missing = sorted(set(only) - {repo.name for repo in repos})

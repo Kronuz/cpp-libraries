@@ -57,7 +57,7 @@ Read this section before changing anything.
    `examples/demo.cc`, and a CMakeLists with an explanatory comment on every dependency.
    Keep all four current when you change something. Every library README links to this [catalog](https://github.com/Kronuz/cpp-libraries).
 
-7. **Every active library has CI.** Use the shared CMake workflow on pushes, pull requests, manual dispatch and nightly runs. Register real tests with CTest, keep runtime checks active and qualify supported platforms plus relevant sanitizers. Document justified exclusions, such as TSan for a container without a concurrent API. Verify triggered CI to a terminal result before calling work ready. Archived prototypes are explicitly marked and point to maintained successors. Documentation/attribution-only commits may explicitly use `[skip ci]`; implementation and build changes require the relevant matrix.
+7. **Every active library has CI.** Use the shared CMake workflow on pushes, pull requests, manual dispatch and nightly runs (the nightly is dispatched centrally, see [docs/nightly-ci.md](docs/nightly-ci.md)). Register real tests with CTest, keep runtime checks active and qualify supported platforms plus relevant sanitizers. Document justified exclusions, such as TSan for a container without a concurrent API. Verify triggered CI to a terminal result before calling work ready. Archived prototypes are explicitly marked and point to maintained successors. Documentation/attribution-only commits may explicitly use `[skip ci]`; implementation and build changes require the relevant matrix.
 
 8. **Keep licenses and provenance accurate.** Preserve upstream and third-party notices and license terms. Record derivation with source/history links. Use the component’s actual contribution years rather than copying the parent project’s start date; update the maintained author’s notice without extending unrelated authors’ dates. A renamed or extracted repository does not acquire a new license automatically.
 
@@ -2866,7 +2866,8 @@ pinned by commit or version tag cannot drift and are not followed. Every dispatc
 its reason; at most `--parallel` runs are in flight, the next starting as one finishes; dispatch
 stops at `--stop-after` minutes and the rest is reported. `nightly=true` makes `cmake.yml` drop
 the macOS and FreeBSD jobs. A repository joins by running `tools/nightly_enroll.py` on its
-checkout and pushing the result; until then the dispatcher skips it.
+checkout and pushing the result; until then the dispatcher skips it. The run warns 30 days before the
+token expires and fails 7 days before; [docs/nightly-ci.md](docs/nightly-ci.md) has the runbook.
 
 The Python is stdlib only, formatted with `ruff format`, linted with `ruff check` and
 type-checked with `pyrefly check --config tools/pyrefly.toml` (strict preset); every function has
