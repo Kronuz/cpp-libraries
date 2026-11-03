@@ -1,0 +1,55 @@
+# The central nightly: one scheduler for every Kronuz repository that calls cmake.yml. It runs
+# tools/nightly_dispatch.py, which dispatches ci.yml (nightly=true, the Linux-only matrix) in the
+# repositories that changed since their last nightly, a few at a time. The repositories have no
+# cron of their own. NIGHTLY_DISPATCH_TOKEN is a fine-grained token with Actions read/write and
+# Contents read on all of the owner's repositories (GITHUB_TOKEN cannot dispatch elsewhere).
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Decide and print, dispatch nothing (reads work without the token)
+        type: boolean
+        default: false
+      parallel:
+        description: Repositories in flight at once
+        type: string
+        default: "3"
+      only:
+        description: Comma-separated repository names to limit the run to (empty is all)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    # Dispatch stops at 270 minutes and the last runs are awaited until 335, inside the 6 hour limit.
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v5
+      - name: Dispatch
+        env:
+          GH_TOKEN: ${{ secrets.NIGHTLY_DISPATCH_TOKEN || github.token }}
+          HAVE_TOKEN: ${{ secrets.NIGHTLY_DISPATCH_TOKEN != '' }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          PARALLEL: ${{ inputs.parallel || '3' }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          args=(--parallel "$PARALLEL" --only "$ONLY")
+          if [[ "$DRY_RUN" == true ]]; then
+            args+=(--dry-run)
+          elif [[ "$HAVE_TOKEN" != true ]]; then
+            echo "::error::The secret NIGHTLY_DISPATCH_TOKEN is not set; only a dry run can proceed."
+            exit 1
+          fi
+          python3 tools/nightly_dispatch.py "${args[@]}"
