@@ -37,10 +37,13 @@ run_vm() {  # label, vm script, extra flags
 	local label=$1 vm=$2 extra=$3
 	# Tracked and untracked files that exist, minus ignored ones (scratch data, build trees).
 	(cd "$repo" && git ls-files -co --exclude-standard -z | perl -0ne 'print if -e substr($_, 0, -1)' | xargs -0 tar -czf "$scratch/tree.tgz")
-	if "$strata/tools/vm/$vm" ssh "rm -rf ~/preflight/$name && mkdir -p ~/preflight/$name && cd ~/preflight/$name && tar xzf - &&
+	# Sources ship in their own step, so lease phases can weigh the transfer against a build cache.
+	if STRATA_AWS_VM_PHASE=sync "$strata/tools/vm/$vm" ssh "rm -rf ~/preflight/$name && mkdir -p ~/preflight/$name && cd ~/preflight/$name && tar xzf -" \
+		<"$scratch/tree.tgz" >"$scratch/$label.log" 2>&1 &&
+		STRATA_AWS_VM_PHASE=build "$strata/tools/vm/$vm" ssh "cd ~/preflight/$name &&
 		cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo '-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$flags $extra' >build.log 2>&1 &&
 		cmake --build build --parallel 4 >>build.log 2>&1 && ctest --test-dir build --output-on-failure --no-tests=ignore >>build.log 2>&1 ||
-		{ tail -40 build.log; exit 1; }" <"$scratch/tree.tgz" >"$scratch/$label.log" 2>&1; then
+		{ tail -40 build.log; exit 1; }" </dev/null >>"$scratch/$label.log" 2>&1; then
 		echo "$label: ok"
 	else echo "$label: FAILED ($scratch/$label.log)"; status=1; fi
 }
