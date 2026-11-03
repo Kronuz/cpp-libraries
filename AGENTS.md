@@ -2801,6 +2801,8 @@ The scripts in [tools/](tools/). Each prints its usage with `-h` (the shell scri
 | `tools/selfcontained.sh` | Compiles every public header of a repository alone, twice in one translation unit, at the standard its CMake requests. |
 | `tools/pins.sh` | Lists the first-party `FetchContent` pins of the Kronuz repositories and how far each is behind its dependency's default branch. |
 | `tools/preflight.sh` | Builds and tests a working tree the way CI does, on this Mac and on the gate VMs. |
+| `tools/nightly_dispatch.py` | The central nightly: finds the repositories that call `cmake.yml@main`, picks those that changed since their last nightly, and dispatches their `ci.yml` with `nightly=true` a few at a time. Run by `.github/workflows/nightly.yml`. |
+| `tools/nightly_enroll.py` | Edits a repository's `ci.yml` for the central nightly: drops its `schedule:` block, adds the `nightly` input and passes it to `cmake.yml`. |
 
 **`ab_compare.py`** takes two binaries and runs them against each other:
 
@@ -2852,6 +2854,19 @@ the status: `current`, `behind N`, `tracks BRANCH`, `ahead`, `diverged`, `pin no
 `unresolved` or `no GIT_TAG`. A pin on a SHA that is behind keeps the fixes made since out of the
 consumer; [docs/UPGRADING-2026-10.md](docs/UPGRADING-2026-10.md) says which of them change
 results.
+
+**`nightly_dispatch.py`** replaces the per-repository nightly crons. `.github/workflows/nightly.yml` runs
+it once a night (06:17 UTC, or by hand with `dry_run`, `parallel` and `only`) with the secret
+`NIGHTLY_DISPATCH_TOKEN`, a fine-grained token with Actions read/write and Contents read on the
+owner's repositories. A repository is dispatched when it has no earlier `workflow_dispatch` run of
+`ci.yml` on its default branch, when the last one did not succeed, when its head moved since the
+run, or when a Kronuz dependency it fetches at a moving ref (`GIT_TAG main`, a branch, no
+`GIT_TAG`; followed through other moving refs) has a commit newer than the run. Dependencies
+pinned by commit or version tag cannot drift and are not followed. Every dispatch and skip prints
+its reason; at most `--parallel` runs are in flight, the next starting as one finishes; dispatch
+stops at `--stop-after` minutes and the rest is reported. `nightly=true` makes `cmake.yml` drop
+the macOS and FreeBSD jobs. A repository joins by running `tools/nightly_enroll.py` on its
+checkout and pushing the result; until then the dispatcher skips it.
 
 The Python is stdlib only, formatted with `ruff format`, linted with `ruff check` and
 type-checked with `pyrefly check --config tools/pyrefly.toml` (strict preset); every function has

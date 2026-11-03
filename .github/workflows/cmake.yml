@@ -5,6 +5,9 @@
 #   jobs:
 #     ci:
 #       uses: Kronuz/cpp-libraries/.github/workflows/cmake.yml@main
+#
+# The nightly dispatcher (nightly.yml) runs a repository's ci.yml with nightly=true, which the
+# repository passes on as `nightly: ${{ inputs.nightly || false }}` (tools/nightly_enroll.py).
 name: cmake
 
 on:
@@ -22,6 +25,10 @@ on:
         description: Run the FreeBSD job
         type: boolean
         default: true
+      nightly:
+        description: Run the Linux jobs only, as the central nightly dispatcher asks (no macOS, no FreeBSD)
+        type: boolean
+        default: false
       sanitize:
         description: Run the ASan and UBSan job
         type: boolean
@@ -75,7 +82,7 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - id: matrix
-        # The nightly schedule runs the Linux entries only: the macOS runners are the scarce ones.
+        # The nightly runs the Linux entries only: the macOS runners are the scarce ones.
         # Standard-library hardening: libstdc++'s assertions, libc++'s extensive mode.
         run: |
           matrix=$(cat <<'EOF'
@@ -88,7 +95,7 @@ jobs:
           ]
           EOF
           )
-          if [[ "${{ github.event_name }}" == schedule ]]; then
+          if [[ "${{ inputs.nightly }}" == true ]]; then
             matrix=$(jq -c 'map(select(.os | startswith("ubuntu")))' <<<"$matrix")
           fi
           echo "matrix=$(jq -c . <<<"$matrix")" >> "$GITHUB_OUTPUT"
@@ -237,7 +244,7 @@ jobs:
 
   freebsd:
     name: freebsd-x86_64
-    if: inputs.freebsd && github.event_name != 'schedule'
+    if: inputs.freebsd && !inputs.nightly
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
