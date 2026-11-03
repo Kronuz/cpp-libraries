@@ -130,20 +130,6 @@ jobs:
           path: .ccache
           key: ccache-${{ matrix.name }}-${{ github.sha }}
           restore-keys: ccache-${{ matrix.name }}-
-      - name: ccache
-        run: sudo apt-get update -q && sudo apt-get install -y -q ccache
-      - uses: actions/cache@v4
-        with:
-          path: .ccache
-          key: ccache-linux-asan-ubsan-${{ github.sha }}
-          restore-keys: ccache-linux-asan-ubsan-
-      - name: ccache
-        run: sudo apt-get update -q && sudo apt-get install -y -q ccache
-      - uses: actions/cache@v4
-        with:
-          path: .ccache
-          key: ccache-linux-tsan-${{ github.sha }}
-          restore-keys: ccache-linux-tsan-
       - name: Configure
         env: { CC: "${{ matrix.cc }}", CXX: "${{ matrix.cxx }}" }
         # RelWithDebInfo without NDEBUG: the tests' assert() calls must stay live.
@@ -183,6 +169,13 @@ jobs:
       - name: Packages
         if: inputs.apt_packages != ''
         run: sudo apt-get update -q && sudo apt-get install -y -q ${{ inputs.apt_packages }}
+      - name: ccache
+        run: sudo apt-get update -q && sudo apt-get install -y -q ccache
+      - uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-linux-asan-ubsan-${{ github.sha }}
+          restore-keys: ccache-linux-asan-ubsan-
       - name: Configure
         env: { CC: clang, CXX: clang++ }
         run: >-
@@ -218,6 +211,13 @@ jobs:
       - name: Packages
         if: inputs.apt_packages != ''
         run: sudo apt-get update -q && sudo apt-get install -y -q ${{ inputs.apt_packages }}
+      - name: ccache
+        run: sudo apt-get update -q && sudo apt-get install -y -q ccache
+      - uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-linux-tsan-${{ github.sha }}
+          restore-keys: ccache-linux-tsan-
       - name: Configure
         env: { CC: clang, CXX: clang++ }
         run: >-
