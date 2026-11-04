@@ -3,9 +3,8 @@
 # and the standard library's hardening on this Mac (plus ASan and UBSan with Homebrew LLVM),
 # and on strata's Linux and FreeBSD gate VMs. Prints one line per platform.
 #   tools/preflight.sh REPO_DIR [mac|linux|freebsd ...]
-# The VMs come from strata's tools/vm scripts (STRATA, default ~/code/Kronuz/strata); Linux runs on
-# one `lease run` (aws-linux.sh; AWS only with STRATA_AWS_VM_ALLOW=1, else, or when lease refuses,
-# the local QEMU VM).
+# The VMs come from strata's tools/vm scripts (STRATA, default ~/code/Kronuz/strata); Linux runs in
+# its own directory on the local QEMU VM (aws-linux.sh).
 set -uo pipefail
 repo="$(cd "${1:?usage: preflight.sh REPO_DIR [platforms]}" && pwd)"; shift
 name="$(basename "$repo")"
@@ -34,7 +33,7 @@ run_local() {  # label, build dir, compiler, extra flags
 		echo "$label: ok"
 	else echo "$label: FAILED ($dir.log)"; status=1; fi
 }
-run_linux() {  # extra flags: one build-and-test script on aws-linux.sh (an AWS lease, or the local VM)
+run_linux() {  # extra flags: one build-and-test script on the local Linux VM (aws-linux.sh)
 	local extra=$1 tree="$scratch/tree" script="$scratch/linux.sh"
 	rm -rf "$tree"; mkdir -p "$tree"
 	(cd "$repo" && git ls-files -co --exclude-standard -z | perl -0ne 'print if -e substr($_, 0, -1)' | rsync -a --from0 --files-from=- ./ "$tree/")
