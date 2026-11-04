@@ -73,6 +73,10 @@ on:
         description: FreeBSD packages the build needs, beyond cmake and git
         type: string
         default: ""
+      failure_artifacts:
+        description: Newline-separated globs, relative to the workspace, uploaded when a build, ASan/UBSan or TSan job fails (with ctest's LastTest.log); empty uploads nothing. The FreeBSD job never uploads.
+        type: string
+        default: ""
 
 jobs:
   plan:
@@ -157,6 +161,16 @@ jobs:
         run: ccache -s
       - name: Test
         run: ctest --test-dir build --output-on-failure --no-tests=ignore --parallel ${{ inputs.test_parallel }}
+      - name: Upload failure artifacts
+        if: failure() && inputs.failure_artifacts != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-${{ matrix.name }}
+          path: |
+            ${{ inputs.failure_artifacts }}
+            build/Testing/Temporary/LastTest.log
+          retention-days: 14
+          if-no-files-found: ignore
 
   sanitize:
     name: linux-asan-ubsan
@@ -199,6 +213,16 @@ jobs:
       - name: Test
         env: { ASAN_OPTIONS: "detect_leaks=1", UBSAN_OPTIONS: "print_stacktrace=1" }
         run: ctest --test-dir build --output-on-failure --no-tests=ignore --parallel ${{ inputs.test_parallel }}
+      - name: Upload failure artifacts
+        if: failure() && inputs.failure_artifacts != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-linux-asan-ubsan
+          path: |
+            ${{ inputs.failure_artifacts }}
+            build/Testing/Temporary/LastTest.log
+          retention-days: 14
+          if-no-files-found: ignore
 
   tsan:
     name: linux-tsan
@@ -241,6 +265,16 @@ jobs:
       - name: Test
         env: { TSAN_OPTIONS: "halt_on_error=1 second_deadlock_stack=1" }
         run: ctest --test-dir build --output-on-failure --no-tests=ignore --parallel ${{ inputs.test_parallel }}
+      - name: Upload failure artifacts
+        if: failure() && inputs.failure_artifacts != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-linux-tsan
+          path: |
+            ${{ inputs.failure_artifacts }}
+            build/Testing/Temporary/LastTest.log
+          retention-days: 14
+          if-no-files-found: ignore
 
   freebsd:
     name: freebsd-x86_64
