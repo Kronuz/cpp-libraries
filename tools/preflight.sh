@@ -4,7 +4,8 @@
 # and on strata's Linux and FreeBSD gate VMs. Prints one line per platform.
 #   tools/preflight.sh REPO_DIR [mac|linux|freebsd ...]
 # The VMs come from strata's tools/vm scripts (STRATA, default ~/code/Kronuz/strata); Linux runs on
-# a shared AWS lease (aws-linux.sh) unless PREFLIGHT_LINUX_VM=linux.sh picks the local QEMU VM.
+# one `lease run` (aws-linux.sh; AWS only with STRATA_AWS_VM_ALLOW=1, else, or when lease refuses,
+# the local QEMU VM).
 set -uo pipefail
 repo="$(cd "${1:?usage: preflight.sh REPO_DIR [platforms]}" && pwd)"; shift
 name="$(basename "$repo")"
@@ -33,17 +34,29 @@ run_local() {  # label, build dir, compiler, extra flags
 		echo "$label: ok"
 	else echo "$label: FAILED ($dir.log)"; status=1; fi
 }
+run_linux() {  # extra flags: one build-and-test script on aws-linux.sh (an AWS lease, or the local VM)
+	local extra=$1 tree="$scratch/tree" script="$scratch/linux.sh"
+	rm -rf "$tree"; mkdir -p "$tree"
+	(cd "$repo" && git ls-files -co --exclude-standard -z | perl -0ne 'print if -e substr($_, 0, -1)' | rsync -a --from0 --files-from=- ./ "$tree/")
+	cat >"$script" <<SCRIPT
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo '-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$flags $extra' >build.log 2>&1 &&
+	cmake --build build --parallel \$(nproc) >>build.log 2>&1 &&
+	ctest --test-dir build --output-on-failure --no-tests=ignore >>build.log 2>&1 || { tail -40 build.log; exit 1; }
+SCRIPT
+	if "$strata/tools/vm/aws-linux.sh" run "$tree" "$script" </dev/null >"$scratch/linux.log" 2>&1; then
+		echo "linux: ok"
+	else echo "linux: FAILED ($scratch/linux.log)"; status=1; fi
+}
 run_vm() {  # label, vm script, extra flags
 	local label=$1 vm=$2 extra=$3
 	# Tracked and untracked files that exist, minus ignored ones (scratch data, build trees).
 	(cd "$repo" && git ls-files -co --exclude-standard -z | perl -0ne 'print if -e substr($_, 0, -1)' | xargs -0 tar -czf "$scratch/tree.tgz")
-	# Sources, build and tests run as separate lease phases, so a build cache's payoff can be weighed.
-	if STRATA_AWS_VM_PHASE=sync "$strata/tools/vm/$vm" ssh "rm -rf ~/preflight/$name && mkdir -p ~/preflight/$name && cd ~/preflight/$name && tar xzf -" \
+	if "$strata/tools/vm/$vm" ssh "rm -rf ~/preflight/$name && mkdir -p ~/preflight/$name && cd ~/preflight/$name && tar xzf -" \
 		<"$scratch/tree.tgz" >"$scratch/$label.log" 2>&1 &&
-		STRATA_AWS_VM_PHASE=build "$strata/tools/vm/$vm" ssh "cd ~/preflight/$name &&
+		"$strata/tools/vm/$vm" ssh "cd ~/preflight/$name &&
 		cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo '-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$flags $extra' >build.log 2>&1 &&
 		cmake --build build --parallel 4 >>build.log 2>&1 || { tail -40 build.log; exit 1; }" </dev/null >>"$scratch/$label.log" 2>&1 &&
-		STRATA_AWS_VM_PHASE=test "$strata/tools/vm/$vm" ssh "cd ~/preflight/$name &&
+		"$strata/tools/vm/$vm" ssh "cd ~/preflight/$name &&
 		ctest --test-dir build --output-on-failure --no-tests=ignore >>build.log 2>&1 || { tail -40 build.log; exit 1; }" \
 		</dev/null >>"$scratch/$label.log" 2>&1; then
 		echo "$label: ok"
@@ -57,7 +70,7 @@ for p in "${platforms[@]}"; do
 		llvm=/usr/local/opt/llvm/bin; [ -x "$llvm/clang++" ] || llvm=/opt/homebrew/opt/llvm/bin
 		run_local mac-asan-ubsan "$scratch/mac-asan" "$llvm/clang++" "-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer"
 		;;
-	linux) run_vm linux "${PREFLIGHT_LINUX_VM:-aws-linux.sh}" "-D_GLIBCXX_ASSERTIONS" ;;
+	linux) run_linux "-D_GLIBCXX_ASSERTIONS" ;;
 	freebsd) run_vm freebsd freebsd.sh "" ;;
 	*) echo "unknown platform $p"; status=2 ;;
 	esac
