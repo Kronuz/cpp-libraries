@@ -170,6 +170,7 @@ jobs:
             ${{ inputs.failure_artifacts }}
             build/Testing/Temporary/LastTest.log
           retention-days: 14
+          include-hidden-files: true
           if-no-files-found: ignore
 
   sanitize:
@@ -222,6 +223,7 @@ jobs:
             ${{ inputs.failure_artifacts }}
             build/Testing/Temporary/LastTest.log
           retention-days: 14
+          include-hidden-files: true
           if-no-files-found: ignore
 
   tsan:
@@ -274,6 +276,7 @@ jobs:
             ${{ inputs.failure_artifacts }}
             build/Testing/Temporary/LastTest.log
           retention-days: 14
+          include-hidden-files: true
           if-no-files-found: ignore
 
   freebsd:
