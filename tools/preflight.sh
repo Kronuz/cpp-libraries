@@ -7,7 +7,9 @@
 # its own directory on the local QEMU VM (aws-linux.sh).
 set -uo pipefail
 repo="$(cd "${1:?usage: preflight.sh REPO_DIR [platforms]}" && pwd)"; shift
-name="$(basename "$repo")"
+# One scratch directory per repository (a job's checkout is named src), not per checkout.
+common="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+name="$(basename "${common%/.git}")"; [ -n "$common" ] || name="$(basename "$repo")"
 platforms=("${@:-mac linux freebsd}"); platforms=(${platforms[*]})
 strata="${STRATA:-$HOME/code/Kronuz/strata}"
 scratch="$HOME/.scratch/preflight/$name"; mkdir -p "$scratch"
@@ -26,6 +28,8 @@ fi
 
 run_local() {  # label, build dir, compiler, extra flags
 	local label=$1 dir=$2 cxx=$3 extra=$4
+	# a cache from another checkout of the repository refuses this source: start the build over
+	if [ -f "$dir/CMakeCache.txt" ] && ! grep -qxF "CMAKE_HOME_DIRECTORY:INTERNAL=$repo" "$dir/CMakeCache.txt"; then rm -rf "$dir"; fi
 	if cmake -S "$repo" -B "$dir" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER="$cxx" \
 		"-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$flags $extra" >"$dir.log" 2>&1 &&
 		$nice cmake --build "$dir" --parallel $jobs >>"$dir.log" 2>&1 &&
