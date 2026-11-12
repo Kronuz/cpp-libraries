@@ -74,11 +74,11 @@ Shared names and defaults. "Today" cells cite each app's current spelling.
 | `--shutdown-timeout-ms`, `shutdown_timeout_ms` | 35000 | none: drain unbounded (`main.cc:214-222`) | none (`host.cc:397-408`) | none; reactor's 5 s grace (`reactor.h:759`) | not an option: 35 s bound (`manager.cc:155-158`), 5 s grace (`:145,955`) |
 | `--tls-cert`, `--tls-key`, `--tls-ca` | unset: plain | `publisher_tls.{certificate,key,ca}`, all three (`service.cc:395-401,454-458`) | `certificate`, `private_key`, `ca`, required (`configuration.cc:59,94,187-192`) | `--tls-cert=F`, `--tls-key=F`; no CA (`main.cc:258-259`) | `--tls-cert`, `--tls-key`; no CA (`opts.cc:200-201`) |
 | `--port`, `port` | per app: 8317, 8318, 8880, `XAPIAND_HTTP_SERVERPORT` | `--port` (`main.cc:131`) | `port` (`configuration.cc:90`) | positional (`main.cc:263`) | `--port` (`opts.cc:192`) |
-| `--bind-address`, `bind_address` | loopback, except Prism and Xapiand: all | `publisher_bind` (`service.cc:459`) | `address` (`configuration.cc:88`) | none (`main.cc:341`) | `--bind-address` (`opts.cc:195`) |
+| `--bind-address`, `bind_address` | loopback, except Prism and Xapiand: all | `publisher_bind` (`service.cc:460`) | `address` (`configuration.cc:88`) | none (`main.cc:341`) | `--bind-address` (`opts.cc:195`) |
 | `--reactors`, `reactors` | hardware threads | `--reactors`, 4 (`main.cc:133`) | constant 2 (`host.cc:264`) | hardware threads (`main.cc:265`) | `--processors` (`opts.cc:189,380`) |
 
 `--tls-ca` turns on client authentication; the relay and the authority require it. Xapiand keeps
-`--processors`: it also sizes the WAL writers and fsynchers (`opts.cc:376-377`).
+`--processors`: it also sizes the WAL writers and fsynchers (`opts.cc:374-376`).
 
 ## Mains
 
