@@ -47,8 +47,12 @@ after optimizing it, with before and after numbers. No deviation below has that 
    covers plain and TLS.
 3. **TLS.** One reactor function builds the server context: Xapiand's `tls_setup` (`tls.cc:51-76`)
    moved to `reactor::tls::server_context(options, max_clients)`. It refuses a key readable by group
-   or others, a key that does not match the certificate, a certificate not yet valid or expired, and a
-   `max_clients` that leaves under 64 descriptors spare. It throws; `main` logs and exits `EX_CONFIG`.
+   or others (all three apps, Xapiand D77), a key that does not match the certificate, and a
+   certificate not yet valid or expired. It throws; `main` logs and exits `EX_CONFIG`. The descriptor
+   budget is one check at server start, plain and TLS alike: `max_clients` connections at one
+   descriptor each (measured 1.000 per idle connection, plain and TLS, job 261112-101615-0bdb50) plus
+   a stated reserve must fit `RLIMIT_NOFILE`. It replaces Xapiand's `FDS_PER_CLIENT = 2`
+   (`main.cc:86,441-488`, a kqueue-era constant) and the TLS-only `max + 64` (`tls.cc:56`).
    It runs before privileges drop and before any service starts (`main.cc:1105-1118`).
 4. **Loop and services.** The process has one control loop, which `main` runs on the main thread
    (service-shape's `main`). Services are constructed in dependency order: state (registry,
@@ -114,23 +118,29 @@ Deviations, each with its reason and whether a D62 case exists:
 | :---- | :---- | :---- |
 | C1 | One `http::Limits`, taken by the constructor | The setters: three mains set different subsets, and an unset limit is silently off |
 | C2 | `server_context` lives in reactor, beside `configure` | Each app calling `configure` raw (only Xapiand checks the key and certificate); a new library (D73) |
-| C3 | One name per option, flag and key alike; `_ms` durations | Xapiand's unitless milliseconds (`opts.h:96-107`): a unit left implicit |
+| C3 | One name per option, flag and key alike; `_ms` durations | Unitless durations; Xapiand's unitless milliseconds (`opts.h:96-107`) are internal constants, not flags, so no Xapiand flag is renamed |
 | C4 | A value that differs is an input, not a deviation | Listing every constant as a deviation: it hides the three that are not values |
 
-## Questions
+## Settled
 
-1. **Header and inactivity timeouts on plain HTTP.** Xapiand sets 30 s and 60 s only for TLS
-   (`manager.cc:946-947`). Recommend on for every connection (one policy, D81), after a detentd test
-   that a held poll with its headers complete and no body read does not trip them.
-2. **A key readable by group or others is refused in all three.** Today only Xapiand refuses
-   (`tls.cc:54`). Recommend yes: `--system` services own their keys.
-3. **`--shutdown-timeout-ms` as an option.** No app exposes the bound; the grace stays 5 s. Recommend
-   yes, default 35000, mapped onto `stop_timing::bound`.
-4. **The loop on the main thread.** Detent's `OwnerLoop` runs a thread while `main` idles (`main.cc:208-210`;
-   `host.cc:397`). Recommend the main thread, as service-shape's `main` and Xapiand do; `OwnerLoop`
-   gains a `run()`.
-5. **Default `max_clients` 1024, `max_in_flight` 1024.** Raises Xapiand's 1000 and Prism's 256 to the
-   largest present value, so no app is limited below what it is today.
+1. **Header and inactivity timeouts on every connection**, plain and TLS (Xapiand sets 30 s and 60 s
+   for TLS only, `manager.cc:946-947`), after a detentd test that a held poll with its headers
+   complete and no body read does not trip them (Xapiand lead agrees).
+2. **A key readable by group or others is refused in all three** (owner, Xapiand D77).
+3. **`--shutdown-timeout-ms`, `shutdown_timeout_ms`, default 35000**, mapped onto
+   `stop_timing::bound`; the 5 s grace is fixed (owner, Xapiand D77).
+4. **The loop runs on the main thread**, as service-shape's `main` and Xapiand do; Detent's
+   `OwnerLoop` (`main.cc:208-210`; `host.cc:397`) gains a `run()` (Xapiand lead agrees).
+5. **Defaults `max_clients` 1024 and `max_in_flight` 1024**, the largest present value, so no app
+   is limited below today (Xapiand lead agrees).
+6. **http gains a close-idle-now call** beside the idle timeout, so Xapiand's `FLUSH?clients`
+   closes idle connections (Xapiand D76); the http quest names it in its contract.
+
+## Sizing
+
+An idle connection costs 14.4 KB plain and 97.7 KB with TLS (73.6 KB with asio's record buffers
+allocated lazily), measured on macOS x86_64 with OpenSSL 4.1 and asio 1.36 (Xapiand lead). So
+`max_clients` 1024 over TLS is about 100 MB.
 
 ## Limits
 
