@@ -179,7 +179,7 @@ Facts worth knowing before you wire anything up:
 | Embedded LSM-style segment store: immutable segments, background merges, crash-safe commits, checkpoints | `strata` (`strata::core`) |
 | Full-text search on that store: postings, BM25 with block-max pruning, queries, aggregations | `prospect` (on `strata`) |
 | MessagePack values, copy-on-write | `msgpack` |
-| Multicast bus, volatile Raft, liveness | `cluster` |
+| Multicast bus, volatile Raft, liveness (archived; use `consensus` for Raft) | `cluster` |
 | Offline CA for a cluster's TLS: private-file and directory checks, SPKI pins, expiry, SPIFFE IDs | `pki` |
 | Durable Raft with fixed voters | `consensus` |
 | Crash-safe append-only journal with checkpoints | `journal` |
@@ -1925,7 +1925,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   ```
 - **Use it when:**
   - A wire protocol needs a compact, self-terminating length or string encoding and exception-free decoding of untrusted input.
-  - `cluster` is the proven consumer (its own Raft/gossip message framing).
+  - The archived `cluster` used it for its Raft and bus message framing.
 - **Do not use it when / gotchas:**
   - The continuation-bit direction (set on the LAST byte, not every byte except the last) is deliberate wire-format compatibility, not a style choice -- don't "fix" it to match classic LEB128.
   - `unserialise_string`'s output is a view; it's only valid as long as the input buffer is.
@@ -2037,6 +2037,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 
 ### cluster
 [github.com/Kronuz/cluster](https://github.com/Kronuz/cluster) &middot; depends on: `reactor`, `varint`
+- **Status:** Archived; use `consensus` for Raft. The multicast `Bus` and `LivenessTracker` have no successor; existing pinned commits remain available.
 - **What it is:** A header-only UDP multicast substrate providing typed, token-scoped bus framing and a generic, volatile Raft implementation. The durable storage and consensus that grew here moved to `completion`, `journal`, `consensus`, and `metrics`.
 - **Header / target:** `#include "bus.h"` and `#include "raft.h"`; target `cluster::cluster`; C++20; requires standalone Asio transitively through `reactor`.
 - **How it works:** `cluster::Bus` owns one multicast UDP socket and receive loop, and frames messages as version, type, serialized token, and content. It rejects malformed frames, newer versions, out-of-range types, and mismatched cluster tokens before dispatching on the bus reactor thread. `cluster::Raft` supplies terms, roles, votes, append, commit, election, and application hooks, but membership gossip is not implemented despite the README describing that future layer. `liveness.h`'s `LivenessTracker` is a ready-made, last-seen-timestamp-based `RaftDelegate::is_alive()` for a consumer with no other authoritative liveness source (a static peer list instead of gossip membership, for example) -- a permanently-dead peer misreported alive forever otherwise silently freezes `heartbeat_cb()`'s next-entry pick and blocks all future commits.
@@ -2658,8 +2659,8 @@ The shortest path from nothing to a running HTTP service, and what each layer ow
   flume blocks.
 - **`storage`** and **`flume`** are the persistence and transfer pair: append-only blobs
   with stable offsets, and framed checksummed file transfer over any byte channel.
-- **`cluster`** sits beside the TCP path on `reactor::UdpServer` for multicast framing and
-  Raft transport. A single-node service does not need it.
+- **`consensus`** carries replication and leader election; the archived `cluster` once sat
+  beside the TCP path for multicast framing. A single-node service needs neither.
 
 The minimum viable service. Note the real shape: your application subclasses
 `http::HttpHandler`, owns a `Router`, and registers routes with
