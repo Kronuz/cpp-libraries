@@ -29,8 +29,10 @@ In this order. Omit a section that would be empty; never pad one.
 9. `## 🎯 When to use it`: when it fits, then "Not for" bullets: the limits and gotchas
    as present-tense facts.
 10. `## ⚡ Performance`, only when the repository has a benchmark (rules below).
-11. `## 📚 Documentation`: links to `docs/API.md`, `ARCHITECTURE.md`, `docs/perf/`,
-    `CHANGELOG.md`, `AGENTS.md`, and the catalog entry.
+11. `## 📚 Documentation`: first the library's Familiars post when it has one
+    (`- [<post title>](https://kronuz.github.io/blog/<slug>/):` then, indented, `the Familiars
+    post on why it exists and how it works.`), then links to `docs/API.md`, `ARCHITECTURE.md`,
+    `docs/perf/`, `CHANGELOG.md`, `AGENTS.md`, and the catalog entry.
 12. `## 🛠️ Building and testing`: configure, build, `ctest`, and the bench option
     (`-D<LIB>_BUILD_BENCH=ON`).
 13. `## 🤝 Contributing`: one line pointing to `AGENTS.md` and the catalog's rules.

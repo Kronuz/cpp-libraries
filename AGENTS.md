@@ -2881,7 +2881,7 @@ All of these were extracted from [Xapiand](https://github.com/Kronuz/Xapiand), a
 distributed RESTful search engine built on Xapian, which remains the largest consumer and
 the reason most of them have the shape they do. The design notes behind each one are being
 written up as the *Familiars* series on
-[kronuz.github.io](https://kronuz.github.io/blog/), which is still in draft and not yet
-published, so this file is the current reference.
+[kronuz.github.io](https://kronuz.github.io/blog/); each library with a post links it from
+its README's Documentation section. This file stays the current reference.
 
 Repository: `https://github.com/Kronuz/<name>` for every library named here.
