@@ -188,7 +188,7 @@ the first-party pins that are behind (`pins.sh`); [AGENTS.md](AGENTS.md#tools) d
 <td><a href="https://github.com/Kronuz/termdict/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/termdict/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/termdict">termdict</a></td>
 </tr>
 <tr>
-<td><a href="https://github.com/Kronuz/threadpool/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/threadpool/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/threadpool">threadpool</a></td>
+<td><a href="https://github.com/Kronuz/workpool/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/workpool/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/workpool">workpool</a></td>
 <td><a href="https://github.com/Kronuz/time-point/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/time-point/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/time-point">time-point</a></td>
 <td><a href="https://github.com/Kronuz/times/actions/workflows/ci.yml"><img src="https://github.com/Kronuz/times/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <a href="https://github.com/Kronuz/times">times</a></td>
 </tr>
@@ -224,7 +224,7 @@ The shared CMake workflow accepts `macos_llvm: true` for consumers that require 
 `enum-reflection`, `uinteger_t`, `base-x`, `cuuid`, `md5`, `sha256`, `random`,
 `bloom-filter`, `fusefilter`, `lru-cache`, `generation-cache`, `btree`, `flat-map`, `persistent-map`
 
-**Concurrency, time, and the operating system.** `task`, `threadpool`, `queue`, `stash`,
+**Concurrency, time, and the operating system.** `task`, `workpool`, `queue`, `stash`,
 `scheduler`, `atomic-shared-ptr`, `allocators`, `nanosleep`, `epoch`, `time-point`,
 `times`, `datetime`, `residency`, `io`, `fs`, `completion`
 

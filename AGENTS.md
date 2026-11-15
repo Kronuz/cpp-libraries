@@ -147,7 +147,7 @@ Facts worth knowing before you wire anything up:
 | Ordered map/set with better locality than `std::map` | `btree` |
 | Coroutine tasks on a host event loop: time slices, cancellation, when_all | `task` |
 | Make file ranges resident before an event loop reads them | `residency` |
-| Fixed-size worker pool | `threadpool` |
+| Fixed-size worker pool | `workpool` |
 | Bounded blocking MPMC queue | `queue` |
 | Many timers or deadlines armed from many threads, most of them firing; cancellable delayed tasks, debounce | `scheduler` (on `stash`) |
 | A custom deadline queue or timer wheel: another geometry, a longer horizon, no scheduler thread | `stash` |
@@ -208,7 +208,7 @@ nothing first-party at all.
 
 ```
 leaves        char-classify  static-string  split  strict-stox  stringified  endian
-              constexpr-phf  ctrie  uinteger_t  utype  math  io  stash  threadpool
+              constexpr-phf  ctrie  uinteger_t  utype  math  io  stash  workpool
               queue  reactor  radix-router  compressors  cartesian  lru-cache
               generation-cache  varint  ...
 
@@ -218,14 +218,14 @@ utilities     repr -> char-classify          escape -> char-classify
               base-x -> uinteger_t           md5/sha256 -> endian
 
 services      enum-reflection -> constexpr-phf, hashes
-              scheduler -> stash, threadpool          logger -> scheduler, term-color
+              scheduler -> stash, workpool          logger -> scheduler, term-color
               http-parser -> enum-reflection          storage -> compressors, ...
               traceback -> errno-names, nanosleep, strings, term-color
 
 storage       consensus -> journal -> completion -> metrics
               journal -> crc32c
 
-engine        strata -> termdict, fusefilter, completion, task, threadpool, compressors, ...
+engine        strata -> termdict, fusefilter, completion, task, workpool, compressors, ...
               prospect -> strata, docset, bitpack, fst, analysis
 
 stack         http     -> compressors, http-parser, radix-router, reactor
@@ -1106,10 +1106,10 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Every scheduler must wrap resumes in `task::running_on`, or affinity and yielding see no current scheduler.
   - An exception escaping a fire-and-forget `spawn` terminates.
 
-### threadpool
-[github.com/Kronuz/threadpool](https://github.com/Kronuz/threadpool) &middot; depends on: none
+### workpool
+[github.com/Kronuz/workpool](https://github.com/Kronuz/workpool) &middot; depends on: none
 - **What it is:** A fixed-size C++20 worker pool with fire-and-forget, bulk, and future-returning task submission.
-- **Header / target:** `#include "threadpool.hh"`; CMake target `threadpool::threadpool`; C++20.
+- **Header / target:** `#include "threadpool.hh"`; CMake target `workpool::workpool`; C++20.
 - **How it works:** `ThreadPool` owns long-lived worker threads and a shared `BlockingConcurrentQueue`. The bundled queues are mutex-backed `std::deque` implementations, not lock-free queues. Workers wait with a timed condition-variable dequeue, execute tasks, and update atomic counters for state queries. The target is a static library because thread primitives are implemented in `thread.cc`; task and queue templates are header-defined.
 - **Key API:**
   - `ThreadPool<TaskType = std::function<void()>, ThreadPolicyType policy = regular>`
@@ -1212,7 +1212,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - Values must be pointer-like and non-null (`*ptr && **ptr`); a "zero" value reads as absent. Two consumers corrupt the cursors.
 
 ### scheduler
-[github.com/Kronuz/scheduler](https://github.com/Kronuz/scheduler) &middot; depends on: `stash`, `threadpool`
+[github.com/Kronuz/scheduler](https://github.com/Kronuz/scheduler) &middot; depends on: `stash`, `workpool`
 - **What it is:** A C++20 timer scheduler built on a lock-free hierarchical time wheel and worker-thread execution.
 - **Header / target:** `#include "scheduler.h"`; CMake target `scheduler::scheduler` if enabled by the repository; C++20.
 - **How it works:** The scheduler stores shared scheduled tasks in nested `StashSlots` levels covering progressively larger time intervals. A scheduler thread waits on a condition variable, walks due entries, and optionally dispatches them to a `ThreadPool`. `ScheduledTask::clear()` uses an atomic one-shot claim and cancellation flag, including a final cancellation check after dispatch. The default wheel horizon is approximately 24 hours; scheduling beyond it is dropped with an injectable trace hook.
@@ -1886,7 +1886,7 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `StorageBinFooter`, the footer of the default framing (`Blobs`), has no checksum; supply a footer type if corruption detection is required.
 
 ### strata
-[github.com/Kronuz/strata](https://github.com/Kronuz/strata) &middot; depends on: `hashes`, `crc32c`, `residency`, `varint`, `termdict` (and through it `fst`), `fusefilter`, `compressors` (zstd), `completion`, `task`, `threadpool`
+[github.com/Kronuz/strata](https://github.com/Kronuz/strata) &middot; depends on: `hashes`, `crc32c`, `residency`, `varint`, `termdict` (and through it `fst`), `fusefilter`, `compressors` (zstd), `completion`, `task`, `workpool`
 - **What it is:** The segment core of Elysian, Xapiand's successor: an LSM-style store of immutable segments with background merges, crash-safe commits, checkpoints, and a node-wide indexing budget. A segment's sections come from the plugins a layout names; the document layout (`keys` and `stored`) alone is a key-value store.
 - **Header / target:** `#include "strata/core/index.hh"` (also `strata/core/budget.hh`, `strata/core/pool_executor.hh`, `strata/core/faultfs.hh`); target `strata::core`; header-only; C++20.
 - **How it works:** `basic_index<Layout>` buffers a transaction's operations, flushes them as one segment file (sections, a table of contents, a CRC32C footer) and commits a checksummed manifest. It folds over the layout's plugins and calls their optional static hooks (`builder`, `inverter`, `records`, `check`, ...), so it never names a search type; `order_source<Layout>` lets a layout reorder merges. All file I/O goes through `completion`'s `IO`, so `faultfs` replays power loss, ENOSPC, and media faults at every barrier.
