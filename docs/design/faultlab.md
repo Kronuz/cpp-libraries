@@ -157,6 +157,12 @@ virtual std::shared_ptr<SharedMapping> map_shared(std::uint64_t length) { return
 virtual void link(std::string_view source, std::string_view destination);
 ```
 
+Two contract tightenings go with them, for ChangeWriter's safety check (change_file.cc:43-47).
+`EntryInspection` (io.h:43-48) gains `bool extended_acl = false`: PosixIO reports whether the file
+carries an ACL beyond its mode bits (the check `mode_only_acl` makes on the raw fd today), and
+faultfs always reports false. `create_exclusive` applies the IO's file mode exactly, as ChangeWriter's
+`fchmod` does, so the process umask cannot narrow it; faultfs reports that mode.
+
 `SharedMapping` is `Mapping` (io.h:62-70) with a writable `std::span<char> words()`. PosixFile maps
 it with `mmap(PROT_READ | PROT_WRITE, MAP_SHARED)`, as Detent's ChangeWriter does raw today
 (change_file.cc:73). faultfs backs it with a buffer and one fold rule: a fold applies the changed
@@ -233,9 +239,10 @@ agent_store.cc:201) and open `change` through `detail::ChangeWriter` on the dire
 (agent_store.cc:208). Before their crash tests move, they take `journal::IO`, publish with
 `IO::link` (F8), move the ownership check into `directory_trust()` (io.h:146-153), and open every
 file through the IO; faultfs implements `inspect_entry` and `lock_owner` (F7). AgentStore also
-holds generations with `File::try_lease` and inspects files with `File::inspect` (agent_store.cc:359,
-530), which faultfs gains (F7). Its ChangeWriter creates, sizes and inspects `change` through the IO
-(`create_exclusive`, `truncate`, `inspect`), keeping the creation-to-sizing kill cut (D59 F1) in the
+holds generations with `File::try_lease` (agent_store.cc:359, 530), which faultfs gains (F7). Its
+ChangeWriter creates, sizes and inspects `change` through the IO (`create_exclusive` for its
+`openat` and `fchmod`, change_file.cc:31-43; `File::inspect` for its `fstat` and ACL check,
+change_file.cc:45-47; `truncate` for its `ftruncate`), keeping the creation-to-sizing kill cut (D59 F1) in the
 shadow, and maps the words with `map_shared`; the agent-store run ends with
 `verify(dir, {"change"})`, which compares `change` by length, as today's test models it
 (test_agent_store_crash.cc:63-64).
@@ -340,7 +347,7 @@ owning repository deletes its copy once no pinned consumer includes it.
 
 | # | Repository | Size (counted at the commits above) | Work |
 |---|---|---|---|
-| 0 | completion | io.h +4 virtuals and `SharedMapping` (F8), PosixFile and PosixIO overrides, tests | F8; F9 if ruled (a) |
+| 0 | completion | io.h +4 virtuals, `SharedMapping`, `EntryInspection::extended_acl` and `create_exclusive`'s exact mode (F8), PosixFile and PosixIO overrides, tests | F8; F9 if ruled (a) |
 | 1 | faultlab | faultfs.h from strata (784 lines) plus F4-F7; recorder.h (~200); scenario.h, events.h; Python: history.py (365) with `monotonic` and `seal`, selftest.py (446), proxy.py (263), proxy_test.py (99) from Xapiand | new repository, CI on Linux, macOS, FreeBSD |
 | 2 | prospect | 19 files include strata's faultfs | include and namespace |
 | 3 | strata | 40 tests, 3 benches, CMakeLists, `FAULTLAB_MAP` in 5 files; delete core/faultfs.hh (the survey's ~60 counted more loosely) | include and namespace; every seed keeps its state (F3) |
