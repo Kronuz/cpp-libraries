@@ -93,7 +93,10 @@ Data::Truncate, `current` = Data::Zeros}, with `sectors = old` and `epochs = all
 barrier as a device flush, test_relay_mirror_crash.cc:103-108). Entries::All is the durable
 namespace overlaid with every live name (test_relay_mirror_crash.cc:129-133); `additions` is its
 legal half: new names present and removed names still there, the collector's case. Its other half,
-both names of one rename, breaks atomic `replace` and is dropped as illegal. Rejected: `names =
+both names of one rename, breaks atomic `replace` and is dropped as illegal. "Legal" here means
+allowed by the IO contract faultfs models (an independent coin per namespace operation, `replace`
+atomic), not reachable on a real filesystem: journaled ext4, xfs and APFS persist directory
+operations in prefix order, so neither `additions` nor the both-names state occurs there. Rejected: `names =
 all` for Entries::All, which applies the removes and loses the collector's case; keeping Detent's
 `after_power_cut` as a second reconstruction beside faultfs's, two models of one contract that can
 disagree and that has neither sector tearing nor partial epochs.
@@ -124,7 +127,8 @@ given; new ones are marked.
 | Sector tearing | 512-byte sectors old or new, zeros past the durable size, size old or new (or any sector boundary between, opt-in `size_pick::sector`) | 8-10, 288-296 |
 | Namespace durability | create, link (new), replace (atomic), remove replayed in order, kept per coin until `sync_directory`; a link draws a coin only when one is logged, so F3's seeds hold | 11-12, 300-327 |
 | Ordering epochs | `io::order_files_and_directory`: chained epochs, staged bytes ahead of later changes | 14-21, 705 |
-| Operation faults | `add_fault(fault{op, nth, error, after, keep})`, `clear_faults`; `op` gains `link`, `preallocate` (new) | 55-67, 163 |
+| Operation faults | `add_fault(fault{op, nth, error, after, keep})`, `clear_faults`; `op` gains `link`, `preallocate`, `lease` (new) | 55-67, 163 |
+| File members | `inspect()` (new: kind, size, inode, the process's owner, links as the names that reach it, permissions); `try_lease(LeaseMode)` (new: a per-inode lease table, false when held, released by `kill()` and `crash()`); `map_shared(length)` (new, F8); today io.h:85-88 throw | 465-610 |
 | ENOSPC | capacity checked on writes and `preallocate` (new) | 24, 505 |
 | Short and damaged writes | `short_writes(max)`, `damage_writes(min, at, count)`, `damaged_writes()` | 203-219 |
 | Media faults | `add_media_fault(path, media::{read_error, bit_flip}, begin, end, times)`, `media_hits()` | 69, 174, 191 |
@@ -133,7 +137,7 @@ given; new ones are marked.
 | Inspection | `view(path)`, `list(directory = {})` | 338, 344 |
 | IO | `io(filesystem&, std::string directory = {})` (directory new); `link`, `inspect_entry`, `lock_owner(OwnerLockOptions)` (new; today io.h:227, 255-257 throw) | 614 |
 
-**F8. Three seam additions (completion io.h, Xapiand PLAN D96).** Two on `journal::File`
+**F8. Four seam additions (completion io.h, Xapiand PLAN D96).** Three on `journal::File`
 (io.h:74-95), one on `journal::IO` (io.h:155-257):
 
 ```cpp
@@ -144,10 +148,21 @@ enum class Advice { Normal, Sequential, Random, WillNeed, DontNeed };
 virtual void preallocate(std::uint64_t offset, std::uint64_t length);
 // A hint; never fails and never changes the bytes. Default: nothing.
 virtual void advise(std::uint64_t offset, std::uint64_t length, Advice) noexcept {}
+// A writable view of [0, length) shared with the file; requires size() >= length. Null when
+// the backend cannot map. Stores reach the file without a write call; not durable until sync.
+virtual std::shared_ptr<SharedMapping> map_shared(std::uint64_t length) { return nullptr; }
 // IO: a second name for source's file. Never replaces: throws std::system_error(EEXIST) when
 // destination exists. Default: throws not_supported, as the other optional members do.
 virtual void link(std::string_view source, std::string_view destination);
 ```
+
+`SharedMapping` is `Mapping` (io.h:62-70) with a writable `std::span<char> words()`. PosixFile maps
+it with `mmap(PROT_READ | PROT_WRITE, MAP_SHARED)`, as Detent's ChangeWriter does raw today
+(change_file.cc:73). faultfs backs it with a buffer it folds into the inode at the next call into
+the filesystem (a read included) and at `crash`, as one write of the changed sectors through the
+ordinary write path: a store is visible to the next call, is ordered as a write made at that
+call, and at a crash each changed 512-byte sector keeps its old bytes or its new ones, the sector
+model unchanged. Truncating below a live shared mapping aborts, as `map_files` does for `map`.
 
 PosixFile implements `preallocate` with storage's code, F_PREALLOCATE then `ftruncate` on macOS
 and `posix_fallocate` elsewhere (storage_io.h:231-258); where the filesystem does not support it
@@ -184,8 +199,9 @@ public:
 	recorder(std::shared_ptr<kronuz::journal::IO> real, filesystem& shadow, std::string directory = {});
 	void note(std::string label);   // a labelled event, e.g. from Detent's MirrorTesting hook
 	void add_fault(const fault&);   // fails the real call before or after it, as faultfs rules do
-	void verify(const std::filesystem::path& real_directory) const; // throws unless the shadow's
-	                                // current names and bytes equal load(real_directory)
+	// Throws unless the shadow's current names and bytes equal load(real_directory); the files in
+	// `length_only` (mapped through map_shared, whose stores the shadow never sees) by length only.
+	void verify(const std::filesystem::path& real_directory, std::span<const std::string_view> length_only = {}) const;
 	struct event { std::string label; filesystem state; };
 	const std::vector<event>& events() const;
 };
@@ -197,7 +213,8 @@ Every call goes to the real IO and then to the shadow faultfs; after each mutati
 recorder appends `{label, shadow.snapshot()}`. A group sync goes to the real IO once, keeping
 PosixIO's shared flush, and to the shadow as its individual primitives, one event each. A cut after
 event i is `events[i].state.crash(seed, policy)` or `.kill()`; recovery then runs on that faultfs
-directly, or on a real directory through `materialize`. A run ends with `verify()`: a program
+directly, or on a real directory through `materialize`. `map_shared` goes to the real file only,
+so the shadow holds a mapped file's name and length, not its words. A run ends with `verify()`: a program
 that changes the directory outside the seam (a raw `linkat`, a raw write through the directory fd)
 leaves the shadow behind the real directory and fails loudly there, instead of sweeping states
 that never matched the run.
@@ -208,7 +225,13 @@ stores take a concrete `PosixIO` (mirror.cc:30, 151; agent_store.cc:70, 251), pu
 agent_store.cc:201) and open `change` through `detail::ChangeWriter` on the directory fd
 (agent_store.cc:208). Before their crash tests move, they take `journal::IO`, publish with
 `IO::link` (F8), move the ownership check into `directory_trust()` (io.h:146-153), and open every
-file through the IO; faultfs implements `inspect_entry` and `lock_owner` (F7).
+file through the IO; faultfs implements `inspect_entry` and `lock_owner` (F7). AgentStore also
+holds generations with `File::try_lease` and inspects files with `File::inspect` (agent_store.cc:359,
+530), which faultfs gains (F7). Its ChangeWriter creates, sizes and inspects `change` through the IO
+(`create_exclusive`, `truncate`, `inspect`), keeping the creation-to-sizing kill cut (D59 F1) in the
+shadow, and maps the words with `map_shared`; the agent-store run ends with
+`verify(dir, {"change"})`, which compares `change` by length, as today's test models it
+(test_agent_store_crash.cc:63-64).
 This proves the program's call sequence against the IO contract on every platform. What PosixIO
 turns that contract into (fsync, F_FULLFSYNC, F_BARRIERFSYNC, sync_file_range) stays proven by
 completion's own sync_calls_test.cc, the one remaining user of `replace_sync_calls`
@@ -310,7 +333,7 @@ owning repository deletes its copy once no pinned consumer includes it.
 
 | # | Repository | Size (counted at the commits above) | Work |
 |---|---|---|---|
-| 0 | completion | io.h +3 virtuals (F8), PosixFile and PosixIO overrides, tests | F8; F9 if ruled (a) |
+| 0 | completion | io.h +4 virtuals and `SharedMapping` (F8), PosixFile and PosixIO overrides, tests | F8; F9 if ruled (a) |
 | 1 | faultlab | faultfs.h from strata (784 lines) plus F4-F7; recorder.h (~200); scenario.h, events.h; Python: history.py (365) with `monotonic` and `seal`, selftest.py (446), proxy.py (263), proxy_test.py (99) from Xapiand | new repository, CI on Linux, macOS, FreeBSD |
 | 2 | prospect | 19 files include strata's faultfs | include and namespace |
 | 3 | strata | 40 tests, 3 benches, CMakeLists, `FAULTLAB_MAP` in 5 files; delete core/faultfs.hh (the survey's ~60 counted more loosely) | include and namespace; every seed keeps its state (F3) |
@@ -333,8 +356,9 @@ faultlab's own suite proves F5 (each fixed pick's state equals `crash` with that
 forced, checked directly), F3 (a recorded table of strata seeds and the states they rebuild,
 unchanged), `size_pick::sector` (the review's probe, `.scratch/review-faultlab-design-design/sizes.cc`
 in Xapiand, as a test: every MemoryIO and CrashIO state over random append sequences is a faultlab
-state), and `link` (a crash of link then unlink of the temporary before `sync_directory` keeps
-only POSIX-reachable states).
+state), `link` (a crash of link then unlink of the temporary before `sync_directory` keeps
+only POSIX-reachable states), `try_lease` (a lease held at a cut is released by `kill()`), and
+`map_shared` (stores torn per sector at a crash, never past an ordering point they followed).
 
 ## Questions for Detent's lead (answered)
 
@@ -368,6 +392,6 @@ the `kind` lines (R4, F12).
 ## First buildable steps
 
 1. Owner rules F9.
-2. completion: F8 (`preallocate`, `advise`, `link`) with PosixFile, PosixIO and tests.
+2. completion: F8 (`preallocate`, `advise`, `map_shared`, `link`) with PosixFile, PosixIO and tests.
 3. Create Kronuz/faultlab from strata's faultfs.hh with F2-F7, its tests (F3's seed table, the
    sector probe, link) and CI; then the recorder, scenario and events headers; then the Python half.
