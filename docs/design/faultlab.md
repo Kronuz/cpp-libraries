@@ -95,8 +95,9 @@ namespace overlaid with every live name (test_relay_mirror_crash.cc:129-133); `a
 legal half: new names present and removed names still there, the collector's case. Its other half,
 both names of one rename, breaks atomic `replace` and is dropped as illegal. "Legal" here means
 allowed by the IO contract faultfs models (an independent coin per namespace operation, `replace`
-atomic), not reachable on a real filesystem: journaled ext4, xfs and APFS persist directory
-operations in prefix order, so neither `additions` nor the both-names state occurs there. Rejected: `names =
+atomic), not reachable on a real filesystem: journaled filesystems such as ext4, xfs and APFS
+commit directory operations in transaction order, so neither `additions` nor the both-names state
+is expected there. Rejected: `names =
 all` for Entries::All, which applies the removes and loses the collector's case; keeping Detent's
 `after_power_cut` as a second reconstruction beside faultfs's, two models of one contract that can
 disagree and that has neither sector tearing nor partial epochs.
@@ -128,7 +129,7 @@ given; new ones are marked.
 | Namespace durability | create, link (new), replace (atomic), remove replayed in order, kept per coin until `sync_directory`; a link draws a coin only when one is logged, so F3's seeds hold | 11-12, 300-327 |
 | Ordering epochs | `io::order_files_and_directory`: chained epochs, staged bytes ahead of later changes | 14-21, 705 |
 | Operation faults | `add_fault(fault{op, nth, error, after, keep})`, `clear_faults`; `op` gains `link`, `preallocate`, `lease` (new) | 55-67, 163 |
-| File members | `inspect()` (new: kind, size, inode, the process's owner, links as the names that reach it, permissions); `try_lease(LeaseMode)` (new: a per-inode lease table, false when held, released by `kill()` and `crash()`); `map_shared(length)` (new, F8); today io.h:85-88 throw | 465-610 |
+| File members | `inspect()` (new: kind, size, inode, the process's owner, links as the names that reach it, permissions); `try_lease(LeaseMode)` (new: a per-inode lease table, false when held, released when its file closes and by `kill()` and `crash()`); `map_shared(length)` (new, F8); today io.h:85-88 throw | 465-610 |
 | ENOSPC | capacity checked on writes and `preallocate` (new) | 24, 505 |
 | Short and damaged writes | `short_writes(max)`, `damage_writes(min, at, count)`, `damaged_writes()` | 203-219 |
 | Media faults | `add_media_fault(path, media::{read_error, bit_flip}, begin, end, times)`, `media_hits()` | 69, 174, 191 |
@@ -158,11 +159,17 @@ virtual void link(std::string_view source, std::string_view destination);
 
 `SharedMapping` is `Mapping` (io.h:62-70) with a writable `std::span<char> words()`. PosixFile maps
 it with `mmap(PROT_READ | PROT_WRITE, MAP_SHARED)`, as Detent's ChangeWriter does raw today
-(change_file.cc:73). faultfs backs it with a buffer it folds into the inode at the next call into
-the filesystem (a read included) and at `crash`, as one write of the changed sectors through the
-ordinary write path: a store is visible to the next call, is ordered as a write made at that
-call, and at a crash each changed 512-byte sector keeps its old bytes or its new ones, the sector
-model unchanged. Truncating below a live shared mapping aborts, as `map_files` does for `map`.
+(change_file.cc:73). faultfs backs it with a buffer and one fold rule: a fold applies the changed
+sectors to the inode directly (`note_write`, copy, mark dirty), bypassing `check`, the power
+counter, fault rules and short or damaged writes, since the program issued no write. It runs at
+every call into the filesystem, a read included, before that call takes effect, and at `crash`,
+`kill()` and `snapshot()`; `crash` and `kill()` then detach the mapping, so later stores go
+nowhere. So a store is visible to the next call and ordered as a write made there, a fold never
+moves `mutations()` or a cut point, stores made before power-off can survive a crash, and at a
+crash each changed 512-byte sector keeps its old bytes or its new ones, the sector model
+unchanged. A faultfs test must not store into a mapping while another thread calls in: a fold
+reads the buffer without synchronization, as the page cache would, and TSan would report it.
+Truncating below a live shared mapping aborts, as `map_files` does for `map`.
 
 PosixFile implements `preallocate` with storage's code, F_PREALLOCATE then `ftruncate` on macOS
 and `posix_fallocate` elsewhere (storage_io.h:231-258); where the filesystem does not support it
@@ -358,7 +365,9 @@ unchanged), `size_pick::sector` (the review's probe, `.scratch/review-faultlab-d
 in Xapiand, as a test: every MemoryIO and CrashIO state over random append sequences is a faultlab
 state), `link` (a crash of link then unlink of the temporary before `sync_directory` keeps
 only POSIX-reachable states), `try_lease` (a lease held at a cut is released by `kill()`), and
-`map_shared` (stores torn per sector at a crash, never past an ordering point they followed).
+`map_shared` (stores torn per sector at a crash, never past an ordering point they followed;
+stores then `power_off_after(0)` and a crash can keep their new sectors; stores then `kill()` keep
+every word; `mutations()` unchanged by a fold).
 
 ## Questions for Detent's lead (answered)
 
