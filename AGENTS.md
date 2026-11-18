@@ -184,6 +184,7 @@ Facts worth knowing before you wire anything up:
 | Durable Raft with fixed voters | `consensus` |
 | Crash-safe append-only journal with checkpoints | `journal` |
 | Completion-based file I/O (io_uring, kqueue) | `completion` |
+| Deterministic crash and fault injection: the post-crash states a file contract allows, seeded scenarios, an event log and a linearizability checker | `faultlab` |
 | Geodetic to geocentric coordinates | `cartesian` |
 | Spherical spatial index over the whole planet | `htm` |
 | Phonetic matching of names | `double-metaphone`, `soundex` |
@@ -1545,6 +1546,14 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
 ## Networking, serialization, storage
 
 *The service stack: sockets to HTTP to persistence. `prism` shows them assembled.*
+
+### faultlab
+[github.com/Kronuz/faultlab](https://github.com/Kronuz/faultlab) &middot; depends on: `completion`
+- **What it is:** The one crash and media model for the libraries: `faultfs` replays a recorded run of completion's `IO` seam into every post-crash state the contract allows (sector cuts, unsynced renames and links, torn mapped stores), from a seed; plus a recorder that checks real bytes against the model, seeded scenarios, an event log, and a Python history checker and fault proxy.
+- **Header / target:** `#include "faultlab/faultfs.h"` (also `faultlab/recorder.h`, `faultlab/scenario.h`, `faultlab/events.h`); target `faultlab::faultlab`; header-only; C++20; the checker is `python/history.py`.
+- **How it works:** Each file keeps a durable and a pending version; a crash draws per-field coins from the seed, so a seed rebuilds one state everywhere. `docs/mechanisms/crash-model.md` states the rules.
+- **Use it when:**
+  - A store, journal or engine must prove recovery from every crash state its writes can leave, not from the ones a test happened to hit.
 
 ### reactor
 [github.com/Kronuz/reactor](https://github.com/Kronuz/reactor) &middot; depends on: none
