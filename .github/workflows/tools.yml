@@ -4,7 +4,7 @@ name: tools
 
 on:
   push:
-    branches: [main]
+    branches: [main, "quest/**"]
     paths: ["tools/**", ".github/workflows/tools.yml"]
   pull_request:
     paths: ["tools/**", ".github/workflows/tools.yml"]
