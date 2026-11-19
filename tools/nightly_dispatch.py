@@ -54,6 +54,14 @@ FAIL_DAYS = 7
 RUNBOOK = "https://github.com/Kronuz/cpp-libraries/blob/main/docs/nightly-ci.md#renewing-the-token"
 EXPIRY_HEADER = re.compile(r"^github-authentication-token-expiration:\s*(.+?)\s*$", re.I | re.M)
 FILES_PER_QUERY = 25
+RETRIES = 4  # attempts per call
+BACKOFF = 2.0  # seconds before the first retry, doubling
+HTTP_5XX = re.compile(r"\bHTTP 5\d\d\b")
+TRANSIENT = re.compile(
+    r"\bHTTP 5\d\d\b|\b5\d\d (?:Server|Bad Gateway|Service|Gateway)|timed? ?out|timeout"
+    r"|connection (?:reset|refused|closed)|reset by peer|unexpected EOF|temporary failure",
+    re.I,
+)
 
 Call = Callable[[Sequence[str]], str]
 Json = Any  # decoded GitHub API JSON
@@ -178,8 +186,24 @@ class Github:
 
     def __init__(self, owner: str, call: Call = gh_call, clock: Clock | None = None) -> None:
         self.owner = owner
-        self.call = call
+        self.transport = call
         self.clock = clock or Clock()
+
+    def call(self, args: Sequence[str]) -> str:
+        """Runs the transport, retrying transient failures (5xx, timeouts, resets) with backoff.
+
+        `workflow run` retries only a 5xx reply: after a timeout or reset a run may have started.
+        """
+        dispatching = args[:2] == ["workflow", "run"]
+        transient = HTTP_5XX if dispatching else TRANSIENT
+        for attempt in range(1, RETRIES + 1):
+            try:
+                return self.transport(args)
+            except GhError as error:
+                if attempt == RETRIES or not transient.search(str(error)):
+                    raise
+            self.clock.sleep(BACKOFF * 2 ** (attempt - 1))
+        raise AssertionError("unreachable")
 
     def api(self, path: str) -> Json:
         return json.loads(self.call(["api", path]))

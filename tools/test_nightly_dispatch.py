@@ -544,7 +544,7 @@ class PaceTest(unittest.TestCase):
         def flaky(repo: str, run_id: int) -> dict[str, Any]:
             if failures:
                 failures.pop()
-                raise nd.GhError("HTTP 502")
+                raise nd.GhError("HTTP 404")
             return real(repo, run_id)
 
         self.fake.poll = flaky  # type: ignore[method-assign]
@@ -677,6 +677,56 @@ class MainTest(unittest.TestCase):
         self.assertEqual([line.split()[0] for line in lines], ["repo", "a", "b"])
         md = nd.markdown(rows, "Kronuz")
         self.assertIn("[42](https://github.com/Kronuz/a/actions/runs/42)", md)
+
+
+class RetryTest(unittest.TestCase):
+    def flaky(self, errors: list[str]) -> tuple[nd.Github, list[Sequence[str]], FakeClock]:
+        calls: list[Sequence[str]] = []
+        pending = list(errors)
+
+        def transport(args: Sequence[str]) -> str:
+            calls.append(args)
+            if pending:
+                raise nd.GhError(pending.pop(0))
+            return "{}"
+
+        clock = FakeClock()
+        return nd.Github("Kronuz", transport, clock), calls, clock
+
+    def test_transient_errors_retry_with_doubling_backoff(self) -> None:
+        errors = [
+            "gh api: HTTP 502 Bad Gateway",
+            "gh api: i/o timeout",
+            "read: connection reset by peer",
+        ]
+        github, calls, clock = self.flaky(errors)
+        start = clock.now
+        self.assertEqual(github.call(["api", "x"]), "{}")
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(clock.now - start, 2 + 4 + 8)
+
+    def test_gives_up_after_the_bound(self) -> None:
+        github, calls, _ = self.flaky(["HTTP 503"] * 10)
+        with self.assertRaises(nd.GhError):
+            github.call(["api", "x"])
+        self.assertEqual(len(calls), nd.RETRIES)
+
+    def test_permanent_errors_are_not_retried(self) -> None:
+        github, calls, clock = self.flaky(["gh api: HTTP 404 Not Found"])
+        start = clock.now
+        with self.assertRaises(nd.GhError):
+            github.call(["api", "x"])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(clock.now, start)
+
+    def test_dispatch_retries_a_5xx_but_not_a_timeout(self) -> None:
+        github, calls, _ = self.flaky(["HTTP 502 Bad Gateway", "HTTP 502 Bad Gateway"])
+        self.assertEqual(github.call(["workflow", "run", "ci.yml"]), "{}")
+        self.assertEqual(len(calls), 3)
+        github, calls, _ = self.flaky(["i/o timeout"])
+        with self.assertRaises(nd.GhError):
+            github.call(["workflow", "run", "ci.yml"])
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":
