@@ -1,13 +1,13 @@
 > Status: CURRENT (2026-11-19), reviewed, with the owner's Xapiand D132, D133 and D138 and Detent
 > D122 and D123 folded in. Line numbers hold at task:95798a0, http:ec273dd, reactor:bf874dc,
-> Detent:372e95c7, prism:4d3c96d and Xapiand:eb3dcfa80. Nothing here is built; each daemon adopts
+> Detent:03eac9c5, prism:4d3c96d and Xapiand:eb3dcfa80. Nothing here is built; each daemon adopts
 > it in its own quest.
 
 # How a Kronuz server is put together
 
 One composition for every Kronuz daemon: Xapiand, Prism, detent-authority, detent-relay and
 detent-agent (Detent D122), so their mains read alike. The name detent-authority, formerly
-detentd, follows Detent D123; its cited paths keep `detentd/`, as at the pinned commit. It extends
+detentd, follows Detent D123; its cited paths follow the rename, as at the pinned commit. It extends
 [service-shape](https://github.com/Kronuz/task/blob/95798a0/docs/design/service-shape.md) (one
 control loop, one shutdown) with what comes before the lifecycle: the process, the options, the
 limits and TLS. Xapiand D132 renames service-shape's driver: `serve` becomes `task::lifecycle`, the
@@ -41,7 +41,7 @@ deviation below has that case.
      process (`daemon.cc:34-72`). A second instance finds the lock taken and exits.
    - The log session (the app's logger) opens inside `run`, after the fork.
 
-   This is Detent's code (`detentd/main.cc:154-158`, `detent_relay/main.cc:62-68`). It is one
+   This is Detent's code (`detent_authority/main.cc:154-158`, `detent_relay/main.cc:62-68`). It is one
    implementation, and it moves to task beside `stop_signals`, so a process starts and stops
    through one library (C7).
 3. **Signals.** `task::stop_signals` is the first object after the fork, since its thread must not
@@ -126,7 +126,7 @@ listener, so none of these apply to it.
 
 | Shared (flag, key) | Default | detent-authority | detent-relay | Prism | Xapiand |
 | :---- | :---- | :---- | :---- | :---- | :---- |
-| `--max-clients`, `max_clients` | 1024 | constant 1024, no option (`detentd/main.cc:34,176-177`) | `connections`, 1024 (`configuration.cc:119`, `configuration.hh:30`) | none on plain; TLS constant 1024 (`main.cc:323-324`) | `--max-clients`, 1000, feeds the descriptor budget only (`opts.cc:50,184-185`, `main.cc:450-454`); `--tls-max-connections`, 1024, TLS only (`opts.cc:197,201`, `manager.cc:942-944`) |
+| `--max-clients`, `max_clients` | 1024 | constant 1024, no option (`detent_authority/main.cc:34,176-177`) | `connections`, 1024 (`configuration.cc:119`, `configuration.hh:30`) | none on plain; TLS constant 1024 (`main.cc:323-324`) | `--max-clients`, 1000, feeds the descriptor budget only (`opts.cc:50,184-185`, `main.cc:450-454`); `--tls-max-connections`, 1024, TLS only (`opts.cc:197,201`, `manager.cc:942-944`) |
 | `--max-in-flight`, `max_in_flight` (per loop) | 1024; Xapiand sets 1000 | 1024, the same constant (`main.cc:176`) | `connections` again (`host.cc:290`) | 256 (`main.cc:323,331`) | 1000 constant (`manager.cc:943,950`) |
 | `--idle-timeout-ms`, `idle_timeout_ms` | 75000 | none | none; `idle_ms`, 60 s, is the session lifetime (`configuration.cc:138`) | none | 75 s constant, TLS only (`manager.cc:945`) |
 | `--shutdown-timeout-ms`, `shutdown_timeout_ms` | 35000 | none: drain unbounded (`main.cc:214-222`) | none (`host.cc:431-437`) | none; reactor's 5 s grace (`reactor.h:844`) | not an option: 35 s bound (`manager.cc:155-158`), 5 s grace (`:145,955`) |
@@ -152,7 +152,7 @@ with detent-authority.
 
 | Step | detent-authority | detent-relay | detent-agent | Prism | Xapiand |
 | :---- | :---- | :---- | :---- | :---- | :---- |
-| Options | `load_config`, env, flags (`detentd/main.cc:87-130`) | JSON, plus flags for the config path, runtime directory, daemonizing, status and system mode (`relay/main.cc:15-35`, `configuration.cc:116-117`) | no listener | hand loop, `--x=y`, positional port (`main.cc:242-264`) | CLI11 (`opts.cc:184-265`) |
+| Options | `load_config`, env, flags (`detent_authority/main.cc:87-130`) | JSON, plus flags for the config path, runtime directory, daemonizing, status and system mode (`relay/main.cc:15-35`, `configuration.cc:116-117`) | no listener | hand loop, `--x=y`, positional port (`main.cc:242-264`) | CLI11 (`opts.cc:184-265`) |
 | Process | `run_daemon`, `ProcessLock`, log `Session` (`main.cc:154-158`) | the same (`relay/main.cc:62-68`) | the same, 180 s startup timeout (`detent_agent/main.cc:105-116`, `config.hh:9`) | none: foreground | `detach()` forks and the parent exits at once; `writepid` takes no lock (`main.cc:623-649,1014-1019`) |
 | Signals | `std::signal` flag (`main.cc:183-184`) | `asio::signal_set` on the owner loop (`host.cc:313-317`) | `asio::signal_set` on its loop; the first signal closes the coordinator (`managed_host.cc:186-190`) | `std::signal` flag (`main.cc:338-339`) | `sigaction`, self-pipe, a task (`main.cc:288-300`, `manager.cc:176-215,579-603`) |
 | Limits and descriptors | constructor 1024 and 1024, request timeout 5 s (`service.hh:53`), body cap (`main.cc:176-180`); no descriptor check | `connections` twice, 2 loops, request timeout 65 s (`host.cc:290-295`); no descriptor check | no listener | constructor 256; bound on TLS only (`main.cc:323-331`); no descriptor check | timeouts on TLS only, grace, body cap (`manager.cc:942-958`); the budget raises and shrinks, after `demote` (`main.cc:338-490,801,814,1118`) |
@@ -212,7 +212,7 @@ Each difference in code path between the apps, its reason, and whether it stays.
 3. **`--shutdown-timeout-ms`, `shutdown_timeout_ms`, default 35000**, mapped onto
    `stop_timing::bound`; the 5 s grace is fixed (owner, Xapiand D77).
 4. **The loop runs on the main thread**, as service-shape's `main` and Xapiand do; Detent's
-   `OwnerLoop` (`detentd/main.cc:218-222`; `host.cc:438-440`) gains a `run()` (Xapiand lead
+   `OwnerLoop` (`detent_authority/main.cc:218-222`; `host.cc:438-440`) gains a `run()` (Xapiand lead
    agrees).
 5. **Defaults `max_clients` 1024 and `max_in_flight` 1024**, the largest present value, so no app
    is limited below today (Xapiand lead agrees). Xapiand's `--max-clients` default moves from 1000
