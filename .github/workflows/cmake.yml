@@ -57,6 +57,10 @@ on:
         description: Extra compiler flags for the ASan and UBSan job (e.g. -O1; the build stays Debug, asserts on)
         type: string
         default: ""
+      test_timeout_minutes:
+        description: Minutes the build jobs' Test step may run; under the job's 60, so a hung suite still uploads its failure artifacts and LastTest.log
+        type: number
+        default: 50
       test_parallel:
         description: How many tests ctest runs at once in every job
         type: number
@@ -161,6 +165,7 @@ jobs:
         if: always()
         run: ccache -s
       - name: Test
+        timeout-minutes: ${{ inputs.test_timeout_minutes }}
         run: ctest --test-dir build --output-on-failure --no-tests=ignore --parallel ${{ inputs.test_parallel }}
       - name: Upload failure artifacts
         if: failure() && inputs.failure_artifacts != ''
