@@ -1,6 +1,7 @@
 > Status: CURRENT (2026-11-19), reviewed, with the owner's Xapiand D132, D133 and D138 and Detent
 > D122 and D123 folded in. Line numbers hold at task:95798a0, http:ec273dd, reactor:bf874dc,
-> Detent:03eac9c5, prism:4d3c96d and Xapiand:eb3dcfa80. Nothing here is built; each daemon adopts
+> Detent:03eac9c5, prism:4d3c96d and Xapiand:eb3dcfa80; Prism's Process cell and stop source
+> hold at prism:a87fa0f, which adopted the composition (`stop_signals`, `run_daemon`, `ProcessLock`). Nothing here is built; each daemon adopts
 > it in its own quest.
 
 # How a Kronuz server is put together
@@ -153,7 +154,7 @@ with detent-authority.
 | Step | detent-authority | detent-relay | detent-agent | Prism | Xapiand |
 | :---- | :---- | :---- | :---- | :---- | :---- |
 | Options | `load_config`, env, flags (`detent_authority/main.cc:87-130`) | JSON, plus flags for the config path, runtime directory, daemonizing, status and system mode (`relay/main.cc:15-35`, `configuration.cc:116-117`) | no listener | hand loop, `--x=y`, positional port (`main.cc:242-264`) | CLI11 (`opts.cc:184-265`) |
-| Process | `run_daemon`, `ProcessLock`, log `Session` (`main.cc:154-158`) | the same (`relay/main.cc:62-68`) | the same, 180 s startup timeout (`detent_agent/main.cc:105-116`, `config.hh:9`) | none: foreground | `detach()` forks and the parent exits at once; `writepid` takes no lock (`main.cc:623-649,1014-1019`) |
+| Process | `run_daemon`, `ProcessLock`, log `Session` (`main.cc:154-158`) | the same (`relay/main.cc:62-68`) | the same, 180 s startup timeout (`detent_agent/main.cc:105-116`, `config.hh:9`) | `run_daemon` behind `--daemonize`, `ProcessLock` on `RUNTIME_DIR/prism-PORT.pid` (prism:a87fa0f `main.cc:450,567`) | `detach()` forks and the parent exits at once; `writepid` takes no lock (`main.cc:623-649,1014-1019`) |
 | Signals | `std::signal` flag (`main.cc:183-184`) | `asio::signal_set` on the owner loop (`host.cc:313-317`) | `asio::signal_set` on its loop; the first signal closes the coordinator (`managed_host.cc:186-190`) | `std::signal` flag (`main.cc:338-339`) | `sigaction`, self-pipe, a task (`main.cc:288-300`, `manager.cc:176-215,579-603`) |
 | Limits and descriptors | constructor 1024 and 1024, request timeout 5 s (`service.hh:53`), body cap (`main.cc:176-180`); no descriptor check | `connections` twice, 2 loops, request timeout 65 s (`host.cc:290-295`); no descriptor check | no listener | constructor 256; bound on TLS only (`main.cc:323-331`); no descriptor check | timeouts on TLS only, grace, body cap (`manager.cc:942-958`); the budget raises and shrinks, after `demote` (`main.cc:338-490,801,814,1118`) |
 | TLS and privileges | `configure`, `tls_connection_factory` (`main.cc:166-171`) | `configure` in the loader (`configuration.cc:269-273`); always on | no listener | `configure`, `tls_connection_factory_timed`; `PRISM_TLS` build flag (`main.cc:43-46,319-329`) | `tls_setup`, then `demote` (`main.cc:1105-1118`) |
@@ -173,12 +174,11 @@ Each difference in code path between the apps, its reason, and whether it stays.
 | Fixed-interval polls: 1 ms (detent-authority's authority service, the relay's `turn`, detent-agent's coordinator), 20 ms (detent-agent's monitor and stop watch), 5 and 200 ms (detent-authority's main), 100 ms (Prism), a 10 ms drain and a 5 s shutdown retry (Xapiand, `manager.cc:1006-1029,706-709`) | None; no Xapiand D62 case | Removed (C8): Detent quest loop-idle-waits for the 1 ms loops, `lifecycle` for the rest |
 | A stop with no bound (detent-authority, relay, detent-agent) | None | Removed: `--shutdown-timeout-ms` bounds every stop (Settled 3) |
 | Loop on its own thread (`OwnerLoop`, detent-authority and relay) | Today's code, not a design | Removed: Settled 4 |
-| Signals as a flag polled by `main` (detent-authority, Prism); `signal_set` (relay, detent-agent) | Neither tells a second or third signal apart (service-shape D6, Detent D80) | Removed by `stop_signals` as the stop source |
+| Signals as a flag polled by `main` (detent-authority); `signal_set` (relay, detent-agent) | Neither tells a second or third signal apart (service-shape D6, Detent D80) | Removed by `stop_signals` as the stop source |
 | A daemon with no readiness and a pid file with no lock (Xapiand) | None | Removed by the process step (C7) |
 | No data-directory exclusion (Xapiand) | None | Removed: Xapiand's registry holds an exclusive `flock` in its data directory |
 | State reached through a process global (Xapiand's `XapiandManager::manager()` and `tls_context`) | None | Removed (C6) |
 | `--processors` instead of `--reactors` (Xapiand) | `--processors` also sizes the WAL writers and fsynchers | Removed: Xapiand adds `--reactors` (Options) |
-| No daemon mode (Prism) | A foreground demo with no `--daemonize` | Stays: a missing option, not another path; its `ready` is the log line |
 | Privilege drop (Xapiand only) | Only Xapiand offers `--uid` and `--gid` (`opts.cc:221-224`); Detent and Prism run as the user that starts them | Stays: the step runs only where the option exists |
 | Limits as config keys only (relay); as flags only (Prism, Xapiand) | The relay's configuration holds credentials and per-bundle sources, which flags do not carry; Prism and Xapiand have no configuration file | Stays: one spelling per limit either way (C3) |
 | Bind default loopback (Detent) or all interfaces (Prism, Xapiand) | detent-authority refuses a non-loopback publisher without TLS (`service.cc:543-544`); Prism and Xapiand serve the network by default (`reactor.h:90`) | Stays: a value (C4) |
