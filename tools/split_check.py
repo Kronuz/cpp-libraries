@@ -7,16 +7,19 @@ Between `git merge-base REF HEAD` and HEAD, under PATHs, it checks that:
 
 1. Every non-blank line removed from a file reappears among the added lines.
 2. Every added line that was not removed is a `#include`, `#pragma once`, a namespace opening or
-   closing, a comment line, or a class/struct/union/enum forward declaration.
-3. No C or C++ file under PATHs has more than N lines (default 1000).
+   closing, a comment line, a class/struct/union/enum forward declaration, or a namespace-scope
+   function or `extern` declaration.
+3. Moved lines keep their order: each run of added lines that came from consecutive lines of one
+   base file starts and ends at a top-level boundary of that file (outside every function, class
+   and parenthesis; namespaces do not count). A run that starts or ends inside a function body,
+   which is what reordering statements produces, fails; whole declarations may move freely.
+4. No C or C++ file under PATHs has more than N lines (default 1000).
 
 Whitespace-only differences are ignored. Each failure names the file, the line and the text; the
 exit status is 1 when any check fails and 0 otherwise. It also prints warnings, which do not
-fail: a `static` dropped or added (a linkage change), an anonymous namespace opened in new code,
-and a namespace-scope object with a dynamic initializer that moved to another file.
-
-The check is a multiset comparison of lines: it does not see statements reordered inside a
-function, which a review of the diff (`git diff --color-moved`) covers.
+fail: a `static` dropped or added, an added namespace-scope declaration, an anonymous namespace
+opened in new code (all linkage changes), and a namespace-scope object with a dynamic initializer
+that moved to another file.
 """
 
 from __future__ import annotations
@@ -50,6 +53,7 @@ STATIC_TOKEN = re.compile(r"\bstatic\s+")
 NOT_AN_OBJECT = re.compile(
     r"^(?:using|typedef|return|enum|extern|friend|static_assert|template|class|struct|union)\b"
 )
+NOT_A_DECLARATION = re.compile(r"^(?:using|typedef|return|enum|static_assert|class|struct|union)\b")
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 RAW_OPEN = re.compile(r'"([^()\\\s]{0,16})\(')
 
@@ -59,39 +63,67 @@ def normalize(text: str) -> str:
     return " ".join(text.split())
 
 
-@dataclass(frozen=True)
+def without_static(norm: str) -> str | None:
+    """The line without its first `static` token, or None when it has none."""
+    if not STATIC_TOKEN.search(norm):
+        return None
+    return normalize(STATIC_TOKEN.sub("", norm, count=1))
+
+
+@dataclass
 class Line:
     """One source line as seen by the scanner."""
 
-    code: str  # comments removed, string contents blanked
-    ns_only: bool  # at line start every open brace is a namespace and no parenthesis is open
-    ns_close: bool  # the line only closes namespaces
+    code: str = ""  # comments removed, string contents blanked
+    ns_only: bool = False  # at line start only namespaces are open, and no parenthesis
+    ns_close: bool = False  # the line only closes namespaces
+    decl: bool = False  # part of a namespace-scope function or extern declaration
+    at_start: bool = False  # a statement begins here, outside every function and class
+    at_end: bool = False  # the line completes a statement outside every function and class
+    owner_start: int = 0  # line where the construct open at the line start began (0 when none)
+    owner_end: int = 0  # the same at the line end
 
 
-NO_LINE = Line("", False, False)
+def split_lines(text: str) -> list[str]:
+    lines = text.replace("\r", "").split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
 
 
 def scan(text: str) -> list[Line]:
     """Classifies each line of a C++ file by its code, ignoring comments and strings."""
-    lines = text.replace("\r", "").split("\n")
-    if lines and lines[-1] == "":
-        lines.pop()
     out: list[Line] = []
     frames: list[bool] = []  # True for a namespace brace
     parens = 0
     recent = ""  # code since the last ; { }
+    recent_line = 0  # line where `recent` began
+    top_line = 0  # line where the outermost open non-namespace brace's statement began
     in_block = False
     raw_end: str | None = None
     continued = False
-    for raw in lines:
+
+    def state() -> tuple[bool, int]:
+        """(at a boundary, line of the construct left open) at the current position."""
+        if frames.count(False) > 0:
+            return False, top_line
+        if parens > 0 or recent.strip():
+            return False, recent_line
+        return True, 0
+
+    for lineno, raw in enumerate(split_lines(text), start=1):
         ns_only = parens == 0 and all(frames)
+        at_start, owner_start = state()
         stripped = raw.strip()
         if raw_end is None and not in_block and (continued or stripped.startswith("#")):
             continued = stripped.endswith("\\")
-            out.append(Line(stripped, ns_only, False))
+            out.append(
+                Line(stripped, ns_only, False, False, at_start, at_start, owner_start, owner_start)
+            )
             continue
         code: list[str] = []
         popped: list[bool] = []
+        declared: list[int] = []  # first lines of declarations that end on this line
         i, n = 0, len(raw)
         while i < n:
             if raw_end is not None:
@@ -133,14 +165,21 @@ def scan(text: str) -> list[Line]:
                 code.append("''")
                 continue
             if c == "{":
-                frames.append(bool(NS_BEFORE_BRACE.search(recent)))
+                is_ns = bool(NS_BEFORE_BRACE.search(recent))
+                if not is_ns and frames.count(False) == 0:
+                    top_line = recent_line if recent.strip() else lineno
+                frames.append(is_ns)
                 recent = ""
             elif c == "}":
                 popped.append(frames.pop() if frames else False)
                 recent = ""
             elif c == ";":
+                if parens == 0 and all(frames) and _is_declaration(normalize(recent)):
+                    declared.append(recent_line)
                 recent = ""
             else:
+                if not c.isspace() and not recent.strip():
+                    recent_line = lineno
                 recent += c
                 if c == "(":
                     parens += 1
@@ -150,7 +189,13 @@ def scan(text: str) -> list[Line]:
             i += 1
         text_code = "".join(code).strip()
         ns_close = bool(popped) and all(popped) and set(text_code) <= {"}", " ", "\t"}
-        out.append(Line(text_code, ns_only, ns_close))
+        at_end, owner_end = state()
+        out.append(
+            Line(text_code, ns_only, ns_close, False, at_start, at_end, owner_start, owner_end)
+        )
+        for first in declared:
+            for k in range(max(first, 1) - 1, len(out)):
+                out[k].decl = True
     return out
 
 
@@ -165,6 +210,16 @@ def _skip_quoted(raw: str, start: int, quote: str) -> int:
         else:
             i += 1
     return len(raw)
+
+
+def _is_declaration(stmt: str) -> bool:
+    """Whether a namespace-scope statement is a function or `extern` declaration."""
+    if not stmt or NOT_A_DECLARATION.match(stmt):
+        return False
+    if stmt.startswith("extern "):
+        return True
+    head = stmt.partition("(")[0]
+    return "(" in stmt and "=" not in head
 
 
 def is_dynamic_initializer(line: Line) -> bool:
@@ -192,7 +247,7 @@ def is_dynamic_initializer(line: Line) -> bool:
     return False
 
 
-@dataclass
+@dataclass(eq=False)
 class Entry:
     """A removed or added line."""
 
@@ -200,8 +255,10 @@ class Entry:
     lineno: int
     text: str
     norm: str
+    hunk: int = 0
     used: bool = False
-    info: Line = NO_LINE
+    info: Line = field(default_factory=Line)
+    source: Entry | None = None  # for an added line, the removed line it came from
 
 
 @dataclass
@@ -234,13 +291,19 @@ def resolve_base(repo: Path, base: str | None) -> str:
     raise GitError(f"no base commit: {wanted} does not exist (pass --base REF)")
 
 
-def parse_diff(diff: str) -> tuple[list[Entry], list[Entry]]:
-    """Returns the removed and added lines of a zero-context diff, with line numbers."""
+def parse_diff(diff: str) -> tuple[list[Entry], list[Entry], dict[int, tuple[int, int]]]:
+    """Returns the removed and added lines of a zero-context diff, with line numbers.
+
+    The third value maps each hunk to the base lines around its removed part: the line before
+    it and the first line after it (both unchanged, so also adjacent to its added part).
+    """
     removed: list[Entry] = []
     added: list[Entry] = []
+    bounds: dict[int, tuple[int, int]] = {}
     old_path = new_path = ""
     in_hunk = False
     old_no = new_no = 0
+    hunk = 0
     for raw in diff.split("\n"):
         if raw.startswith("diff --git "):
             in_hunk = False
@@ -253,19 +316,29 @@ def parse_diff(diff: str) -> tuple[list[Entry], list[Entry]]:
                 new_path = _header_path(raw[4:])
             elif (m := HUNK.match(raw)) is not None:
                 in_hunk = True
+                hunk += 1
                 old_no, new_no = int(m.group(1)), int(m.group(3))
+                bounds[hunk] = _hunk_bounds(m)
             continue
         if (m := HUNK.match(raw)) is not None:
+            hunk += 1
             old_no, new_no = int(m.group(1)), int(m.group(3))
+            bounds[hunk] = _hunk_bounds(m)
         elif raw.startswith("-"):
             text = raw[1:].replace("\r", "")
-            removed.append(Entry(old_path or new_path, old_no, text, normalize(text)))
+            removed.append(Entry(old_path or new_path, old_no, text, normalize(text), hunk))
             old_no += 1
         elif raw.startswith("+"):
             text = raw[1:].replace("\r", "")
-            added.append(Entry(new_path or old_path, new_no, text, normalize(text)))
+            added.append(Entry(new_path or old_path, new_no, text, normalize(text), hunk))
             new_no += 1
-    return removed, added
+    return removed, added, bounds
+
+
+def _hunk_bounds(m: re.Match[str]) -> tuple[int, int]:
+    start = int(m.group(1))
+    count = 1 if m.group(2) is None else int(m.group(2))
+    return (start - 1, start + count) if count else (start, start + 1)
 
 
 def _header_path(raw: str) -> str:
@@ -284,11 +357,49 @@ def is_allowed_shape(line: Line) -> bool:
     return (
         not code
         or line.ns_close
+        or line.decl
         or bool(INCLUDE.match(code))
         or bool(PRAGMA_ONCE.match(code))
         or bool(NAMESPACE_OPEN.match(code))
         or bool(FORWARD_DECL.match(code))
     )
+
+
+class Base:
+    """The files at the base commit: their lines and their scans."""
+
+    def __init__(self, repo: Path, rev: str) -> None:
+        self.repo = repo
+        self.rev = rev
+        self.texts: dict[str, list[str]] = {}
+        self.scans: dict[str, list[Line]] = {}
+
+    def load(self, path: str) -> None:
+        if path not in self.scans:
+            text = read_blob(self.repo, self.rev, path)
+            self.texts[path] = split_lines(text)
+            self.scans[path] = scan(text)
+
+    def info(self, entry: Entry) -> Line:
+        self.load(entry.path)
+        lines = self.scans[entry.path]
+        return lines[entry.lineno - 1] if 0 < entry.lineno <= len(lines) else Line()
+
+    def next_nonblank(self, path: str, lineno: int) -> int:
+        """The number of the first non-blank line after `lineno` (0 at the end of the file)."""
+        self.load(path)
+        texts = self.texts[path]
+        for k in range(lineno, len(texts)):
+            if texts[k].strip():
+                return k + 1
+        return 0
+
+    def owner(self, path: str, lineno: int) -> str:
+        self.load(path)
+        texts = self.texts[path]
+        if 0 < lineno <= len(texts):
+            return f"{path}:{lineno}: {texts[lineno - 1].strip()}"
+        return path
 
 
 def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None:
@@ -300,6 +411,7 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
         "--no-textconv",
         "--no-color",
         "--unified=0",
+        "--diff-algorithm=histogram",
         "--src-prefix=a/",
         "--dst-prefix=b/",
         base,
@@ -307,69 +419,97 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
         "--",
         *paths,
     )
-    removed, added = parse_diff(diff)
-    old_scans: dict[str, list[Line]] = {}
+    removed, added, bounds = parse_diff(diff)
+    old = Base(repo, base)
     new_scans: dict[str, list[Line]] = {}
 
-    def info(cache: dict[str, list[Line]], rev: str, entry: Entry) -> Line:
-        if entry.path not in cache:
-            cache[entry.path] = scan(read_blob(repo, rev, entry.path))
-        lines = cache[entry.path]
-        return lines[entry.lineno - 1] if 0 < entry.lineno <= len(lines) else NO_LINE
+    def new_info(entry: Entry) -> Line:
+        if entry.path not in new_scans:
+            new_scans[entry.path] = scan(read_blob(repo, "HEAD", entry.path))
+        lines = new_scans[entry.path]
+        return lines[entry.lineno - 1] if 0 < entry.lineno <= len(lines) else Line()
 
     pool: dict[str, deque[Entry]] = defaultdict(deque)
-    without_static: dict[str, deque[Entry]] = defaultdict(deque)
+    by_stripped: dict[str, deque[Entry]] = defaultdict(deque)
+    by_position: dict[tuple[str, int], Entry] = {}
     for r in removed:
-        r.info = info(old_scans, base, r)
+        r.info = old.info(r)
         if not r.norm or r.info.ns_close:
             continue
         pool[r.norm].append(r)
-        if STATIC_TOKEN.search(r.norm):
-            without_static[normalize(STATIC_TOKEN.sub("", r.norm, count=1))].append(r)
+        by_position[r.path, r.lineno] = r
+        stripped = without_static(r.norm)
+        if stripped is not None:
+            by_stripped[stripped].append(r)
 
-    def take(index: dict[str, deque[Entry]], norm: str, path: str) -> Entry | None:
+    def take(
+        index: dict[str, deque[Entry]], norm: str, a: Entry, prev: Entry | None, stripped: bool
+    ) -> Entry | None:
+        """Picks the removed line `a` came from, preferring the one after `prev`'s source."""
         queue = index.get(norm)
         if not queue:
             return None
+        if prev is not None and prev.source is not None:
+            nxt = by_position.get(
+                (prev.source.path, old.next_nonblank(prev.source.path, prev.source.lineno))
+            )
+            if (
+                nxt is not None
+                and not nxt.used
+                and (without_static(nxt.norm) if stripped else nxt.norm) == norm
+            ):
+                nxt.used = True
+                return nxt
         while queue and queue[0].used:
             queue.popleft()
         if not queue:
             return None
-        pick = next((e for e in queue if not e.used and e.path == path), queue[0])
+        live = [e for e in queue if not e.used]
+        if not live:
+            return None
+        pick = max(live, key=lambda e: (e.info.at_start, e.path == a.path))
         pick.used = True
         return pick
 
     unmatched: list[Entry] = []
+    prev: Entry | None = None
     for a in added:
         if not a.norm:
             continue
-        a.info = info(new_scans, "HEAD", a)
+        a.info = new_info(a)
         if a.info.ns_close:
             continue
-        source = take(pool, a.norm, a.path)
-        if source is not None:
-            _note_move(report, a, source)
-            continue
-        source = take(without_static, a.norm, a.path)
-        if source is not None:
-            report.warnings.append(
-                f"{a.path}:{a.lineno}: warning: dropped 'static' (linkage change, "
-                f"was {source.path}:{source.lineno}): {a.text.strip()}"
-            )
-            _note_move(report, a, source)
-            continue
-        if STATIC_TOKEN.search(a.norm):
-            stripped = normalize(STATIC_TOKEN.sub("", a.norm, count=1))
-            source = take(pool, stripped, a.path)
+        if prev is not None and (prev.path != a.path or prev.hunk != a.hunk):
+            prev = None
+        source = take(pool, a.norm, a, prev, False)
+        if source is None:
+            source = take(by_stripped, a.norm, a, prev, True)
             if source is not None:
                 report.warnings.append(
-                    f"{a.path}:{a.lineno}: warning: added 'static' (linkage change, "
+                    f"{a.path}:{a.lineno}: warning: dropped 'static' (linkage change, "
                     f"was {source.path}:{source.lineno}): {a.text.strip()}"
                 )
-                _note_move(report, a, source)
-                continue
+        if source is None:
+            stripped_line = without_static(a.norm)
+            if stripped_line is not None:
+                source = take(pool, stripped_line, a, prev, False)
+                if source is not None:
+                    report.warnings.append(
+                        f"{a.path}:{a.lineno}: warning: added 'static' (linkage change, "
+                        f"was {source.path}:{source.lineno}): {a.text.strip()}"
+                    )
+        if source is not None:
+            a.source = source
+            prev = a
+            _note_move(report, a, source)
+            continue
         if is_allowed_shape(a.info):
-            if ANON_NAMESPACE.search(a.info.code):
+            if a.info.decl:
+                report.warnings.append(
+                    f"{a.path}:{a.lineno}: warning: namespace-scope declaration added "
+                    f"(linkage change): {a.text.strip()}"
+                )
+            elif ANON_NAMESPACE.search(a.info.code):
                 report.warnings.append(
                     f"{a.path}:{a.lineno}: warning: anonymous namespace opened in new code "
                     f"(internal linkage per translation unit): {a.text.strip()}"
@@ -380,6 +520,65 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
     leftover = [r for q in pool.values() for r in q if not r.used]
     leftover.sort(key=lambda e: (e.path, e.lineno))
     _report_failures(unmatched, leftover, report)
+    if not unmatched and not leftover:
+        _check_slices(added, old, bounds, report)
+
+
+def _check_slices(
+    added: list[Entry], old: Base, bounds: dict[int, tuple[int, int]], report: Report
+) -> None:
+    """Each run of added lines from consecutive base lines must begin and end at a boundary.
+
+    A run also continues through the unchanged lines beside its hunk, so a line edited in place
+    is not a boundary.
+    """
+    run: list[Entry] = []
+
+    def close() -> None:
+        if not run:
+            return
+        first, last = run[0], run[-1]
+        assert first.source is not None and last.source is not None
+        before, after = bounds[first.hunk]
+        in_place_start = first.source.lineno == old.next_nonblank(first.path, before)
+        in_place_end = old.next_nonblank(last.path, last.source.lineno) == old.next_nonblank(
+            last.path, after - 1
+        )
+        if not first.source.info.at_start and not (
+            first.source.path == first.path and in_place_start
+        ):
+            _slice_error(report, old, first, "starts")
+        if not last.source.info.at_end and not (last.source.path == last.path and in_place_end):
+            _slice_error(report, old, last, "ends")
+        run.clear()
+
+    for a in added:
+        if a.source is None:
+            continue
+        if run:
+            last = run[-1]
+            assert last.source is not None
+            follows = (
+                a.path == last.path
+                and a.hunk == last.hunk
+                and a.source.path == last.source.path
+                and a.source.lineno == old.next_nonblank(last.source.path, last.source.lineno)
+            )
+            if not follows:
+                close()
+        run.append(a)
+    close()
+
+
+def _slice_error(report: Report, old: Base, added: Entry, edge: str) -> None:
+    source = added.source
+    assert source is not None
+    owner = source.info.owner_start if edge == "starts" else source.info.owner_end
+    where = old.owner(source.path, owner) if owner else source.path
+    report.errors.append(
+        f"{added.path}:{added.lineno}: error: moved lines {edge} inside a function or statement "
+        f"(base {source.path}:{source.lineno}, within {where}): {added.text.strip()}"
+    )
 
 
 def _note_move(report: Report, added: Entry, source: Entry) -> None:
@@ -424,19 +623,12 @@ def check_sizes(repo: Path, paths: list[str], max_lines: int, report: Report) ->
             continue
         total = int(count)
         if total > max_lines:
-            lines = scan_free_lines(read_blob(repo, "HEAD", path))
+            lines = split_lines(read_blob(repo, "HEAD", path))
             text = lines[max_lines].strip() if len(lines) > max_lines else ""
             report.errors.append(
                 f"{path}:{max_lines + 1}: error: file has {total} lines, the limit is "
                 f"{max_lines}: {text}"
             )
-
-
-def scan_free_lines(text: str) -> list[str]:
-    lines = text.replace("\r", "").split("\n")
-    if lines and lines[-1] == "":
-        lines.pop()
-    return lines
 
 
 def repo_paths(repo: Path, paths: list[str]) -> list[str]:

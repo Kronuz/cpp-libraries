@@ -228,13 +228,29 @@ class MovesTest(Case):
     def test_other_added_shapes_fail(self) -> None:
         self.base({"src/big.cc": BIG})
         self.repo.write("src/big.cc", BIG_AFTER)
-        self.repo.write("src/g.cc", G + "using namespace std;\nextern int counter;\n#define X 1\n")
+        self.repo.write("src/g.cc", G + "using namespace std;\nint counter = 0;\n#define X 1\n")
         self.repo.commit("split")
         errors = self.repo.check().errors
         self.assertEqual(len(errors), 3)
         self.assertHas(errors, "src/g.cc:10:", "using namespace std;")
-        self.assertHas(errors, "src/g.cc:11:", "extern int counter;")
+        self.assertHas(errors, "src/g.cc:11:", "int counter = 0;")
         self.assertHas(errors, "src/g.cc:12:", "#define X 1")
+
+    def test_declarations_are_allowed_with_warnings(self) -> None:
+        self.base({"src/big.cc": BIG})
+        self.repo.write("src/big.cc", BIG_AFTER)
+        decls = (
+            "int helper(int a, int b);\nextern int counter;\nstatic int multi(int a,\n    int b);\n"
+        )
+        self.repo.write("src/g.cc", G + decls)
+        self.repo.commit("split")
+        report = self.repo.check()
+        self.assertEqual(report.errors, [])
+        self.assertEqual(len(report.warnings), 5, report.warnings)
+        self.assertHas(report.warnings, "src/g.cc:10: warning: namespace-scope declaration added")
+        self.assertHas(report.warnings, "src/g.cc:11:", "extern int counter;")
+        self.assertHas(report.warnings, "src/g.cc:12:", "static int multi(int a,")
+        self.assertHas(report.warnings, "src/g.cc:13:", "int b);")
 
     def test_bare_namespace_close_is_allowed_only_for_namespaces(self) -> None:
         self.base({"src/big.cc": BIG})
@@ -291,6 +307,103 @@ class MovesTest(Case):
         self.repo.write("src/a.cc", "int a;\nint b;\n")
         self.repo.commit("add")
         self.assertHas(self.repo.check().errors, "src/a.cc:2: error:", "int b;")
+
+
+SWAP = """\
+namespace x {
+
+int h(int a) {
+    int p = a + 1;
+    int q = a + 2;
+    return p + q;
+}
+
+int k(int a) {
+    return a;
+}
+
+}  // namespace x
+"""
+
+BRACES = """\
+namespace x {
+
+int h(int a) {
+    const char* s = "{";  // {
+    char c = '{';
+    return a;
+}
+
+int k(int a) {
+    return a;
+}
+
+}  // namespace x
+"""
+
+
+class OrderTest(Case):
+    def test_reordered_statements_inside_a_function_fail(self) -> None:
+        self.base({"src/h.cc": SWAP})
+        self.repo.write(
+            "src/h.cc",
+            SWAP.replace(
+                "    int p = a + 1;\n    int q = a + 2;\n",
+                "    int q = a + 2;\n    int p = a + 1;\n",
+            ),
+        )
+        self.repo.commit("swap")
+        errors = self.repo.check().errors
+        self.assertTrue(errors)
+        for e in errors:
+            self.assertIn("src/h.cc:", e)
+            self.assertIn("error: moved lines", e)
+            self.assertIn("within src/h.cc:3: int h(int a) {", e)
+
+    def test_reordered_whole_functions_pass(self) -> None:
+        self.base({"src/h.cc": SWAP})
+        head, _, rest = SWAP.partition("int h(int a) {")
+        h_body, _, k_part = rest.partition("int k(int a) {")
+        k_body, _, tail = k_part.partition("}  // namespace x")
+        swapped = (
+            head
+            + "int k(int a) {"
+            + k_body
+            + "int h(int a) {"
+            + h_body
+            + "}  // namespace x"
+            + tail
+        )
+        self.assertNotEqual(swapped, SWAP)
+        self.repo.write("src/h.cc", swapped)
+        self.repo.commit("swap functions")
+        report = self.repo.check()
+        self.assertEqual((report.errors, report.warnings), ([], []))
+
+    def test_braces_in_strings_and_comments_do_not_move_the_boundary(self) -> None:
+        self.base({"src/h.cc": BRACES})
+        self.repo.write("src/h.cc", BRACES.replace("int k(int a) {\n    return a;\n}\n\n", ""))
+        self.repo.write("src/k.cc", "namespace x {\nint k(int a) {\n    return a;\n}\n}\n")
+        self.repo.commit("move k")
+        report = self.repo.check()
+        self.assertEqual((report.errors, report.warnings), ([], []))
+
+    def test_tail_of_a_function_moved_to_another_file_fails(self) -> None:
+        self.base({"src/h.cc": SWAP})
+        self.repo.write("src/h.cc", SWAP.replace("    int q = a + 2;\n    return p + q;\n", ""))
+        self.repo.write("src/t.cc", "namespace x {\n    int q = a + 2;\n    return p + q;\n}\n")
+        self.repo.commit("cut")
+        errors = self.repo.check().errors
+        self.assertEqual(len(errors), 2, errors)
+        self.assertHas(errors, "src/t.cc:2: error: moved lines starts inside", "within src/h.cc:3")
+        self.assertHas(errors, "src/t.cc:3: error: moved lines ends inside", "return p + q;")
+
+    def test_edit_in_place_continues_through_unchanged_lines(self) -> None:
+        self.base({"src/h.cc": SWAP})
+        self.repo.write("src/h.cc", SWAP.replace("    int q = a + 2;", "\tint   q = a + 2;"))
+        self.repo.commit("reindent")
+        report = self.repo.check()
+        self.assertEqual((report.errors, report.warnings), ([], []))
 
 
 class WarningsTest(Case):
