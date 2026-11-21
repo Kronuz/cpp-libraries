@@ -269,7 +269,7 @@ def parse_diff(diff: str) -> tuple[list[Entry], list[Entry]]:
 
 
 def _header_path(raw: str) -> str:
-    raw = raw.split("\t")[0]
+    raw = raw.split("\t", maxsplit=1)[0]
     if raw == "/dev/null":
         return ""
     return raw[2:] if raw[:2] in ("a/", "b/") else raw
@@ -443,7 +443,7 @@ def repo_paths(repo: Path, paths: list[str]) -> list[str]:
     """Converts PATHs (relative to the current directory) to repository-relative pathspecs."""
     out = []
     for p in paths:
-        rel = os.path.relpath(os.path.abspath(p), repo)
+        rel = os.path.relpath(Path(p).resolve(), repo)
         if rel == ".." or rel.startswith(".." + os.sep):
             raise GitError(f"{p} is outside the repository {repo}")
         out.append(rel)

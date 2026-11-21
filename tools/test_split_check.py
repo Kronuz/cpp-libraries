@@ -182,7 +182,8 @@ class MovesTest(Case):
     def test_added_statement_fails(self) -> None:
         self.base({"src/big.cc": BIG})
         self.repo.write("src/big.cc", BIG_AFTER)
-        self.repo.write("src/g.cc", G.replace("    return", "    int extra = compute(a);\n    return"))
+        extra = "    int extra = compute(a);\n    return"
+        self.repo.write("src/g.cc", G.replace("    return", extra))
         self.repo.commit("split")
         errors = self.repo.check().errors
         self.assertEqual(len(errors), 1)
@@ -193,10 +194,10 @@ class MovesTest(Case):
         self.repo.write("src/big.cc", BIG_AFTER)
         self.repo.write("src/g.cc", G)
         self.repo.commit("split")
-        errors = self.repo.check(max_lines=15).errors
+        errors = self.repo.check(max_lines=12).errors
         self.assertEqual(len(errors), 1)
-        self.assertHas(errors, "src/big.cc:16: error:", "file has 17 lines", "limit is 15")
-        self.assertPasses(self.repo.check(max_lines=17))
+        self.assertHas(errors, "src/big.cc:13: error:", "file has 15 lines", "limit is 12")
+        self.assertPasses(self.repo.check(max_lines=15))
 
     def test_limit_ignores_non_source_files(self) -> None:
         self.base({"src/notes.md": "x\n" * 50, "src/a.cc": "int a;\n"})
@@ -231,9 +232,9 @@ class MovesTest(Case):
         self.repo.commit("split")
         errors = self.repo.check().errors
         self.assertEqual(len(errors), 3)
-        self.assertHas(errors, "src/g.cc:11:", "using namespace std;")
-        self.assertHas(errors, "src/g.cc:12:", "extern int counter;")
-        self.assertHas(errors, "src/g.cc:13:", "#define X 1")
+        self.assertHas(errors, "src/g.cc:10:", "using namespace std;")
+        self.assertHas(errors, "src/g.cc:11:", "extern int counter;")
+        self.assertHas(errors, "src/g.cc:12:", "#define X 1")
 
     def test_bare_namespace_close_is_allowed_only_for_namespaces(self) -> None:
         self.base({"src/big.cc": BIG})
@@ -295,7 +296,7 @@ class MovesTest(Case):
 class WarningsTest(Case):
     def test_dropped_static_warns_and_passes(self) -> None:
         self.base({"src/big.cc": BIG})
-        self.repo.write("src/big.cc", BIG_AFTER.replace("static int helper", "int helper"))
+        self.repo.write("src/big.cc", BIG.replace("static int helper", "int helper"))
         self.repo.commit("unstatic")
         report = self.repo.check()
         self.assertEqual(report.errors, [])
@@ -326,7 +327,7 @@ class WarningsTest(Case):
             "namespace x {\n"
             "constexpr int kConst = compute(3);\n"
             "const int kPlain = 3;\n"
-            "const std::string kName = make_name(\"x\");\n"
+            'const std::string kName = make_name("x");\n'
             "auto kLambda = [](int a) { return a; };\n"
             "int bump(int a = defaults());\n"
             "void f() {\n"
@@ -367,14 +368,14 @@ class WarningsTest(Case):
 class ScanTest(unittest.TestCase):
     def test_comments_strings_and_raw_strings_hide_braces(self) -> None:
         lines = sc.scan(
-            'namespace x {\n'
+            "namespace x {\n"
             'const char* s = "}{ // not a comment";  // } trailing\n'
-            '/* }\n'
-            ' } */ int a;\n'
+            "/* }\n"
+            " } */ int a;\n"
             'const char* r = R"lua(\n'
-            '}\n'
+            "}\n"
             ')lua";\n'
-            '}\n'
+            "}\n"
         )
         self.assertEqual(lines[1].code, 'const char* s = "";')
         self.assertEqual(lines[2].code, "")
