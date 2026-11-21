@@ -6,9 +6,9 @@
 Between `git merge-base REF HEAD` and HEAD, under PATHs, it checks that:
 
 1. Every non-blank line removed from a file reappears among the added lines.
-2. Every added line that was not removed is a `#include`, `#pragma once`, a namespace opening or
-   closing, a comment line, a class/struct/union/enum forward declaration, or a namespace-scope
-   function or `extern` declaration.
+2. Every added line that was not removed is a `#include`, `#pragma once`, an include guard, a
+   namespace opening or closing, a comment line, a class/struct/union/enum forward declaration,
+   or a namespace-scope function or `extern` declaration.
 3. Moved lines keep their order: each run of added lines that came from consecutive lines of one
    base file starts and ends at a top-level boundary of that file (outside every function, class
    and parenthesis; namespaces do not count). A run that starts or ends inside a function body,
@@ -46,6 +46,9 @@ NAMESPACE_OPEN = re.compile(r"^(?:(?:inline\s+)?namespace(?:\s+[\w:]+)?\s*\{\s*(
 ANON_NAMESPACE = re.compile(r"(?:^|\s)namespace\s*\{")
 INCLUDE = re.compile(r"^#\s*include\b")
 PRAGMA_ONCE = re.compile(r"^#\s*pragma\s+once\b")
+# An include guard: `#ifndef`/`#define` of a guard-like name, and its `#endif`.
+INCLUDE_GUARD = re.compile(r"^#\s*(?:ifndef|define)\s+\w*_(?:H|HH|HPP|HXX|INCLUDED)_*\s*$")
+ENDIF = re.compile(r"^#\s*endif\b")
 FORWARD_DECL = re.compile(
     r"^(?:template\s*<[^;{}]*>\s*)?(?:class|struct|union|enum(?:\s+(?:class|struct))?)"
     r"(?:\s+\[\[[^\]]*\]\])?\s+[\w:]+(?:\s*:\s*[\w:\s]+)?\s*;$"
@@ -362,6 +365,8 @@ def is_allowed_shape(line: Line) -> bool:
         or line.decl
         or bool(INCLUDE.match(code))
         or bool(PRAGMA_ONCE.match(code))
+        or bool(INCLUDE_GUARD.match(code))
+        or bool(ENDIF.match(code))
         or bool(NAMESPACE_OPEN.match(code))
         or bool(FORWARD_DECL.match(code))
     )

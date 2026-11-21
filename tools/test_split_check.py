@@ -197,6 +197,22 @@ class MovesTest(Case):
         errors = self.repo.check().errors
         self.assertHas(errors, "src/big.cc:16: error:", "does not reappear", "return a - 1;")
 
+    def test_include_guards_are_allowed(self) -> None:
+        self.base({"src/big.cc": BIG})
+        self.repo.write("src/big.cc", BIG_AFTER)
+        self.repo.write(
+            "src/g.hh", "#ifndef SRC_G_HH_\n#define SRC_G_HH_\n" + G + "#endif  // SRC_G_HH_\n"
+        )
+        self.repo.commit("split")
+        self.assertPasses(self.repo.check())
+
+    def test_a_new_macro_is_not_a_guard(self) -> None:
+        self.base({"src/big.cc": BIG})
+        self.repo.write("src/big.cc", BIG_AFTER)
+        self.repo.write("src/g.cc", "#define USE_FAST_PATH\n" + G)
+        self.repo.commit("split")
+        self.assertHas(self.repo.check().errors, "src/g.cc:1: error:", "#define USE_FAST_PATH")
+
     def test_added_statement_fails(self) -> None:
         self.base({"src/big.cc": BIG})
         self.repo.write("src/big.cc", BIG_AFTER)

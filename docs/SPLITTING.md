@@ -52,10 +52,10 @@ way."
 ## Moves only
 
 A split changes no code: bodies, names, the order of statements inside a function, and behavior
-stay as they were. The only added lines are includes, `#pragma once`, namespace openings and
-closings, comments, blank lines, forward declarations of classes, structs, unions and enums, and
-namespace-scope function prototypes and `extern` declarations. Every other non-move goes in the
-quest's journal with its reason:
+stay as they were. The only added lines are includes, `#pragma once` or an include guard,
+namespace openings and closings, comments, blank lines, forward declarations of classes, structs,
+unions and enums, and namespace-scope function prototypes and `extern` declarations. Every other
+non-move goes in the quest's journal with its reason:
 
 - A function that loses `static` (or leaves an anonymous namespace) to be shared across pieces is a
   linkage change.
