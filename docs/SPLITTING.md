@@ -54,11 +54,15 @@ way."
 A split changes no code: bodies, names, the order of statements inside a function, and behavior
 stay as they were. The only added lines are includes, `#pragma once` or an include guard,
 namespace openings and closings, comments, blank lines, forward declarations of classes, structs,
-unions and enums, and namespace-scope function prototypes and `extern` declarations. Every other
-non-move goes in the quest's journal with its reason:
+unions and enums, namespace-scope function prototypes and `extern` declarations, and a
+namespace-scope `using` of a detail namespace. Every other non-move goes in the quest's journal
+with its reason:
 
-- A function that loses `static` (or leaves an anonymous namespace) to be shared across pieces is a
-  linkage change.
+- A function or variable that loses `static`, gains `inline` or leaves an anonymous namespace to be
+  shared across pieces is a linkage change; shared helpers become `inline` in the detail header.
+- A `using` of the detail namespace, added so moved bodies compile unchanged, can change name
+  lookup.
+- An include or comment dropped instead of moved (a section divider whose section became a file).
 - A namespace-scope object with a dynamic initializer stays in the piece with what it depends on,
   since initialization order across translation units is unspecified.
 - Moving a function to another translation unit can change its inlining. Release builds use
@@ -73,8 +77,9 @@ default is the first existing of `main`, `master`, `origin/main` and `origin/mas
 1. Every line removed from a C or C++ file under PATHs reappears in a C or C++ piece, and nothing
    is lost. Other files (the layout note, CMake lists) are not compared, so a line moved into an
    `.inc` fragment counts as lost.
-2. Every added line has one of the shapes listed in "Moves only". New prototypes and `extern`
-   declarations print as warnings, beside each dropped `static`.
+2. Every added line has one of the shapes listed in "Moves only". New prototypes, `extern`
+   declarations and detail `using`s print as warnings, beside each dropped `static` and added
+   `inline`. A removed include or comment that reappears nowhere is a warning, not a failure.
 3. Each piece is contiguous slices of the old file, in order, cut only at top-level boundaries:
    moving a whole declaration passes, and a statement moved inside a function fails, naming the
    function. Namespace braces don't count as nesting; braces inside strings, characters and

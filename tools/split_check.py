@@ -8,7 +8,8 @@ Between `git merge-base REF HEAD` and HEAD, under PATHs, it checks that:
 1. Every non-blank line removed from a file reappears among the added lines.
 2. Every added line that was not removed is a `#include`, `#pragma once`, an include guard, a
    namespace opening or closing, a comment line, a class/struct/union/enum forward declaration,
-   or a namespace-scope function or `extern` declaration.
+   a namespace-scope function or `extern` declaration, or a namespace-scope `using` of a detail
+   namespace.
 3. Moved lines keep their order: each run of added lines that came from consecutive lines of one
    base file starts and ends at a top-level boundary of that file (outside every function, class
    and parenthesis; namespaces do not count). A run that starts or ends inside a function body,
@@ -18,9 +19,10 @@ Between `git merge-base REF HEAD` and HEAD, under PATHs, it checks that:
 
 The rules are in docs/SPLITTING.md. Whitespace-only differences are ignored. Each failure names
 the file, the line and the text; the exit status is 1 when check 1, 2 or 3 fails and 0 otherwise.
-It also prints warnings, which do not fail: a `static` dropped or added, an added namespace-scope
-declaration, an anonymous namespace opened in new code (all linkage changes), and a
-namespace-scope object with a dynamic initializer that moved to another file.
+It also prints warnings, which do not fail: a `static` dropped or added, an `inline` added, an
+added namespace-scope declaration, an anonymous namespace opened in new code (all linkage
+changes), an added `using` of a detail namespace, a removed include or comment that reappears
+nowhere, and a namespace-scope object with a dynamic initializer that moved to another file.
 """
 
 from __future__ import annotations
@@ -54,6 +56,9 @@ FORWARD_DECL = re.compile(
     r"(?:\s+\[\[[^\]]*\]\])?\s+[\w:]+(?:\s*:\s*[\w:\s]+)?\s*;$"
 )
 STATIC_TOKEN = re.compile(r"\bstatic\s+")
+INLINE_TOKEN = re.compile(r"^inline\s+")
+# A namespace-scope using of a detail namespace, where SPLITTING.md puts helpers pieces share.
+USING = re.compile(r"^using\s+(?:namespace\s+)?(?:[\w:]*::)?\w*detail\w*(?:::\w+)*\s*;$")
 NOT_AN_OBJECT = re.compile(
     r"^(?:using|typedef|return|enum|extern|friend|static_assert|template|class|struct|union)\b"
 )
@@ -72,6 +77,13 @@ def without_static(norm: str) -> str | None:
     if not STATIC_TOKEN.search(norm):
         return None
     return normalize(STATIC_TOKEN.sub("", norm, count=1))
+
+
+def without_inline(norm: str) -> str | None:
+    """The line without its leading `inline`, or None when it has none."""
+    if not INLINE_TOKEN.search(norm):
+        return None
+    return normalize(INLINE_TOKEN.sub("", norm, count=1))
 
 
 @dataclass
@@ -369,6 +381,7 @@ def is_allowed_shape(line: Line) -> bool:
         or bool(ENDIF.match(code))
         or bool(NAMESPACE_OPEN.match(code))
         or bool(FORWARD_DECL.match(code))
+        or (line.ns_only and bool(USING.match(code)))
     )
 
 
@@ -508,6 +521,17 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
                         f"{a.path}:{a.lineno}: warning: added 'static' (linkage change, "
                         f"was {source.path}:{source.lineno}): {a.text.strip()}"
                     )
+        if source is None:
+            plain = without_inline(a.norm)
+            if plain is not None:
+                source = take(by_stripped, plain, a, prev, True) or take(
+                    pool, plain, a, prev, False
+                )
+                if source is not None:
+                    report.warnings.append(
+                        f"{a.path}:{a.lineno}: warning: added 'inline' (linkage change, "
+                        f"was {source.path}:{source.lineno}): {a.text.strip()}"
+                    )
         if source is not None:
             a.source = source
             prev = a
@@ -519,6 +543,11 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
                     f"{a.path}:{a.lineno}: warning: namespace-scope declaration added "
                     f"(linkage change): {a.text.strip()}"
                 )
+            elif USING.match(normalize(a.info.code)):
+                report.warnings.append(
+                    f"{a.path}:{a.lineno}: warning: using added (name lookup change): "
+                    f"{a.text.strip()}"
+                )
             elif ANON_NAMESPACE.search(a.info.code):
                 report.warnings.append(
                     f"{a.path}:{a.lineno}: warning: anonymous namespace opened in new code "
@@ -527,8 +556,19 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
             continue
         unmatched.append(a)
 
-    leftover = [r for q in pool.values() for r in q if not r.used]
-    leftover.sort(key=lambda e: (e.path, e.lineno))
+    leftover = []
+    for r in sorted(
+        (r for q in pool.values() for r in q if not r.used), key=lambda e: (e.path, e.lineno)
+    ):
+        code = normalize(r.info.code)
+        if not code or INCLUDE.match(code):
+            kind = "include" if code else "comment"
+            report.warnings.append(
+                f"{r.path}:{r.lineno}: warning: removed {kind} does not reappear "
+                f"(line number in the base): {r.text.strip()}"
+            )
+        else:
+            leftover.append(r)
     _report_failures(unmatched, leftover, report)
     if not unmatched and not leftover:
         _check_slices(added, old, bounds, report)

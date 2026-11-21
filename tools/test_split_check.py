@@ -213,6 +213,69 @@ class MovesTest(Case):
         self.repo.commit("split")
         self.assertHas(self.repo.check().errors, "src/g.cc:1: error:", "#define USE_FAST_PATH")
 
+    def test_static_helper_becoming_inline_warns(self) -> None:
+        self.base({"src/big.cc": BIG})
+        self.repo.write(
+            "src/big.cc",
+            BIG_AFTER.replace(
+                "static int helper(int a) {\n    return a + 1;\n}\n\n", '#include "h.hh"\n'
+            ),
+        )
+        self.repo.write(
+            "src/h.hh",
+            "#pragma once\n\nnamespace x {\n\n"
+            "inline int helper(int a) {\n    return a + 1;\n}\n\n}  // namespace x\n",
+        )
+        self.repo.write("src/g.cc", G)
+        self.repo.commit("split")
+        report = self.repo.check()
+        self.assertPasses(report)
+        self.assertHas(report.warnings, "src/h.hh:5: warning: added 'inline'", "src/big.cc:6")
+
+    def test_inline_added_to_a_moved_definition_warns(self) -> None:
+        self.base({"src/big.cc": BIG})
+        self.repo.write("src/big.cc", BIG_AFTER)
+        self.repo.write("src/g.hh", G.replace("int g(int a) {", "inline int g(int a) {"))
+        self.repo.commit("split")
+        report = self.repo.check()
+        self.assertPasses(report)
+        self.assertHas(report.warnings, "src/g.hh:5: warning: added 'inline'", "src/big.cc:15")
+
+    def test_namespace_scope_using_warns(self) -> None:
+        self.base({"src/big.cc": BIG})
+        self.repo.write("src/big.cc", BIG_AFTER)
+        self.repo.write(
+            "src/g.cc", G.replace("namespace x {\n", "namespace x {\n\nusing namespace detail;\n")
+        )
+        self.repo.commit("split")
+        report = self.repo.check()
+        self.assertPasses(report)
+        self.assertHas(
+            report.warnings, "src/g.cc:5: warning: using added", "using namespace detail;"
+        )
+
+    def test_using_inside_a_function_fails(self) -> None:
+        self.base({"src/big.cc": BIG})
+        self.repo.write("src/big.cc", BIG_AFTER)
+        self.repo.write(
+            "src/g.cc",
+            G.replace("    return a - 1;\n", "    using namespace detail;\n    return a - 1;\n"),
+        )
+        self.repo.commit("split")
+        self.assertHas(self.repo.check().errors, "src/g.cc:6: error:", "using namespace detail;")
+
+    def test_dropped_include_and_comment_warn(self) -> None:
+        self.base({"src/big.cc": BIG.replace("int g(int a) {", "// --- g ---\nint g(int a) {")})
+        self.repo.write("src/big.cc", BIG_AFTER.replace("#include <vector>\n", ""))
+        self.repo.write("src/g.cc", G)
+        self.repo.commit("split")
+        report = self.repo.check()
+        self.assertPasses(report)
+        self.assertHas(
+            report.warnings, "src/big.cc:2: warning: removed include", "#include <vector>"
+        )
+        self.assertHas(report.warnings, "src/big.cc:15: warning: removed comment", "// --- g ---")
+
     def test_added_statement_fails(self) -> None:
         self.base({"src/big.cc": BIG})
         self.repo.write("src/big.cc", BIG_AFTER)
