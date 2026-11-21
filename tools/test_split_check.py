@@ -189,21 +189,23 @@ class MovesTest(Case):
         self.assertEqual(len(errors), 1)
         self.assertHas(errors, "src/g.cc:6: error:", "int extra = compute(a);")
 
-    def test_file_over_limit_fails(self) -> None:
+    def test_file_over_limit_is_a_note_not_a_failure(self) -> None:
         self.base({"src/big.cc": BIG})
         self.repo.write("src/big.cc", BIG_AFTER)
         self.repo.write("src/g.cc", G)
         self.repo.commit("split")
-        errors = self.repo.check(max_lines=12).errors
-        self.assertEqual(len(errors), 1)
-        self.assertHas(errors, "src/big.cc:13: error:", "file has 15 lines", "limit is 12")
-        self.assertPasses(self.repo.check(max_lines=15))
+        report = self.repo.check(max_lines=12)
+        self.assertEqual(report.errors, [])
+        self.assertEqual(
+            report.notes, ["src/big.cc: note: file has 15 lines (over --max-lines 12)"]
+        )
+        self.assertEqual(self.repo.check(max_lines=15).notes, [])
 
     def test_limit_ignores_non_source_files(self) -> None:
         self.base({"src/notes.md": "x\n" * 50, "src/a.cc": "int a;\n"})
         self.repo.write("src/a.cc", "int a;\n// c\n")
         self.repo.commit("touch")
-        self.assertPasses(self.repo.check(max_lines=10))
+        self.assertEqual(self.repo.check(max_lines=10).notes, [])
 
     def test_whitespace_only_changes_are_ignored(self) -> None:
         self.base({"src/big.cc": BIG})
@@ -246,7 +248,7 @@ class MovesTest(Case):
         self.repo.commit("split")
         report = self.repo.check()
         self.assertEqual(report.errors, [])
-        self.assertEqual(len(report.warnings), 5, report.warnings)
+        self.assertEqual(len(report.warnings), 4, report.warnings)
         self.assertHas(report.warnings, "src/g.cc:10: warning: namespace-scope declaration added")
         self.assertHas(report.warnings, "src/g.cc:11:", "extern int counter;")
         self.assertHas(report.warnings, "src/g.cc:12:", "static int multi(int a,")
@@ -528,7 +530,9 @@ class CommandLineTest(Case):
         self.repo.write("src/g.cc", G)
         self.repo.commit("split")
         ok = self.run_tool("--base", "main", ".")
-        self.assertEqual((ok.returncode, ok.stdout), (0, "split_check: 0 error(s), 0 warning(s)\n"))
+        self.assertEqual(
+            (ok.returncode, ok.stdout), (0, "split_check: 0 error(s), 0 warning(s), 0 note(s)\n")
+        )
         self.repo.write("src/g.cc", G.replace("a - 1", "a - 2"))
         self.repo.commit("break")
         bad = self.run_tool("--max-lines", "1000", "g.cc", "big.cc")
@@ -536,6 +540,16 @@ class CommandLineTest(Case):
         self.assertIn("src/g.cc:6: error:", bad.stdout)
         self.assertIn("return a - 2;", bad.stdout)
         self.assertIn("2 error(s)", bad.stdout)
+
+    def test_large_file_passes_with_a_note(self) -> None:
+        self.base({"src/big.cc": BIG})
+        self.repo.write("src/big.cc", BIG_AFTER)
+        self.repo.write("src/g.cc", G)
+        self.repo.commit("split")
+        proc = self.run_tool("--max-lines", "12", ".")
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("big.cc: note: file has 15 lines (over --max-lines 12)", proc.stdout)
+        self.assertIn("0 error(s), 0 warning(s), 1 note(s)", proc.stdout)
 
     def test_path_outside_the_repository_fails(self) -> None:
         self.base({"src/a.cc": "int a;\n"})

@@ -13,13 +13,14 @@ Between `git merge-base REF HEAD` and HEAD, under PATHs, it checks that:
    base file starts and ends at a top-level boundary of that file (outside every function, class
    and parenthesis; namespaces do not count). A run that starts or ends inside a function body,
    which is what reordering statements produces, fails; whole declarations may move freely.
-4. No C or C++ file under PATHs has more than N lines (default 1000).
+4. C and C++ files under PATHs over N lines (default 1000) are reported as notes. A note never
+   fails the check: whether a large file stays whole is the reader's call.
 
-Whitespace-only differences are ignored. Each failure names the file, the line and the text; the
-exit status is 1 when any check fails and 0 otherwise. It also prints warnings, which do not
-fail: a `static` dropped or added, an added namespace-scope declaration, an anonymous namespace
-opened in new code (all linkage changes), and a namespace-scope object with a dynamic initializer
-that moved to another file.
+The rules are in docs/SPLITTING.md. Whitespace-only differences are ignored. Each failure names
+the file, the line and the text; the exit status is 1 when check 1, 2 or 3 fails and 0 otherwise.
+It also prints warnings, which do not fail: a `static` dropped or added, an added namespace-scope
+declaration, an anonymous namespace opened in new code (all linkage changes), and a
+namespace-scope object with a dynamic initializer that moved to another file.
 """
 
 from __future__ import annotations
@@ -265,6 +266,7 @@ class Entry:
 class Report:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 class GitError(Exception):
@@ -623,11 +625,8 @@ def check_sizes(repo: Path, paths: list[str], max_lines: int, report: Report) ->
             continue
         total = int(count)
         if total > max_lines:
-            lines = split_lines(read_blob(repo, "HEAD", path))
-            text = lines[max_lines].strip() if len(lines) > max_lines else ""
-            report.errors.append(
-                f"{path}:{max_lines + 1}: error: file has {total} lines, the limit is "
-                f"{max_lines}: {text}"
+            report.notes.append(
+                f"{path}: note: file has {total} lines (over --max-lines {max_lines})"
             )
 
 
@@ -650,6 +649,7 @@ def check(repo: Path, base: str | None, max_lines: int, paths: list[str]) -> Rep
     check_sizes(repo, paths, max_lines, report)
     report.errors.sort(key=_sort_key)
     report.warnings.sort(key=_sort_key)
+    report.notes.sort(key=_sort_key)
     return report
 
 
@@ -672,7 +672,7 @@ def main(argv: list[str] | None = None) -> int:
         metavar="N",
         type=int,
         default=DEFAULT_MAX_LINES,
-        help=f"longest allowed C/C++ file under PATH (default {DEFAULT_MAX_LINES})",
+        help=f"report C/C++ files under PATH over N lines as notes (default {DEFAULT_MAX_LINES})",
     )
     parser.add_argument("paths", metavar="PATH", nargs="+", help="files or directories to check")
     args = parser.parse_args(argv)
@@ -684,9 +684,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     for message in report.warnings:
         print(message)
+    for message in report.notes:
+        print(message)
     for message in report.errors:
         print(message)
-    print(f"split_check: {len(report.errors)} error(s), {len(report.warnings)} warning(s)")
+    print(
+        f"split_check: {len(report.errors)} error(s), {len(report.warnings)} warning(s), "
+        f"{len(report.notes)} note(s)"
+    )
     return 1 if report.errors else 0
 
 
