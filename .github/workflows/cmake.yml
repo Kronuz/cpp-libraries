@@ -82,6 +82,10 @@ on:
         type: string
         default: ""
 
+# CMake with Ninja only (Xapiand's decision D168): every configure here uses the Ninja generator.
+env:
+  CMAKE_GENERATOR: Ninja
+
 jobs:
   plan:
     name: plan
@@ -140,7 +144,7 @@ jobs:
       - name: ccache
         run: |
           echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
-          if [[ "${{ runner.os }}" == macOS ]]; then brew install ccache; else sudo apt-get update -q && sudo apt-get install -y -q ccache; fi
+          if [[ "${{ runner.os }}" == macOS ]]; then brew install ccache ninja; else sudo apt-get update -q && sudo apt-get install -y -q ccache ninja-build; fi
       - uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/ccache
@@ -199,7 +203,7 @@ jobs:
       - name: ccache
         run: |
           echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
-          sudo apt-get update -q && sudo apt-get install -y -q ccache
+          sudo apt-get update -q && sudo apt-get install -y -q ccache ninja-build
       - uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/ccache
@@ -253,7 +257,7 @@ jobs:
       - name: ccache
         run: |
           echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
-          sudo apt-get update -q && sudo apt-get install -y -q ccache
+          sudo apt-get update -q && sudo apt-get install -y -q ccache ninja-build
       - uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/ccache
@@ -298,9 +302,9 @@ jobs:
         with:
           release: "14.3"
           usesh: true
-          prepare: pkg install -y cmake git ${{ inputs.freebsd_packages }}
+          prepare: pkg install -y cmake git ninja ${{ inputs.freebsd_packages }}
           run: |
-            cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -g" "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -g" ${{ inputs.cmake_args }}
+            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -g" "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -g" ${{ inputs.cmake_args }}
             cmake --build build --parallel 4
             ctest --test-dir build --output-on-failure --no-tests=ignore --parallel ${{ inputs.test_parallel }}
 
@@ -318,6 +322,8 @@ jobs:
       - name: Packages
         if: inputs.apt_packages != ''
         run: sudo apt-get update -q && sudo apt-get install -y -q ${{ inputs.apt_packages }}
+      - name: Ninja
+        run: sudo apt-get update -q && sudo apt-get install -y -q ninja-build
       - name: Check
         env: { CXX: "${{ matrix.cxx }}", CMAKE_ARGS: "${{ inputs.cmake_args }}" }
         # The build tree is only configured: FetchContent puts the first-party dependencies in it.
