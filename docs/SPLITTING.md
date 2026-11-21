@@ -70,7 +70,9 @@ quest's journal with its reason:
 `split_check.py [--base REF] [--max-lines N] PATH...`, comparing the tree at HEAD with REF (the
 default is the first existing of `main`, `master`, `origin/main` and `origin/master`):
 
-1. Every line removed from a file under PATHs reappears in a piece, and nothing is lost.
+1. Every line removed from a C or C++ file under PATHs reappears in a C or C++ piece, and nothing
+   is lost. Other files (the layout note, CMake lists) are not compared, so a line moved into an
+   `.inc` fragment counts as lost.
 2. Every added line has one of the shapes listed in "Moves only". New prototypes and `extern`
    declarations print as warnings, beside each dropped `static`.
 3. Each piece is contiguous slices of the old file, in order, cut only at top-level boundaries:

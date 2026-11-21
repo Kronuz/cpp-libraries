@@ -422,6 +422,9 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
         *paths,
     )
     removed, added, bounds = parse_diff(diff)
+    # Only C and C++ sources are code; a layout note or a CMake line is not a move.
+    removed = [e for e in removed if Path(e.path).suffix in SOURCE_SUFFIXES]
+    added = [e for e in added if Path(e.path).suffix in SOURCE_SUFFIXES]
     old = Base(repo, base)
     new_scans: dict[str, list[Line]] = {}
 

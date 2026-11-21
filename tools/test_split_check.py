@@ -179,6 +179,24 @@ class MovesTest(Case):
         self.assertEqual(len(errors), 1)
         self.assertHas(errors, "src/big.cc:16: error:", "does not reappear", "return a - 1;")
 
+    def test_layout_note_and_cmake_lines_are_not_code(self) -> None:
+        self.base({"src/big.cc": BIG, "CMakeLists.txt": "add_library(x src/big.cc)\n"})
+        self.repo.write("src/big.cc", BIG_AFTER)
+        self.repo.write("src/g.cc", G)
+        self.repo.write("CMakeLists.txt", "add_library(x src/big.cc src/g.cc)\n")
+        self.repo.write("docs/source-layout.md", "# Source layout\n\n| File | Holds |\n")
+        self.repo.commit("split")
+        self.assertPasses(self.repo.check(paths=(".",)))
+
+    def test_line_moved_into_an_inc_fragment_is_lost(self) -> None:
+        self.base({"src/big.cc": BIG})
+        self.repo.write("src/big.cc", BIG_AFTER)
+        self.repo.write("src/g.cc", G.replace("    return a - 1;\n", '#include "g.inc"\n'))
+        self.repo.write("src/g.inc", "    return a - 1;\n")
+        self.repo.commit("split")
+        errors = self.repo.check().errors
+        self.assertHas(errors, "src/big.cc:16: error:", "does not reappear", "return a - 1;")
+
     def test_added_statement_fails(self) -> None:
         self.base({"src/big.cc": BIG})
         self.repo.write("src/big.cc", BIG_AFTER)
