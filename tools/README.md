@@ -7,6 +7,7 @@ Scripts shared by the Kronuz C++ repositories. Each documents its options in its
 | `split_check.py` | Proves a file split moved code and changed none. |
 | `preflight.sh` | CI's matrix before a push, on this Mac and the Linux and FreeBSD gate VMs. |
 | `selfcontained.sh` | Checks that every public header compiles alone. |
+| `fnsizes.sh` | Prints per-function sizes of a binary or object, on Mach-O and ELF. |
 | `pins.sh` | Lists first-party FetchContent pins and whether each is behind its dependency. |
 | `ab_compare.py` | Paired A/B comparison of benchmark outputs. |
 | `nightly_dispatch.py`, `nightly_enroll.py` | The central nightly CI. |

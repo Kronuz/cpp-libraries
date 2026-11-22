@@ -39,7 +39,8 @@ way."
   pieces.
 - Every new header is self-contained: it includes what it uses (siblings and standard headers) and
   compiles alone, included twice in an otherwise empty translation unit, with `-fsyntax-only`.
-  Run this over the new headers: `tools/selfcontained.sh` with `-x` globs for old headers.
+  Run this over the new headers: `tools/selfcontained.sh` with `-x` globs for old headers, and `-t`
+  for headers under `test/` and `tests/`.
 - Pieces sit next to their file, named with its name as prefix (`serialize_guess.cc`), or in a
   directory named after it (`http_asio/connection_io.h`), following what the repository already
   does.
@@ -66,8 +67,9 @@ with its reason:
 - A namespace-scope object with a dynamic initializer stays in the piece with what it depends on,
   since initialization order across translation units is unspecified.
 - Moving a function to another translation unit can change its inlining. Release builds use
-  `-flto`; for hot code, compare function sizes before and after (`nm -S --size-sort` on a Release
-  build) and explain each difference.
+  `-flto`; for hot code, compare function sizes before and after (`tools/fnsizes.sh BINARY` on a
+  Release build, once at the base and once at the split, then `diff`) and explain each difference.
+  The tool works on Mach-O as well, where `nm -S` prints size 0 for every symbol.
 
 ## What `tools/split_check.py` checks
 
@@ -95,7 +97,13 @@ Its quest proves each of these with a job at the split code, except the last two
 
 1. The build and the tests pass.
 2. `split_check.py` passes, and the journal answers each warning.
-3. `ctest -N` lists the same tests before and after.
+3. `ctest -N` lists the same tests before and after. Compare only the test lines, since ctest also
+   prints "could not find executable" lines for targets not built in that tree:
+
+   ```sh
+   keep='^ *Test +#|^Total Tests:'
+   diff <(ctest --test-dir BASE_BUILD -N | grep -E "$keep") <(ctest --test-dir HEAD_BUILD -N | grep -E "$keep")
+   ```
 4. The new headers compile alone.
 5. CI is green on every platform.
 6. The layout note lists the pieces.

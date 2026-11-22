@@ -33,6 +33,11 @@ check "only passing headers: exit status 0" $status
 lacks "^ok "; check "-q hides passes" $?
 hasf "selfcontained: 4 ok, 0 failed (2 headers, standards 17 20"; check "two standards over two headers" $?
 
+out="$("$tool" -t -s 20 "$fixture" 2>&1)"; status=$?
+hasf "ok    c++20 tests/support.hh"; check "-t checks a tests/ header" $?
+hasf "FAIL  c++20 test/broken_but_not_public.hh"; check "-t checks a test/ header" $?
+has ", 3 failed \(7 headers"; check "-t adds both test headers" $?
+
 printf 'cmake_minimum_required(VERSION 3.20)\nproject(t CXX)\nadd_library(t INTERFACE)\ntarget_compile_features(t INTERFACE cxx_std_17)\n' >"$here/testdata/selfcontained/CMakeLists.txt"
 out="$("$tool" -x 'no_guard*' "$fixture" 2>&1)"
 rm -f "$here/testdata/selfcontained/CMakeLists.txt"

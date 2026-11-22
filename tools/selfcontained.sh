@@ -4,7 +4,7 @@
 # compiled with -fsyntax-only at the standard the repository requests.
 #
 #   tools/selfcontained.sh [-s STD]... [-I DIR]... [-b BUILD [-C ARGS]] [-x GLOB]... [-f FLAG]...
-#                          [-c CXX] [-j N] [-q] [REPO_DIR]
+#                          [-c CXX] [-j N] [-t] [-q] [REPO_DIR]
 #
 #   -s STD    C++ standard to check (17, 20, 23); repeat to check several. Default: the lowest
 #             cxx_std_NN or CXX_STANDARD NN in CMakeLists.txt, else 20.
@@ -18,10 +18,12 @@
 #   -f FLAG   extra compiler flag, such as -DNAME=1.
 #   -c CXX    compiler (default $CXX, else c++).
 #   -j N      jobs (default: the CPU count).
+#   -t        also check the headers under test/ and tests/ (a split's new test headers); off by
+#             default, since test headers often rely on the test target's flags (pass -f, -I).
 #   -q        print the failures only.
 #
 # Public headers are the tracked and untracked *.h, *.hh, *.hpp and *.hxx files, outside test,
-# tests, bench, benchmark(s), fuzz, example(s), doc(s), tools, third_party, vendor, ext,
+# tests (unless -t), bench, benchmark(s), fuzz, example(s), doc(s), tools, third_party, vendor, ext,
 # prototype and build directories. A header under include/ is spelled without that prefix.
 # Exit status: 0 every header compiles, 1 one does not, 2 bad usage or a failed configure.
 set -uo pipefail
@@ -49,10 +51,10 @@ fi
 usage() { sed -n '2,/^set -u/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-stds=() incs=() flags=() skips=() build="" cmake_args="" quiet=0
+stds=() incs=() flags=() skips=() build="" cmake_args="" quiet=0 with_tests=0
 cxx="${CXX:-c++}"
 jobs="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
-while getopts "s:I:b:C:x:f:c:j:qh" opt; do
+while getopts "s:I:b:C:x:f:c:j:tqh" opt; do
 	case $opt in
 	s) stds+=("$OPTARG") ;;
 	I) incs+=("-I$(cd "$OPTARG" && pwd)") ;;
@@ -62,6 +64,7 @@ while getopts "s:I:b:C:x:f:c:j:qh" opt; do
 	f) flags+=("$OPTARG") ;;
 	c) cxx=$OPTARG ;;
 	j) jobs=$OPTARG ;;
+	t) with_tests=1 ;;
 	q) quiet=1 ;;
 	*) usage ;;
 	esac
@@ -103,7 +106,10 @@ fi
 
 wanted() {
 	case "/$1" in
-	*/test/* | */tests/* | */bench/* | */benchmark/* | */benchmarks/* | */fuzz/* | */example/* | \
+	*/test/* | */tests/*) [ $with_tests -eq 1 ] || return 1 ;;
+	esac
+	case "/$1" in
+	*/bench/* | */benchmark/* | */benchmarks/* | */fuzz/* | */example/* | \
 		*/examples/* | */doc/* | */docs/* | */tools/* | */third_party/* | */vendor/* | */ext/* | \
 		*/prototype/* | */_deps/* | */build/* | */build-*/*) return 1 ;;
 	esac

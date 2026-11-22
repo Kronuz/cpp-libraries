@@ -577,6 +577,100 @@ class WarningsTest(Case):
         self.assertHas(report.warnings, "src/g.cc:4: warning: anonymous namespace", "namespace {")
 
 
+class MacroShapesTest(Case):
+    """Shapes a macro makes: the checker reads them as boundaries, not as cuts or initializers."""
+
+    def split_in_two(self, text: str, cut: int, ext: str = "cc") -> sc.Report:
+        """Splits `text` at line `cut` (0-based) into big and other, the head in both."""
+        lines = text.splitlines(keepends=True)
+        self.base({f"src/big.{ext}": text})
+        self.repo.write(f"src/big.{ext}", "".join(lines[:cut]) + lines[-1])
+        self.repo.write(f"src/other.{ext}", "namespace x {\n" + "".join(lines[cut:]))
+        self.repo.commit("split")
+        return self.repo.check()
+
+    def test_macro_call_without_semicolon_ends_a_statement(self) -> None:
+        text = (
+            "namespace x {\n"
+            "ENUM_CLASS(Kind, uint8_t,\n"
+            "    A,\n"
+            "    B\n"
+            ")\n"
+            "class Thing {\n"
+            "};\n"
+            "}  // namespace x\n"
+        )
+        report = self.split_in_two(text, 5)
+        self.assertEqual((report.errors, report.warnings), ([], []))
+
+    def test_cut_inside_a_function_still_fails(self) -> None:
+        text = (
+            "namespace x {\nENUM_CLASS(Kind, int, A)\n"
+            "int f(int a) {\n    a += 1;\n    return a;\n}\n}  // namespace x\n"
+        )
+        self.base({"src/big.cc": text})
+        self.repo.write("src/big.cc", text.replace("    return a;\n", ""))
+        self.repo.write("src/other.cc", "namespace x {\n    return a;\n}  // namespace x\n")
+        self.repo.commit("split")
+        self.assertHas(self.repo.check().errors, "inside a function or statement")
+
+    def test_namespace_opened_by_a_macro_holds_operators_quietly(self) -> None:
+        text = (
+            "MY_API_NAMESPACE(ns) {\n"
+            "inline T& T::operator+=(int o) {\n"
+            "    return *this;\n"
+            "}\n"
+            "inline T& T::operator=(const T& o) {\n"
+            "    return *this;\n"
+            "}\n"
+            "}  // MY_API_NAMESPACE(ns)\n"
+        )
+        lines = text.splitlines(keepends=True)
+        self.base({"src/big.cc": text})
+        self.repo.write("src/big.cc", "".join(lines[:4]) + lines[7])
+        self.repo.write("src/other.cc", "namespace ns {\n" + "".join(lines[4:7]) + "}\n")
+        self.repo.commit("split")
+        report = self.repo.check()
+        self.assertEqual((report.errors, report.warnings), ([], []))
+
+    def test_local_in_a_define_body_is_not_a_namespace_scope_initializer(self) -> None:
+        text = (
+            "#define CHECK_SEEN(got) \\\n"
+            "    do { \\\n"
+            "        const std::string got_ = (got); \\\n"
+            "        check(got_); \\\n"
+            "    } while (0)\n"
+            "namespace x {\n"
+            "}  // namespace x\n"
+        )
+        self.base({"src/big.cc": text})
+        self.repo.write("src/big.cc", "namespace x {\n}  // namespace x\n")
+        self.repo.write("src/other.cc", text.split("namespace x", maxsplit=1)[0])
+        self.repo.commit("move")
+        report = self.repo.check()
+        self.assertEqual((report.errors, report.warnings), ([], []))
+
+    def test_repeated_line_matches_the_occurrence_beside_its_declaration(self) -> None:
+        text = (
+            "namespace x {\n"
+            "template <typename M, typename>\n"
+            "int first(M&& o) {\n"
+            "    return 1;\n"
+            "}\n"
+            "template <typename M, typename>\n"
+            "int second(M&& o) {\n"
+            "    return 2;\n"
+            "}\n"
+            "}  // namespace x\n"
+        )
+        report = self.split_in_two(text, 5)
+        self.assertEqual((report.errors, report.warnings), ([], []))
+
+    def test_operator_definition_is_not_a_dynamic_initializer(self) -> None:
+        line = sc.scan("namespace x {\ninline T& T::operator+=(int o) {\n}\n}\n")[1]
+        self.assertFalse(sc.is_dynamic_initializer(line))
+
+
 class ScanTest(unittest.TestCase):
     def test_comments_strings_and_raw_strings_hide_braces(self) -> None:
         lines = sc.scan(

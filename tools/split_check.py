@@ -43,7 +43,12 @@ SOURCE_SUFFIXES = frozenset(
     {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".ipp", ".inl", ".tpp"}
 )
 
-NS_BEFORE_BRACE = re.compile(r"(?:^|\s)(?:inline\s+)?namespace(?:\s+[\w:]+)?\s*$")
+NS_BEFORE_BRACE = re.compile(
+    r"(?:^|\s)(?:(?:inline\s+)?namespace(?:\s+[\w:]+)?|[A-Z0-9_]*NAMESPACE[A-Z0-9_]*\s*\(.*\))\s*$"
+)
+# A whole statement that is a macro call with no `;`, such as `ENUM_CLASS(Name, int, ...)`.
+MACRO_STATEMENT = re.compile(r"^[A-Z][A-Z0-9_]*\s*\(.*\)$")
+OPERATOR_NAME = re.compile(r"\boperator\s*(?:\(\s*\)|[^\s\w(]+|new|delete)")
 NAMESPACE_OPEN = re.compile(r"^(?:(?:inline\s+)?namespace(?:\s+[\w:]+)?\s*\{\s*(?:\}\s*)?)+$")
 ANON_NAMESPACE = re.compile(r"(?:^|\s)namespace\s*\{")
 INCLUDE = re.compile(r"^#\s*include\b")
@@ -134,7 +139,7 @@ def scan(text: str) -> list[Line]:
         if raw_end is None and not in_block and (continued or stripped.startswith("#")):
             continued = stripped.endswith("\\")
             out.append(
-                Line(stripped, ns_only, False, False, at_start, at_start, owner_start, owner_start)
+                Line(stripped, False, False, False, at_start, at_start, owner_start, owner_start)
             )
             continue
         code: list[str] = []
@@ -204,6 +209,13 @@ def scan(text: str) -> list[Line]:
             code.append(c)
             i += 1
         text_code = "".join(code).strip()
+        if (
+            parens == 0
+            and text_code.endswith(")")
+            and MACRO_STATEMENT.match(normalize(recent))
+            and "NAMESPACE" not in recent.partition("(")[0]
+        ):
+            recent = ""
         ns_close = bool(popped) and all(popped) and set(text_code) <= {"}", " ", "\t"}
         at_end, owner_end = state()
         out.append(
@@ -240,7 +252,7 @@ def _is_declaration(stmt: str) -> bool:
 
 def is_dynamic_initializer(line: Line) -> bool:
     """Whether a line looks like a namespace-scope object initialized by a call."""
-    code = line.code
+    code = OPERATOR_NAME.sub("operator", line.code)
     if not line.ns_only or not code or NOT_AN_OBJECT.match(code) or "constexpr" in code:
         return False
     if "constinit" in code or "consteval" in code:
@@ -274,6 +286,7 @@ class Entry:
     hunk: int = 0
     used: bool = False
     info: Line = field(default_factory=Line)
+    after: str = ""  # for an added line, the next non-blank added line of its hunk
     source: Entry | None = None  # for an added line, the removed line it came from
 
 
@@ -465,6 +478,11 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
         if stripped is not None:
             by_stripped[stripped].append(r)
 
+    def follows_like(e: Entry, a: Entry) -> bool:
+        """Whether the line after removed `e` is the line after added `a`."""
+        nxt = by_position.get((e.path, old.next_nonblank(e.path, e.lineno)))
+        return bool(a.after) and nxt is not None and nxt.norm == a.after
+
     def take(
         index: dict[str, deque[Entry]], norm: str, a: Entry, prev: Entry | None, stripped: bool
     ) -> Entry | None:
@@ -490,10 +508,17 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
         live = [e for e in queue if not e.used]
         if not live:
             return None
-        pick = max(live, key=lambda e: (e.info.at_start, e.path == a.path))
+        pick = max(live, key=lambda e: (follows_like(e, a), e.info.at_start, e.path == a.path))
         pick.used = True
         return pick
 
+    following: Entry | None = None
+    for a in reversed(added):
+        if following is not None and (following.path, following.hunk) != (a.path, a.hunk):
+            following = None
+        a.after = following.norm if following is not None else ""
+        if a.norm:
+            following = a
     unmatched: list[Entry] = []
     prev: Entry | None = None
     for a in added:
