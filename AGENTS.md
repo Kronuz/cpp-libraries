@@ -10,15 +10,21 @@ by task" before you write anything.
 
 ## What this is
 
-About eighty small, standalone C++ libraries, each in its own public repository under
-[github.com/Kronuz](https://github.com/Kronuz). They were extracted from
-[Xapiand](https://github.com/Kronuz/Xapiand), a distributed RESTful search engine, over
-roughly a decade of building it. Whenever a piece grew sharp enough and self-contained
-enough to stand alone, it was carved out, given a README and a test suite, and released.
+About eighty small, standalone C++ building blocks, each in its own public repository
+under [github.com/Kronuz](https://github.com/Kronuz). The collection began with pieces
+extracted from larger systems and now includes libraries written independently. Each
+one has a narrow job, a README and tests.
 
 They are not a framework. There is no umbrella header, no common runtime, and no
 registration step. Each library is one idea with a narrow surface, and most are
 header-only. You take the two you need and ignore the rest.
+
+The [Familiars site](https://kronuz.github.io/cpp-libraries/) is the short human
+entrance to the collection. `site/index.html` contains one curated page, `site/styles.css`
+shares the green Kronuz palette, and `site/favicon.svg` is the blog's brand mark. The
+page links to this file for the complete task index and to the README for the full catalog;
+it does not duplicate either. The static page needs no build dependencies. The Pages
+workflow publishes `site/` from `main` after GitHub Pages is set to use Actions.
 
 **Treat this document as the starting point for any C++ work in this ecosystem.** Before
 writing a thread pool, a timer wheel, an LRU cache, an HTTP parser, a perfect hash, a
@@ -150,6 +156,7 @@ Facts worth knowing before you wire anything up:
 | Fixed-size worker pool | `workpool` |
 | Bounded blocking MPMC queue | `queue` |
 | Many timers or deadlines armed from many threads, most of them firing; cancellable delayed tasks, debounce | `scheduler` (on `stash`) |
+| Re-armed or cancelled timers owned by one event loop, without per-timer allocation | `wheel` |
 | A custom deadline queue or timer wheel: another geometry, a longer horizon, no scheduler thread | `stash` |
 | Timers owned by one event loop: connection idle, request deadlines, protocol ticks | `reactor` (`PeriodicTimer`) or Asio `steady_timer` |
 | TTL expiry or idle eviction of cache entries, no timers | `lru-cache` (`aging_lru`, trimmed by the caller) |
@@ -1244,6 +1251,15 @@ reach for it. The "do not use it when" bullets are the load-bearing ones; read t
   - `clear()` is one CAS and costs the walk nothing, but the entry and the task stay in the wheel until its slot drains. Replacing a deadline (the debouncer does it on every touch) is `clear()`, a new task, and an `add`; a task that holds a large payload or a `shared_ptr` to a closing object is pinned until then. Keep one wheel per host, not per object; the geometry (24 h, 1 ms) is fixed in `SchedulerQueue`.
   - `add` places the task without a lock and takes the scheduler's mutex only to signal: when the worker is sleeping and the new task is due before its published wakeup. While the worker is awake no signal is sent. The worker looks at the wheel once more under the mutex after it announces its sleep, so a task added between its last look and its wait is never missed. Each `add` and `clear` also reads the clock.
   - Scheduler execution and task callbacks can allocate through `shared_ptr` and the thread pool.
+
+### wheel
+[github.com/Kronuz/wheel](https://github.com/Kronuz/wheel) &middot; depends on: none
+- **What it is:** A header-only C++20 timer wheel for one event-loop owner, with intrusive 32-byte entries and no per-timer allocation.
+- **Header / target:** `#include "wheel.hh"`; CMake target `wheel::wheel`.
+- **How it works:** The owner arms, re-arms, cancels, and expires entries. Other threads can arm an unarmed entry through a striped intrusive inbox; the owner drains it at `expire()`. The wheel accepts a steady or manual nanosecond clock and reports its next wakeup through `next()`.
+- **Key API:** `wheel::timer_wheel`, `wheel::timer_entry`, `arm()`, `arm_remote()`, `cancel()`, `expire()`, `next()`.
+- **Use it when:** Timers in one event loop are frequently re-armed or cancelled, such as request deadlines and heartbeats.
+- **Do not use it when:** Several threads must re-arm or cancel the same entry directly; those operations belong to the owner thread.
 
 ### atomic-shared-ptr
 [github.com/Kronuz/atomic-shared-ptr](https://github.com/Kronuz/atomic-shared-ptr) &middot; depends on: none
@@ -2886,11 +2902,11 @@ type annotations. The shell scripts pass `shellcheck`.
 
 ## Provenance
 
-All of these were extracted from [Xapiand](https://github.com/Kronuz/Xapiand), a
-distributed RESTful search engine built on Xapian, which remains the largest consumer and
-the reason most of them have the shape they do. The design notes behind each one are being
-written up as the *Familiars* series on
-[kronuz.github.io](https://kronuz.github.io/blog/); each library with a post links it from
-its README's Documentation section. This file stays the current reference.
+The collection began with libraries extracted from
+[Xapiand](https://github.com/Kronuz/Xapiand), a distributed search engine built on
+Xapian. Newer libraries also start in other systems or as independent work. The
+*Familiars* series on [kronuz.github.io](https://kronuz.github.io/blog/session-zero/)
+opens the libraries one by one; each library with a post links it from its README's
+Documentation section. This file stays the current reference.
 
 Repository: `https://github.com/Kronuz/<name>` for every library named here.

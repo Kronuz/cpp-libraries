@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Familiars | Standalone C++ building blocks</title>
+  <meta name="description" content="Familiars is a collection of standalone C++ building blocks. Find the part you need, link one CMake target, and leave the rest.">
+  <link rel="canonical" href="https://kronuz.github.io/cpp-libraries/">
+  <meta property="og:title" content="Familiars | Standalone C++ building blocks">
+  <meta property="og:description" content="Find the part you need, link one CMake target, and leave the rest.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://kronuz.github.io/cpp-libraries/">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&family=Montserrat:wght@700;800&display=swap" rel="stylesheet">
+  <script>
+    try {
+      document.documentElement.dataset.theme = localStorage.getItem('kz-theme') ||
+        (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    } catch {
+      document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+  </script>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="./" aria-label="Familiars home">
+        <img src="./favicon.svg" alt="" width="36" height="36">
+        <span>Familiars</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#explore">Explore</a>
+        <a href="#use-one">Use one</a>
+        <a href="#origins">Origins</a>
+        <a class="header-github" href="https://github.com/Kronuz/cpp-libraries">GitHub</a>
+      </nav>
+      <button class="theme-toggle" type="button" aria-label="Switch to dark theme" aria-pressed="false" title="Switch theme">
+        <span aria-hidden="true">◐</span>
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">The Kronuz C++ library collection</p>
+        <h1 id="hero-title">One small library for the part you need.</h1>
+        <p class="lede">Familiars is my collection of standalone C++ building blocks. Each has one job and its own repository. Most are header-only; you can take the few you need and leave the rest.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#explore">Find a library</a>
+          <a class="button secondary" href="https://github.com/Kronuz/cpp-libraries">Full catalog</a>
+        </div>
+      </div>
+      <div class="hero-example" aria-label="CMake example">
+        <div class="example-top"><span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>CMakeLists.txt</span></div>
+        <pre><code><span class="syntax-fn">include</span>(FetchContent)
+
+<span class="syntax-fn">FetchContent_Declare</span>(hashes
+  GIT_REPOSITORY
+    https://github.com/Kronuz/hashes.git
+  GIT_TAG main)
+<span class="syntax-fn">FetchContent_MakeAvailable</span>(hashes)
+
+<span class="syntax-fn">target_link_libraries</span>(my_app
+  PRIVATE <span class="syntax-accent">hashes::hashes</span>)</code></pre>
+        <p>One target brings its dependencies. Pin a commit when you need a repeatable build.</p>
+      </div>
+    </section>
+
+    <section id="explore" class="explore section-band" aria-labelledby="explore-title">
+      <div class="wrap">
+        <div class="section-heading">
+          <p class="eyebrow">Pick by task</p>
+          <h2 id="explore-title">Start with the job in front of you.</h2>
+          <p>These starting points cover a few common jobs. The <a href="https://github.com/Kronuz/cpp-libraries/blob/main/AGENTS.md#pick-by-task">full task index</a> covers the rest.</p>
+        </div>
+        <div class="library-grid">
+          <section class="library-group" aria-labelledby="text-title">
+            <h3 id="text-title">Text &amp; parsing</h3>
+            <ul>
+              <li><a href="https://github.com/Kronuz/strings">strings</a><span>Join, split, trim and format bytes.</span><a class="post-link" href="https://kronuz.github.io/blog/bag-of-holding/">Read its post</a></li>
+              <li><a href="https://github.com/Kronuz/url-parser">url-parser</a><span>Parse URLs and query strings.</span><a class="post-link" href="https://kronuz.github.io/blog/bag-of-holding/">Read its post</a></li>
+              <li><a href="https://github.com/Kronuz/boolean-parser">boolean-parser</a><span>Turn search expressions into a tree.</span><a class="post-link" href="https://kronuz.github.io/blog/boolean-parser/">Read its post</a></li>
+            </ul>
+          </section>
+          <section class="library-group" aria-labelledby="compile-title">
+            <h3 id="compile-title">Compile time &amp; identity</h3>
+            <ul>
+              <li><a href="https://github.com/Kronuz/constexpr-phf">constexpr-phf</a><span>Dispatch over fixed integer keys.</span><a class="post-link" href="https://kronuz.github.io/blog/perfect-hash/">Read its post</a></li>
+              <li><a href="https://github.com/Kronuz/enum-reflection">enum-reflection</a><span>Convert enum names and values.</span><a class="post-link" href="https://kronuz.github.io/blog/enum-reflection/">Read its post</a></li>
+              <li><a href="https://github.com/Kronuz/base-x">base-x</a><span>Encode binary IDs for people.</span><a class="post-link" href="https://kronuz.github.io/blog/base-x/">Read its post</a></li>
+            </ul>
+          </section>
+          <section class="library-group" aria-labelledby="concurrency-title">
+            <h3 id="concurrency-title">Concurrency &amp; time</h3>
+            <ul>
+              <li><a href="https://github.com/Kronuz/queue">queue</a><span>Bounded blocking MPMC queues.</span><a class="post-link" href="https://kronuz.github.io/blog/queue/">Read its post</a></li>
+              <li><a href="https://github.com/Kronuz/wheel">wheel</a><span>Arm, re-arm and cancel event-loop timers.</span><a class="post-link" href="https://kronuz.github.io/blog/retiring-the-sparse-wheel/">Read its post</a></li>
+              <li><a href="https://github.com/Kronuz/workpool">workpool</a><span>Run work on a fixed set of workers.</span><a class="post-link" href="https://kronuz.github.io/blog/workpool/">Read its post</a></li>
+            </ul>
+          </section>
+          <section class="library-group" aria-labelledby="services-title">
+            <h3 id="services-title">Networking &amp; services</h3>
+            <ul>
+              <li><a href="https://github.com/Kronuz/reactor">reactor</a><span>Run TCP and UDP event loops.</span><a class="post-link" href="https://kronuz.github.io/blog/reactor/">Read its post</a></li>
+              <li><a href="https://github.com/Kronuz/http">http</a><span>Build an HTTP/1.1 application.</span><a class="post-link" href="https://kronuz.github.io/blog/http/">Read its post</a></li>
+              <li><a href="https://github.com/Kronuz/radix-router">radix-router</a><span>Route paths with named parameters.</span><a class="post-link" href="https://kronuz.github.io/blog/radix-router/">Read its post</a></li>
+            </ul>
+          </section>
+          <section class="library-group" aria-labelledby="storage-title">
+            <h3 id="storage-title">Storage &amp; search</h3>
+            <ul>
+              <li><a href="https://github.com/Kronuz/strata">strata</a><span>Store data in crash-safe LSM segments.</span></li>
+              <li><a href="https://github.com/Kronuz/fst">fst</a><span>Keep an ordered string map compact.</span><a class="post-link" href="https://kronuz.github.io/blog/fst/">Read its post</a></li>
+              <li><a href="https://github.com/Kronuz/prospect">prospect</a><span>Search those segments with BM25.</span></li>
+            </ul>
+          </section>
+          <section class="library-group all-libraries" aria-labelledby="all-title">
+            <h3 id="all-title">Looking for another part?</h3>
+            <p>The collection also covers geospatial indexing, compression, durable logs, diagnostics and the small utilities that hold them together.</p>
+            <a href="https://github.com/Kronuz/cpp-libraries">Browse the full catalog</a>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section id="use-one" class="use-one wrap" aria-labelledby="use-title">
+      <div>
+        <p class="eyebrow">Use one</p>
+        <h2 id="use-title">Drop it into your build.</h2>
+        <p>Each repository has its own README, tests and CMake target named <code>&lt;name&gt;::&lt;name&gt;</code> (dashes become underscores). Link the target and its declared dependencies follow. Most libraries target C++20; the individual README gives the exact requirement.</p>
+      </div>
+      <div class="use-links">
+        <a href="https://github.com/Kronuz/cpp-libraries#using-one"><strong>How to link one</strong><span>CMake setup and pinning advice</span></a>
+        <a href="https://github.com/Kronuz/cpp-libraries/blob/main/AGENTS.md#pick-by-task"><strong>Find the right part</strong><span>The complete task-to-library index</span></a>
+      </div>
+    </section>
+
+    <section id="origins" class="origins section-band" aria-labelledby="origins-title">
+      <div class="wrap origins-inner">
+        <div>
+          <p class="eyebrow">Where they came from</p>
+          <h2 id="origins-title">Built for real systems. Kept for the next one.</h2>
+          <p>The collection began with pieces I pulled out of <a href="https://kronuz.github.io/Xapiand/">Xapiand</a>. Others came later, including parts that help build <a href="https://kronuz.github.io/Detent/">Detent</a>. The <a href="https://kronuz.github.io/blog/session-zero/">Familiars series</a> opens them one by one: the constraint that shaped each library, the mechanism inside it, and the case where I reach for it.</p>
+        </div>
+        <div class="origin-links">
+          <a href="https://kronuz.github.io/blog/session-zero/"><span>Read the story</span><strong>Familiars, part one</strong></a>
+          <a href="https://github.com/Kronuz/cpp-libraries"><span>Find the code</span><strong>All libraries on GitHub</strong></a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer wrap">
+    <span>© <span id="year">2026</span> Germán Méndez Bravo</span>
+    <span><a href="https://kronuz.github.io/">Kronuz</a> · <a href="https://github.com/Kronuz/cpp-libraries">Source</a></span>
+  </footer>
+  <script>
+    const root = document.documentElement;
+    const toggle = document.querySelector('.theme-toggle');
+    function updateThemeButton() {
+      const dark = root.dataset.theme === 'dark';
+      toggle.setAttribute('aria-pressed', String(dark));
+      toggle.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} theme`);
+    }
+    updateThemeButton();
+    toggle.addEventListener('click', () => {
+      root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      try { localStorage.setItem('kz-theme', root.dataset.theme); } catch {}
+      updateThemeButton();
+    });
+    document.querySelector('#year').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
