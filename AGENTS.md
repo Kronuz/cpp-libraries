@@ -20,9 +20,10 @@ registration step. Each library is one idea with a narrow surface, and most are
 header-only. You take the two you need and ignore the rest.
 
 The [Familiars site](https://kronuz.github.io/cpp-libraries/) is the short human
-entrance to the collection. `site/index.html` contains one curated page, `site/styles.css`
-shares the green Kronuz palette, and `site/favicon.svg` is the blog's brand mark. The
-page links to this file for the complete task index and to the README for the full catalog;
+entrance to the collection. `site/index.html` contains one curated page. The colors in
+`site/styles.css` follow the neutral surfaces and green accents of Detent, Xapiand, and
+the blog; `site/favicon.svg` is the blog's brand mark. The page links to this file for
+the complete task index and to the README for the full catalog;
 it does not duplicate either. The static page needs no build dependencies. The Pages
 workflow publishes `site/` from `main` after GitHub Pages is set to use Actions.
 
