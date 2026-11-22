@@ -34,6 +34,7 @@ import re
 import subprocess
 import sys
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -519,6 +520,7 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
         a.after = following.norm if following is not None else ""
         if a.norm:
             following = a
+    _anchor_runs(added, pool, by_position, old, new_info)
     unmatched: list[Entry] = []
     prev: Entry | None = None
     for a in added:
@@ -529,6 +531,10 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
             continue
         if prev is not None and (prev.path != a.path or prev.hunk != a.hunk):
             prev = None
+        if a.source is not None:
+            prev = a
+            _note_move(report, a, a.source)
+            continue
         source = take(pool, a.norm, a, prev, False)
         if source is None:
             source = take(by_stripped, a.norm, a, prev, True)
@@ -597,6 +603,68 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
     _report_failures(unmatched, leftover, report)
     if not unmatched and not leftover:
         _check_slices(added, old, bounds, report)
+
+
+def _anchor_runs(
+    added: list[Entry],
+    pool: dict[str, deque[Entry]],
+    by_position: dict[tuple[str, int], Entry],
+    old: Base,
+    new_info: Callable[[Entry], Line],
+) -> None:
+    """Matches the runs around anchors before the line-by-line pass guesses.
+
+    An anchor is a line whose text is removed once and added once. From each anchor the run
+    extends over the neighboring non-blank lines while the added and the removed line read the
+    same, so a common line (`}`, `inline bool`, a license's `/*`) takes the source of the run it
+    sits in instead of the first equal line the pass meets.
+    """
+    lines = [a for a in added if a.norm]
+    counts: dict[str, int] = defaultdict(int)
+    for a in lines:
+        counts[a.norm] += 1
+    index = {id(a): k for k, a in enumerate(lines)}
+
+    def removed_prev(r: Entry) -> Entry | None:
+        old.load(r.path)
+        texts = old.texts[r.path]
+        for k in range(r.lineno - 2, -1, -1):
+            if texts[k].strip():
+                return by_position.get((r.path, k + 1))
+        return None
+
+    def removed_next(r: Entry) -> Entry | None:
+        return by_position.get((r.path, old.next_nonblank(r.path, r.lineno)))
+
+    def pin(a: Entry, r: Entry) -> None:
+        a.info = new_info(a)
+        a.source = r
+        r.used = True
+
+    def extend(k: int, r: Entry, step: int) -> None:
+        a = lines[k]
+        while True:
+            k += step
+            if not 0 <= k < len(lines):
+                return
+            nxt = lines[k]
+            if nxt.path != a.path or nxt.hunk != a.hunk or nxt.source is not None:
+                return
+            r = removed_prev(r) if step < 0 else removed_next(r)
+            if r is None or r.used or r.norm != nxt.norm:
+                return
+            pin(nxt, r)
+
+    for a in lines:
+        queue = pool.get(a.norm)
+        if a.source is not None or counts[a.norm] != 1 or not queue or len(queue) != 1:
+            continue
+        r = queue[0]
+        if r.used:
+            continue
+        pin(a, r)
+        extend(index[id(a)], r, -1)
+        extend(index[id(a)], r, 1)
 
 
 def _check_slices(

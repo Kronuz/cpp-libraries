@@ -650,6 +650,28 @@ class MacroShapesTest(Case):
         report = self.repo.check()
         self.assertEqual((report.errors, report.warnings), ([], []))
 
+    def test_new_license_comment_does_not_take_a_moved_comment(self) -> None:
+        license = "/*\n * License.\n */\n\n"
+        f = "int f(int a) {\n    /*\n     * Why f doubles.\n     */\n    return a * 2;\n}\n"
+        g = "int g(int a) {\n    return a - 1;\n}\n"
+        self.base({"src/big.cc": license + f + "\n" + g})
+        self.repo.write("src/big.cc", license + g)
+        self.repo.write("src/a.cc", license + f)
+        self.repo.commit("split")
+        self.assertEqual((self.repo.check().errors, self.repo.check().warnings), ([], []))
+
+    def test_dropped_static_does_not_take_an_equal_line_moved_elsewhere(self) -> None:
+        p = "static inline bool\np(int k)\n{\n    return k > 0;\n}\n"
+        q = "inline bool\nq(int k)\n{\n    return k < 0;\n}\n"
+        self.base({"src/big.cc": p + "\n" + q + "\nint r() { return 0; }\n"})
+        self.repo.write("src/big.cc", "int r() { return 0; }\n")
+        self.repo.write("src/a.hh", "#pragma once\n\n" + p.replace("static ", ""))
+        self.repo.write("src/b.hh", "#pragma once\n\n" + q)
+        self.repo.commit("split")
+        report = self.repo.check()
+        self.assertPasses(report)
+        self.assertHas(report.warnings, "src/a.hh:3: warning: dropped 'static'", "src/big.cc:1")
+
     def test_repeated_line_matches_the_occurrence_beside_its_declaration(self) -> None:
         text = (
             "namespace x {\n"
