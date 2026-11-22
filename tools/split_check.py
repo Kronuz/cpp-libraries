@@ -650,10 +650,11 @@ def _anchor_runs(
             nxt = lines[k]
             if nxt.path != a.path or nxt.hunk != a.hunk or nxt.source is not None:
                 return
-            r = removed_prev(r) if step < 0 else removed_next(r)
-            if r is None or r.used or r.norm != nxt.norm:
+            near = removed_prev(r) if step < 0 else removed_next(r)
+            if near is None or near.used or near.norm != nxt.norm:
                 return
-            pin(nxt, r)
+            pin(nxt, near)
+            r = near
 
     for a in lines:
         queue = pool.get(a.norm)
