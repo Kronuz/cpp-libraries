@@ -1093,7 +1093,11 @@ class MembersCommandLineTest(Outlined):
         proc = self.run_tool("--members", ".")
         self.assertEqual(
             (proc.returncode, proc.stdout),
-            (0, "split_check: 0 error(s), 0 warning(s), 0 note(s)\n"),
+            (
+                0,
+                "split_check: wide: 20 member definition(s) moved out of the class\n"
+                "split_check: 0 error(s), 0 warning(s), 0 note(s)\n",
+            ),
         )
         plain = self.run_tool(".")
         self.assertEqual(plain.returncode, 1)

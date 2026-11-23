@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Proves that a file split moved code and changed none.
 
-    split_check.py [--base REF] [--max-lines N] PATH...
+    split_check.py [--base REF] [--max-lines N] [--members] PATH...
 
 Between `git merge-base REF HEAD` and HEAD, under PATHs, it checks that:
 
@@ -23,6 +23,10 @@ It also prints warnings, which do not fail: a `static` dropped or added, an `inl
 added namespace-scope declaration, an anonymous namespace opened in new code (all linkage
 changes), an added `using` of a detail namespace, a removed include or comment that reappears
 nowhere, and a namespace-scope object with a dynamic initializer that moved to another file.
+
+With --members it first proves member function definitions moved out of a class body (each body
+unchanged but for one indentation change, its declaration left in the class, the head changed
+only as docs/SPLITTING.md lists) and runs the checks above on the rest of the diff.
 """
 
 from __future__ import annotations
@@ -297,6 +301,7 @@ class Report:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    moved: dict[str, int] = field(default_factory=dict)  # --members: class -> definitions
 
 
 class GitError(Exception):
@@ -1711,6 +1716,9 @@ def check_members(
     for m in members:
         d = moved.get(id(m))
         if d is not None:
+            assert m.cls is not None
+            root = "::".join(m.cls.root().key)
+            report.moved[root] = report.moved.get(root, 0) + 1
             _check_definition(m, d, report)
             came.update((d.path, n) for n in range(d.line, d.src.line(d.item.close) + 1))
     for root in roots.values():
@@ -2068,6 +2076,8 @@ def main(argv: list[str] | None = None) -> int:
         print(message)
     for message in report.errors:
         print(message)
+    for cls, count in sorted(report.moved.items()):
+        print(f"split_check: {cls}: {count} member definition(s) moved out of the class")
     print(
         f"split_check: {len(report.errors)} error(s), {len(report.warnings)} warning(s), "
         f"{len(report.notes)} note(s)"
