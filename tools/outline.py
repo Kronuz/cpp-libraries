@@ -185,7 +185,8 @@ CLASS_HEAD = re.compile(r"\b(?:class|struct)\s+(?:\[\[.*?\]\]\s*)?(\w+)[^;{}()]*
 
 def without_template_headers(head: str) -> str:
     """`head` with each `template <...>` replaced by spaces, offsets kept."""
-    out, pos = [], 0
+    out: list[str] = []
+    pos = 0
     for m in re.finditer(r"\btemplate\s*<", head):
         if m.start() < pos:
             continue
