@@ -180,6 +180,22 @@ def after_templates(code: str, i: int) -> int:
         i = closing(code, m.end() - 1) + 1
 
 
+CLASS_HEAD = re.compile(r"\b(?:class|struct)\s+(?:\[\[.*?\]\]\s*)?(\w+)[^;{}()]*$")
+
+
+def without_template_headers(head: str) -> str:
+    """`head` with each `template <...>` replaced by spaces, offsets kept."""
+    out, pos = [], 0
+    for m in re.finditer(r"\btemplate\s*<", head):
+        if m.start() < pos:
+            continue
+        gt = closing(head, m.end() - 1)
+        out += [head[pos : m.start()], " " * (gt + 1 - m.start())]
+        pos = gt + 1
+    out.append(head[pos:])
+    return "".join(out)
+
+
 def is_function(head: str) -> bool:
     """A parameter list outside template arguments and no top-level `=`."""
     h = re.sub(r"\boperator\s*(?:\(\s*\)|\[\s*\]|[^\s\w(]+)", "operator_", head)
@@ -481,13 +497,17 @@ class Outline:
             if ch == "{":
                 head = self.code[stmt:k]
                 ns = re.search(r"\bnamespace\s*([\w:]*)\s*$", head)
-                cls = re.search(r"\b(?:class|struct)\s+(?:\[\[.*?\]\]\s*)?(\w+)[^;{}()]*$", head)
                 if ns is not None:
                     stack.append(ns.group(1))
                 elif re.search(r'\bextern\s*"\s*"\s*$', head):
                     stack.append("")
                 else:
-                    if cls and all(s is not None for s in stack):
+                    cls = None
+                    if all(s is not None for s in stack):
+                        # Template headers blanked, so a `class T` parameter is not the class.
+                        own = without_template_headers(head)
+                        cls = CLASS_HEAD.search(own)
+                    if cls:
                         name = cls.group(1)
                         start = stmt + len(head) - len(head.lstrip())
                         size = closing(self.code, k) - k
