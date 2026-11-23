@@ -991,7 +991,11 @@ class MembersTest(Outlined):
     def test_a_definition_left_in_the_class_too_fails(self) -> None:
         self.outline("store")
         self.edit("src/store.hh", "\t~store();\n", "\t~store() {\n\t\titems_.clear();\n\t}\n")
-        self.assertHas(self.members().errors, "member store::~store", "the class changed")
+        self.assertHas(
+            self.members().errors,
+            "member store::~store",
+            "the declaration left in the class differs: ~store() {",
+        )
 
     def test_another_change_in_the_class_fails(self) -> None:
         self.outline("store")
