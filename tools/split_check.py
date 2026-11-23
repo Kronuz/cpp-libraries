@@ -28,6 +28,7 @@ nowhere, and a namespace-scope object with a dynamic initializer that moved to a
 from __future__ import annotations
 
 import argparse
+import bisect
 import difflib
 import os
 import re
@@ -436,7 +437,9 @@ class Base:
         return path
 
 
-def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None:
+def check_moves(
+    repo: Path, base: str, paths: list[str], report: Report, members: bool = False
+) -> None:
     diff = git(
         repo,
         "diff",
@@ -457,6 +460,10 @@ def check_moves(repo: Path, base: str, paths: list[str], report: Report) -> None
     # Only C and C++ sources are code; a layout note or a CMake line is not a move.
     removed = [e for e in removed if Path(e.path).suffix in SOURCE_SUFFIXES]
     added = [e for e in added if Path(e.path).suffix in SOURCE_SUFFIXES]
+    if members:
+        gone, came = check_members(repo, base, removed, added, report)
+        removed = [e for e in removed if (e.path, e.lineno) not in gone]
+        added = [e for e in added if (e.path, e.lineno) not in came]
     old = Base(repo, base)
     new_scans: dict[str, list[Line]] = {}
 
@@ -758,6 +765,1228 @@ def _report_failures(unmatched: list[Entry], leftover: list[Entry], report: Repo
         )
 
 
+# --- --members: member function definitions moved out of a class body -------------------------
+
+TOKEN = re.compile(
+    r"\s+|(?P<t>[A-Za-z_]\w*|\.?\d(?:[\w.']|[eEpP][+-])*|\"[^\"\n]*\"|'[^'\n]*'"
+    r"|::|->|\.\.\.|&&|\|\||==|!=|\+\+|--|\S)"
+)
+IDENT = re.compile(r"[A-Za-z_]\w*$")
+LABEL = re.compile(r"([A-Za-z_]\w*)\s*:(?!:)")
+ACCESS = frozenset({"public", "private", "protected"})
+# Specifiers only the declaration in the class keeps; `inline` is optional on the definition.
+CLASS_ONLY = frozenset({"static", "virtual", "explicit", "inline", "friend"})
+VIRT_SPECIFIERS = frozenset({"override", "final"})
+# Words followed by `(` that do not name a function.
+NOT_A_NAME = frozenset(
+    {
+        "decltype",
+        "noexcept",
+        "alignas",
+        "alignof",
+        "sizeof",
+        "__attribute__",
+        "__declspec",
+        "requires",
+        "throw",
+        "typeof",
+        "__typeof__",
+        "static_assert",
+        "template",
+        "operator",
+        "return",
+    }
+)
+HEADER_SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".ipp", ".inl", ".tpp"})
+OPERATOR_TOKEN = re.compile(r"\boperator\s*(?:\(\s*\)|\[\s*\]|[^\s\w(]+)")
+EXTERN_C = re.compile(r'extern\s*"[^"]*"\s*$')
+TEMPLATE_OPEN = re.compile(r"\s*template\s*<")
+MEM_INIT_NAME = re.compile(r"\s*(?:::)?[A-Za-z_]\w*(?:\s*::\s*(?:template\s+)?[A-Za-z_]\w*)*\s*")
+MORE_NAME = re.compile(r"(?:\s*::\s*[A-Za-z_]\w*)*\s*")
+PACK = re.compile(r"\s*(?:\.\.\.)?\s*")
+
+
+class Source:
+    """A file's text, its code (comments, literals and preprocessor lines blanked) and lines."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text.replace("\r", "")
+        self.starts = [0]
+        self.starts.extend(i + 1 for i, c in enumerate(self.text) if c == "\n")
+        self.code, self.raw, self.pp = _mask(self.text)
+
+    def line(self, offset: int) -> int:
+        """The 1-based line holding `offset`."""
+        return bisect.bisect_right(self.starts, offset)
+
+    def text_of(self, lineno: int) -> str:
+        end = self.starts[lineno] - 1 if lineno < len(self.starts) else len(self.text)
+        return self.text[self.starts[lineno - 1] : end]
+
+    def code_of(self, lineno: int) -> str:
+        end = self.starts[lineno] - 1 if lineno < len(self.starts) else len(self.code)
+        return self.code[self.starts[lineno - 1] : end]
+
+
+def _mask(text: str) -> tuple[str, set[int], set[int]]:
+    """Blanks comments, literal contents and preprocessor lines, keeping offsets and newlines.
+
+    Also returns the lines that begin inside a raw string literal and the preprocessor lines.
+    """
+    out = list(text)
+    raw: set[int] = set()
+    pp: set[int] = set()
+    n = len(text)
+    lineno = 1
+    bol = True
+    i = 0
+
+    def blank(a: int, b: int) -> None:
+        for k in range(a, b):
+            if out[k] != "\n":
+                out[k] = " "
+
+    while i < n:
+        c = text[i]
+        if c == "\n":
+            lineno += 1
+            bol = True
+            i += 1
+            continue
+        if c in " \t\f\v":
+            i += 1
+            continue
+        if bol and c == "#":
+            seg = i
+            while True:
+                pp.add(lineno)
+                e = text.find("\n", seg)
+                e = n if e < 0 else e
+                blank(seg, e)
+                if e < n and text[seg:e].rstrip().endswith("\\"):
+                    lineno += 1
+                    seg = e + 1
+                    continue
+                break
+            i = e
+            continue
+        bol = False
+        if text.startswith("//", i):
+            e = text.find("\n", i)
+            e = n if e < 0 else e
+            blank(i, e)
+            i = e
+        elif text.startswith("/*", i):
+            e = text.find("*/", i + 2)
+            e = n if e < 0 else e + 2
+            lineno += text.count("\n", i, e)
+            blank(i, e)
+            i = e
+        elif c == '"' and i > 0 and text[i - 1] == "R" and (m := RAW_OPEN.match(text, i)):
+            close = ")" + m.group(1) + '"'
+            e = text.find(close, m.end())
+            e = n - 1 if e < 0 else e + len(close) - 1
+            for k in range(i + 1, e):
+                if text[k] == "\n":
+                    lineno += 1
+                    raw.add(lineno)
+            blank(i + 1, e)
+            i = e + 1
+        elif c in "\"'":
+            if c == "'" and _digit_separator(text, i):
+                i += 1
+                continue
+            j = i + 1
+            while j < n and text[j] not in (c, "\n"):
+                j += 2 if text[j] == "\\" else 1
+            blank(i + 1, min(j, n))
+            i = j + 1
+        else:
+            i += 1
+    return "".join(out), raw, pp
+
+
+def _digit_separator(text: str, i: int) -> bool:
+    k = i - 1
+    while k >= 0 and (text[k].isalnum() or text[k] in "_'."):
+        k -= 1
+    return k + 1 < i and text[k + 1].isdigit()
+
+
+@dataclass(eq=False)
+class Item:
+    """One declaration of a scope, found in masked code."""
+
+    kind: str  # func, decl, class, namespace, label, other
+    start: int
+    end: int
+    body: int = -1  # the opening brace of a function body, class or namespace
+    close: int = -1  # its closing brace
+    init: int = -1  # a constructor's initializer `:`
+    children: list[Item] = field(default_factory=list)
+
+
+def _items(code: str, lo: int, hi: int, in_class: bool) -> list[Item]:
+    items: list[Item] = []
+    i = lo
+    while i < hi:
+        if code[i].isspace() or code[i] == ";":
+            i += 1
+            continue
+        m = LABEL.match(code, i, hi)
+        if in_class and m and (m.group(1) in ACCESS or m.group(1).isupper()):
+            items.append(Item("label", i, m.end()))
+            i = m.end()
+            continue
+        item = _item(code, i, hi)
+        if item.kind in ("class", "namespace"):
+            item.children = _items(code, item.body + 1, item.close, item.kind == "class")
+        items.append(item)
+        i = max(item.end, i + 1)
+    return items
+
+
+def _item(code: str, start: int, hi: int) -> Item:
+    depth = 0
+    called = False  # a parenthesis closed at depth 0
+    j = start
+    while j < hi:
+        c = code[j]
+        if c in "([":
+            depth += 1
+        elif c in ")]":
+            depth -= 1
+            called = called or (depth == 0 and c == ")")
+        elif depth == 0:
+            if c == ";":
+                return Item("decl", start, j + 1)
+            if c == "{":
+                kind = _head_kind(code[start:j])
+                close = _match(code, j, hi)
+                if kind in ("enum", "init"):
+                    j = close + 1
+                    continue
+                if kind == "class":
+                    return Item("class", start, _after_declarators(code, close + 1, hi), j, close)
+                return Item(kind, start, close + 1, j, close)
+            if (
+                c == ":"
+                and called
+                and code[j + 1 : j + 2] != ":"
+                and code[j - 1] != ":"
+                and _head_kind(code[start:j]) == "func"
+            ):
+                body = _skip_initializers(code, j + 1, hi)
+                if body >= 0:
+                    close = _match(code, body, hi)
+                    return Item("func", start, close + 1, body, close, j)
+        j += 1
+    return Item("other", start, hi)
+
+
+def _match(code: str, i: int, hi: int) -> int:
+    """The offset of the bracket closing the one at `i` (masked code), or hi - 1."""
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    open_, close = code[i], pairs[code[i]]
+    depth = 0
+    for j in range(i, hi):
+        if code[j] == open_:
+            depth += 1
+        elif code[j] == close:
+            depth -= 1
+            if depth == 0:
+                return j
+    return hi - 1
+
+
+def _match_angle(text: str, i: int) -> int:
+    """The offset of the `>` closing the `<` at `i`, ignoring brackets inside parentheses."""
+    depth = paren = 0
+    for j in range(i, len(text)):
+        c = text[j]
+        if c in "([{":
+            paren += 1
+        elif c in ")]}":
+            paren -= 1
+        elif paren == 0 and c == "<":
+            depth += 1
+        elif paren == 0 and c == ">":
+            depth -= 1
+            if depth == 0:
+                return j
+    return len(text) - 1
+
+
+def _skip_templates(text: str, i: int) -> int:
+    while (m := TEMPLATE_OPEN.match(text, i)) is not None:
+        i = _match_angle(text, m.end() - 1) + 1
+    return i
+
+
+def _after_declarators(code: str, k: int, hi: int) -> int:
+    """The offset after the `;` that ends a class definition's declarators."""
+    j = k
+    while j < hi:
+        c = code[j]
+        if c in "([{":
+            j = _match(code, j, hi)
+        elif c == ";":
+            return j + 1
+        elif not c.isspace() and not (c.isalnum() or c in "_*&,=:<>."):
+            return k
+        j += 1
+    return k
+
+
+def _head_kind(head: str) -> str:
+    """What a declaration whose head is followed by `{` opens."""
+    h = head[_skip_templates(head, 0) :].strip()
+    while h.startswith("[["):
+        h = h[h.find("]]") + 2 :].lstrip()
+    if NS_BEFORE_BRACE.search(h) or EXTERN_C.match(h):
+        return "namespace"
+    if re.match(r"(?:class|struct|union)\b", h):
+        paren = h.find("(")
+        if paren < 0 or re.search(
+            r"(?:\balignas|__attribute__|__declspec|\b[A-Z][A-Z0-9_]*)\s*$", h[:paren]
+        ):
+            return "class"
+    if re.match(r"enum\b", h):
+        return "enum"
+    return "func" if _is_function_head(h) else "init"
+
+
+def _is_function_head(head: str) -> bool:
+    """Whether a head has a parameter list outside template arguments and no initializer `=`."""
+    h = OPERATOR_TOKEN.sub("operator@", head)
+    depth = angle = 0
+    called = False
+    for k, c in enumerate(h):
+        if c in "([{":
+            called = called or (c == "(" and depth == 0 and angle == 0)
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif depth == 0 and c == "<" and re.search(r"[\w>]\s*$", h[:k]):
+            angle += 1
+        elif depth == 0 and c == ">" and angle:
+            angle -= 1
+        elif c == "=" and depth == 0 and angle == 0:
+            if (k and h[k - 1] in "=!<>") or h[k + 1 : k + 2] == "=":
+                continue
+            return False
+    return called
+
+
+def _skip_initializers(code: str, k: int, hi: int) -> int:
+    """The offset of the body's `{` after a constructor's member initializers, or -1."""
+    while True:
+        m = MEM_INIT_NAME.match(code, k, hi)
+        if not m:
+            return -1
+        k = m.end()
+        if code[k : k + 1] == "<":
+            k = _match_angle(code, k) + 1
+            k = _end(MORE_NAME, code, k)
+        if k >= hi or code[k] not in "({":
+            return -1
+        k = _match(code, k, hi) + 1
+        k = _end(PACK, code, k)
+        if code[k : k + 1] == ",":
+            k += 1
+            continue
+        return k if code[k : k + 1] == "{" else -1
+
+
+def _end(pattern: re.Pattern[str], text: str, k: int) -> int:
+    """The end of `pattern`'s match at `k` (the pattern matches the empty string)."""
+    m = pattern.match(text, k)
+    return m.end() if m else k
+
+
+def _tokens(src: Source, lo: int, hi: int) -> list[str]:
+    out: list[str] = []
+    for m in TOKEN.finditer(src.code, lo, hi):
+        if m.group("t") is not None:
+            s, e = m.span("t")
+            out.append(src.text[s:e] if src.code[s] in "\"'" else src.code[s:e])
+    return out
+
+
+def _is_ident(tok: str) -> bool:
+    return bool(IDENT.match(tok))
+
+
+def _close_tok(toks: list[str], i: int, hi: int) -> int:
+    """The index of the token closing the bracket at `i` (angles count only outside parens)."""
+    pairs = {"(": ")", "[": "]", "{": "}", "<": ">"}
+    stack: list[str] = []
+    for k in range(i, hi):
+        t = toks[k]
+        if t in "([{" or (t == "<" and (not stack or stack[-1] == "<")):
+            stack.append(t)
+        elif stack and t == pairs[stack[-1]]:
+            stack.pop()
+            if not stack:
+                return k
+        elif t in ")]}" and stack and stack[-1] == "<":
+            return k  # an unbalanced `<` was a comparison
+    return hi - 1
+
+
+def _open_angle(toks: list[str], lo: int, i: int) -> int:
+    """The index of the `<` that the `>` at `i` closes, or lo."""
+    depth = paren = 0
+    for k in range(i, lo - 1, -1):
+        t = toks[k]
+        if t in ")]}":
+            paren += 1
+        elif t in "([{":
+            paren -= 1
+        elif paren == 0 and t == ">":
+            depth += 1
+        elif paren == 0 and t == "<":
+            depth -= 1
+            if depth == 0:
+                return k
+    return lo
+
+
+def _split_top(toks: list[str]) -> list[list[str]]:
+    """Splits a token list at commas outside brackets."""
+    parts: list[list[str]] = [[]]
+    stack: list[str] = []
+    for k, t in enumerate(toks):
+        if t in "([{" or (t == "<" and k and (_is_ident(toks[k - 1]) or toks[k - 1] == ">")):
+            stack.append(t)
+        elif t in ")]}>" and stack:
+            stack.pop()
+        elif t == "," and not stack:
+            parts.append([])
+            continue
+        parts[-1].append(t)
+    return [] if parts == [[]] else parts
+
+
+def _strip_default(param: list[str]) -> list[str]:
+    depth = 0
+    for k, t in enumerate(param):
+        if t in "([{" or (t == "<" and k and _is_ident(param[k - 1])):
+            depth += 1
+        elif t in ")]}>" and depth:
+            depth -= 1
+        elif t == "=" and depth == 0:
+            return param[:k]
+    return param
+
+
+@dataclass
+class Sig:
+    """A function head in tokens: `headers prefix qual name(params) tail init`."""
+
+    headers: list[list[str]]  # each template header's parameter list
+    prefix: list[str]  # specifiers and the leading return type
+    qual: list[str]  # the class qualifier before the name
+    name: str
+    params: list[list[str]]
+    tail: list[str]  # qualifiers, noexcept, trailing return, requires
+    init: list[str]  # a constructor's member initializers
+
+
+def _signature(src: Source, item: Item) -> Sig | None:
+    stop = item.init if item.init >= 0 else item.body
+    toks = _tokens(src, item.start, stop)
+    init = _tokens(src, item.init + 1, item.body) if item.init >= 0 else []
+    k = 0
+    headers: list[list[str]] = []
+    while k + 1 < len(toks) and toks[k] == "template" and toks[k + 1] == "<":
+        e = _close_tok(toks, k + 1, len(toks))
+        headers.append(toks[k + 2 : e])
+        k = e + 1
+    found = _declarator(toks, k, len(toks))
+    if found is None:
+        return None
+    q, n, p, c = found
+    return Sig(
+        headers,
+        toks[k:q],
+        toks[q:n],
+        _name(toks[n:p]),
+        _split_top(toks[p + 1 : c]),
+        toks[c + 1 :],
+        init,
+    )
+
+
+def _name(toks: list[str]) -> str:
+    """A declarator name as written without spaces around punctuation: `~C`, `operator()`."""
+    return re.sub(r"(?<=\W) | (?=\W)", "", " ".join(toks))
+
+
+def _declarator(toks: list[str], lo: int, hi: int) -> tuple[int, int, int, int] | None:
+    """(qualifier start, name start, parameters `(`, parameters `)`) of a function head."""
+    stack: list[str] = []
+    found: list[tuple[int, int]] = []
+    k = lo
+    while k < hi:
+        t = toks[k]
+        if not stack and t == "operator":
+            j = k + 1
+            if toks[j : j + 2] in (["(", ")"], ["[", "]"]):
+                j += 2
+            while j < hi and toks[j] != "(":
+                j += 1
+            if j >= hi:
+                return None
+            return (_qualifier_start(toks, lo, k), k, j, _close_tok(toks, j, hi))
+        if t == "(" and not stack:
+            prev = toks[k - 1] if k > lo else ""
+            if prev not in NOT_A_NAME and k + 1 < hi and toks[k + 1] in ("*", "&", "&&", "^"):
+                inner = _declarator(toks, k + 2, _close_tok(toks, k, hi))
+                if inner is not None:
+                    return inner
+            elif k > lo and _is_ident(toks[k - 1]) and toks[k - 1] not in NOT_A_NAME:
+                n = k - 1 if k - 1 == lo or toks[k - 2] != "~" else k - 2
+                found.append((n, k))
+        if t in "([{":
+            stack.append(t)
+        elif t in ")]}":
+            if stack:
+                stack.pop()
+        elif t == "<" and k > lo and _is_ident(toks[k - 1]) and (not stack or stack[-1] == "<"):
+            stack.append(t)
+        elif t == ">" and stack and stack[-1] == "<":
+            stack.pop()
+        k += 1
+    if not found:
+        return None
+    n, p = next((f for f in found if not toks[f[1] - 1].isupper()), found[0])
+    return (_qualifier_start(toks, lo, n), n, p, _close_tok(toks, p, hi))
+
+
+def _qualifier_start(toks: list[str], lo: int, n: int) -> int:
+    q = n
+    while q - 2 >= lo and toks[q - 1] == "::":
+        p = q - 2
+        if toks[p] == ">":
+            p = _open_angle(toks, lo, p) - 1
+        if p >= lo and _is_ident(toks[p]):
+            q = p
+        else:
+            break
+    if q - 1 >= lo and toks[q - 1] == "::":
+        q -= 1
+    return q
+
+
+def _components(qual: list[str]) -> list[tuple[str, list[str] | None]]:
+    """`a::b<T>::` as [("a", None), ("b", ["T"])]."""
+    out: list[tuple[str, list[str] | None]] = []
+    k = 1 if qual[:1] == ["::"] else 0
+    while k < len(qual):
+        name = qual[k]
+        k += 1
+        args: list[str] | None = None
+        if k < len(qual) and qual[k] == "<":
+            e = _close_tok(qual, k, len(qual))
+            args = qual[k + 1 : e]
+            k = e + 1
+        out.append((name, args))
+        k += 1  # the `::`
+    return out
+
+
+def _param_names(header: list[str]) -> list[str] | None:
+    """The argument list naming a template header's parameters (`T, Ts...`), or None."""
+    out: list[str] = []
+    for param in _split_top(header):
+        decl = _strip_default(param)
+        names = [t for t in decl if _is_ident(t)]
+        if len(names) < 2 and not (names and decl[0] not in ("class", "typename")):
+            return None
+        if out:
+            out.append(",")
+        out.append(names[-1])
+        if "..." in decl:
+            out.append("...")
+    return out
+
+
+@dataclass(eq=False)
+class Cls:
+    """A class definition: its scope, its own template header and its members."""
+
+    path: str
+    src: Source
+    key: tuple[str, ...]  # namespaces and class names
+    names: tuple[str, ...]  # class names, outermost first
+    item: Item
+    header: list[str] | None  # the class's template parameter list
+    outer: Cls | None
+    members: list[Member] = field(default_factory=list)
+    inner: list[Cls] = field(default_factory=list)
+    decls: set[str] = field(default_factory=set)  # normalized member declarations
+    types: set[str] = field(default_factory=set)  # member types and static data
+
+    def chain(self) -> list[Cls]:
+        out: list[Cls] = []
+        c: Cls | None = self
+        while c is not None:
+            out.append(c)
+            c = c.outer
+        return out[::-1]
+
+    def root(self) -> Cls:
+        return self.chain()[0]
+
+    def qualifier(self) -> list[str] | None:
+        """`a<T>::b::` for this class, or None when a template parameter has no name."""
+        out: list[str] = []
+        for c in self.chain():
+            out.append(c.names[-1])
+            if c.header is not None:
+                args = _param_names(c.header)
+                if args is None:
+                    return None
+                out += ["<", *args, ">"]
+            out.append("::")
+        return out
+
+    def scope_types(self) -> set[str]:
+        return set().union(*(c.types for c in self.chain()))
+
+    def all_members(self) -> list[Member]:
+        out = list(self.members)
+        for c in self.inner:
+            out += c.all_members()
+        return out
+
+
+@dataclass(eq=False)
+class Member:
+    """A function defined in a class body at the base, or out of the class at HEAD."""
+
+    path: str
+    src: Source
+    item: Item
+    sig: Sig
+    cls: Cls | None
+    ns: tuple[str, ...] = ()
+    line: int = 0
+
+    def label(self) -> str:
+        assert self.cls is not None
+        return "::".join((*self.cls.names, self.sig.name))
+
+
+@dataclass
+class Parsed:
+    path: str
+    src: Source
+    classes: list[Cls] = field(default_factory=list)
+    defs: list[Member] = field(default_factory=list)  # out-of-class definitions
+
+
+def _parse(path: str, src: Source) -> Parsed:
+    out = Parsed(path, src)
+    _walk(path, src, _items(src.code, 0, len(src.code), False), (), None, out=out)
+    return out
+
+
+def _class_head(src: Source, item: Item) -> tuple[list[str] | None, str]:
+    toks = _tokens(src, item.start, item.body)
+    header: list[str] | None = None
+    k = 0
+    while k + 1 < len(toks) and toks[k] == "template" and toks[k + 1] == "<":
+        e = _close_tok(toks, k + 1, len(toks))
+        header = toks[k + 2 : e]
+        k = e + 1
+    body = toks[k:]
+    depth = 0
+    for j, t in enumerate(body):
+        if t in "(<[":
+            depth += 1
+        elif t in ")>]":
+            depth -= 1
+        elif t == ":" and depth == 0:
+            body = body[:j]
+            break
+    while body and body[-1] == "final":
+        body.pop()
+    if body and body[-1] == ">":
+        body = body[: _open_angle(body, 0, len(body) - 1)]
+    name = body[-1] if len(body) > 1 and _is_ident(body[-1]) else ""
+    return header, name
+
+
+def _walk(
+    path: str,
+    src: Source,
+    items: list[Item],
+    ns: tuple[str, ...],
+    cls: Cls | None,
+    *,
+    out: Parsed,
+) -> None:
+    for item in items:
+        if item.kind == "namespace":
+            toks = _tokens(src, item.start, item.body)
+            name = "".join(
+                t for t in toks if t not in ("inline", "namespace", "extern") and t[0] != '"'
+            )
+            _walk(path, src, item.children, (*ns, name) if name else ns, None, out=out)
+        elif item.kind == "class":
+            header, name = _class_head(src, item)
+            names = (*cls.names, name) if cls else (name,)
+            inner = Cls(path, src, (*ns, *names), names, item, header, cls)
+            if cls is not None:
+                cls.inner.append(inner)
+                if name:
+                    cls.types.add(name)
+            out.classes.append(inner)
+            _walk(path, src, item.children, ns, inner, out=out)
+        elif item.kind == "func":
+            sig = _signature(src, item)
+            if sig is None:
+                continue
+            if cls is not None and "friend" not in sig.prefix:
+                cls.members.append(Member(path, src, item, sig, cls, ns, src.line(item.start)))
+            elif cls is None and sig.qual:
+                out.defs.append(Member(path, src, item, sig, None, ns, src.line(item.start)))
+        elif item.kind == "decl" and cls is not None:
+            cls.decls.add(normalize(src.text[item.start : item.end]))
+            toks = _tokens(src, item.start, item.end)
+            cls.types.update(_declared_types(toks))
+
+
+def _declared_types(toks: list[str]) -> set[str]:
+    """Names of types and static data a member declaration declares."""
+    if not toks:
+        return set()
+    k = 0
+    while k + 1 < len(toks) and toks[k] == "template" and toks[k + 1] == "<":
+        k = _close_tok(toks, k + 1, len(toks)) + 1
+    head = toks[k:]
+    if head[:1] == ["using"] and len(head) > 2 and head[2] == "=":
+        return {head[1]}
+    if head[:1] in (["enum"], ["class"], ["struct"], ["union"]):
+        names = [t for t in head[1:4] if _is_ident(t) and t not in ("class", "struct")]
+        return set(names[:1])
+    if head[:1] == ["typedef"] or (head[:1] == ["static"] and "(" not in head):
+        stop = next((j for j, t in enumerate(head) if t in ("=", "{", ";", "[")), len(head))
+        names = [t for t in head[:stop] if _is_ident(t)]
+        return set(names[-1:])
+    return set()
+
+
+def _decl_text(m: Member) -> tuple[str, str]:
+    """The declaration a moved definition leaves in the class: its head and a `;`, and the
+    comment after it."""
+    stop = m.item.init if m.item.init >= 0 else m.item.body
+    code = m.src.code
+    k = stop - 1
+    while k > m.item.start and code[k].isspace():
+        k -= 1
+    return m.src.text[m.item.start : k + 1] + ";", m.src.text[k + 1 : stop].rstrip()
+
+
+def _unqualify(toks: list[str], cls: Cls) -> list[str]:
+    """Drops qualifiers naming the class or its enclosing classes, and `C<T>` becomes `C`."""
+    chain = cls.chain()
+    pieces: list[list[str]] = []
+    for c in chain:
+        piece = [c.names[-1]]
+        if c.header is not None:
+            args = _param_names(c.header)
+            if args is not None:
+                piece += ["<", *args, ">"]
+        pieces.append(piece)
+    out: list[str] = []
+    k = 0
+    while k < len(toks):
+        if k == 0 or toks[k - 1] != "::":
+            j = k
+            for piece in pieces:
+                if toks[j : j + len(piece)] == piece and toks[
+                    j + len(piece) : j + len(piece) + 1
+                ] == ["::"]:
+                    j += len(piece) + 1
+                else:
+                    break
+            if j > k:
+                if out and out[-1] == "typename":
+                    out.pop()
+                k = j
+                continue
+            hit = next((p for p in pieces if len(p) > 1 and toks[k : k + len(p)] == p), None)
+            if hit is not None:
+                out.append(hit[0])
+                k += len(hit)
+                continue
+        out.append(toks[k])
+        k += 1
+    return out
+
+
+def _split_trailing(tail: list[str]) -> tuple[list[str], list[str]] | None:
+    """(tail without its trailing return type, the return type), or None without one."""
+    depth = 0
+    for k, t in enumerate(tail):
+        if t in "([{":
+            depth += 1
+        elif t in ")]}":
+            depth -= 1
+        elif t == "->" and depth == 0:
+            end = next((j for j in range(k + 1, len(tail)) if tail[j] == "requires"), len(tail))
+            return tail[:k] + tail[end:], tail[k + 1 : end]
+    return None
+
+
+def _base_form(m: Member) -> tuple[object, ...]:
+    """The out-of-class definition a base member's head becomes, in canonical tokens."""
+    assert m.cls is not None
+    headers = [_strip_header(c.header) for c in m.cls.chain() if c.header is not None] + [
+        _strip_header(h) for h in m.sig.headers
+    ]
+    prefix = _unqualify([t for t in m.sig.prefix if t not in CLASS_ONLY], m.cls)
+    tail = [t for t in m.sig.tail if t not in VIRT_SPECIFIERS]
+    params = [_strip_default(p) for p in m.sig.params]
+    return _form(headers, prefix, m.sig.name, params=params, tail=tail, init=m.sig.init)
+
+
+def _strip_header(header: list[str]) -> list[str]:
+    out: list[str] = []
+    for param in _split_top(header):
+        if out:
+            out.append(",")
+        out += _strip_default(param)
+    return out
+
+
+def _form(
+    headers: list[list[str]],
+    prefix: list[str],
+    name: str,
+    *,
+    params: list[list[str]],
+    tail: list[str],
+    init: list[str],
+) -> tuple[object, ...]:
+    return (
+        tuple(" ".join(h) for h in headers),
+        " ".join(prefix),
+        name,
+        tuple(" ".join(p) for p in params),
+        " ".join(tail),
+        " ".join(init),
+    )
+
+
+def _show(form: tuple[object, ...]) -> str:
+    headers, prefix, name, params, tail, init = form
+    assert isinstance(headers, tuple) and isinstance(params, tuple)
+    text = "".join(f"template <{h}> " for h in headers)
+    text += f"{prefix} {name}({', '.join(str(p) for p in params)}) {tail}"
+    return normalize(text + (f" : {init}" if init else ""))
+
+
+def _owner(d: Member, classes: dict[tuple[str, ...], Cls]) -> Cls | None:
+    names = tuple(n for n, _ in _components(d.sig.qual))
+    for k in range(len(d.ns), -1, -1):
+        c = classes.get((*d.ns[:k], *names))
+        if c is not None:
+            return c
+    return None
+
+
+def _body_lines(m: Member) -> list[tuple[int, str]]:
+    """The body from its `{` to its `}`, as (line number, text) pairs."""
+    text = m.src.text[m.item.body : m.item.close + 1]
+    first = m.src.line(m.item.body)
+    return [(first + k, t.rstrip()) for k, t in enumerate(text.split("\n"))]
+
+
+def _compare_bodies(b: Member, h: Member) -> tuple[int, str, int, str] | None:
+    """The first line pair that differs beyond one uniform change of leading indentation."""
+    bl, hl = _body_lines(b), _body_lines(h)
+    delta: tuple[str, str] | None = None
+    for k in range(max(len(bl), len(hl))):
+        if k >= len(bl) or k >= len(hl):
+            at = min(k, len(hl) - 1)
+            bk = min(k, len(bl) - 1)
+            return hl[at][0], hl[at][1], bl[bk][0], bl[bk][1]
+        (bn, bt), (hn, ht) = bl[k], hl[k]
+        if k == 0 or bn in b.src.raw or bt.startswith("#"):
+            same = bt == ht
+        elif not bt.strip() and not ht.strip():
+            continue
+        else:
+            bi = bt[: len(bt) - len(bt.lstrip())]
+            hi = ht[: len(ht) - len(ht.lstrip())]
+            if bt[len(bi) :] != ht[len(hi) :]:
+                same = False
+            else:
+                d = ("-", bi[: len(bi) - len(hi)]) if bi.endswith(hi) else None
+                if d is None and hi.endswith(bi):
+                    d = ("+", hi[: len(hi) - len(bi)])
+                if delta is None:
+                    delta = d
+                same = d is not None and d == delta
+        if not same:
+            return hn, ht, bn, bt
+    return None
+
+
+def check_members(
+    repo: Path, base: str, removed: list[Entry], added: list[Entry], report: Report
+) -> tuple[set[tuple[str, int]], set[tuple[str, int]]]:
+    """Proves the member function definitions that left a class body.
+
+    Returns the base lines and the HEAD lines it accounts for: each restructured class whole,
+    and each moved definition with the preprocessor lines that moved beside it.
+    """
+    gone: set[tuple[str, int]] = set()
+    came: set[tuple[str, int]] = set()
+    added_at = {(e.path, e.lineno) for e in added}
+    old = [_parse(p, Source(read_blob(repo, base, p))) for p in sorted({e.path for e in removed})]
+    new = [_parse(p, Source(read_blob(repo, "HEAD", p))) for p in sorted({e.path for e in added})]
+    base_classes = {c.key: c for p in old for c in p.classes}
+    head_classes: dict[tuple[str, ...], list[Cls]] = defaultdict(list)
+    for p in new:
+        for c in p.classes:
+            head_classes[c.key].append(c)
+
+    # Out-of-class definitions new at HEAD, by owner and canonical head.
+    pending: dict[tuple[object, ...], list[Member]] = defaultdict(list)
+    by_name: dict[tuple[tuple[str, ...], str], list[Member]] = defaultdict(list)
+    for p in new:
+        for d in p.defs:
+            owner = _owner(d, base_classes)
+            if owner is None or (d.path, d.src.line(d.item.body)) not in added_at:
+                continue
+            d.cls = owner
+            by_name[owner.key, d.sig.name].append(d)
+            for form in _head_forms(d, owner):
+                pending[(owner.key, form)].append(d)
+
+    members = [m for c in base_classes.values() for m in c.members]
+    moved: dict[int, Member] = {}  # id(base member) -> its definition at HEAD
+    used: set[int] = set()
+    roots: dict[int, Cls] = {}
+    for m in members:
+        assert m.cls is not None
+        d = next(
+            (d for d in pending.get((m.cls.key, _base_form(m)), []) if id(d) not in used), None
+        )
+        if d is not None:
+            moved[id(m)] = d
+            used.add(id(d))
+            roots[id(m.cls.root())] = m.cls.root()
+    for m in members:
+        assert m.cls is not None
+        if id(m) in moved:
+            continue
+        decl = normalize(_decl_text(m)[0])
+        if not any(decl in h.decls for h in head_classes.get(m.cls.key, [])):
+            continue  # still defined in the class, or the class check reports it
+        roots[id(m.cls.root())] = m.cls.root()
+        where = f"{m.path}:{m.line}"
+        rival = next(
+            (d for d in by_name.get((m.cls.key, m.sig.name), []) if id(d) not in used), None
+        )
+        if rival is None:
+            report.errors.append(
+                f"{where}: error: member {m.label()}: its body left the class but no "
+                f"out-of-class definition matches it (line number in the base): "
+                f"{m.src.text_of(m.line).strip()}"
+            )
+            continue
+        used.add(id(rival))
+        moved[id(m)] = rival
+        report.errors.append(
+            f"{rival.path}:{rival.line}: error: member {m.label()} (base {where}): the "
+            f"definition's head is not the declaration's: {_show(_head_forms(rival, m.cls)[0])} "
+            f"(expected {_show(_base_form(m))})"
+        )
+    for m in members:
+        d = moved.get(id(m))
+        if d is not None:
+            _check_definition(m, d, report)
+            came.update((d.path, n) for n in range(d.line, d.src.line(d.item.close) + 1))
+    for root in roots.values():
+        leaving = _check_class(root, moved, head_classes, report=report, gone=gone, came=came)
+        _check_moved_preprocessor(root, leaving, moved, new, report=report, came=came)
+    return gone, came
+
+
+def _head_forms(d: Member, cls: Cls) -> list[tuple[object, ...]]:
+    """The canonical heads a definition at HEAD reads as: as written, and with a trailing
+    return type moved to the front."""
+    prefix = [t for t in d.sig.prefix if t != "inline"]
+    sig = d.sig
+    forms = [
+        _form(
+            sig.headers,
+            _unqualify(prefix, cls),
+            sig.name,
+            params=sig.params,
+            tail=sig.tail,
+            init=sig.init,
+        )
+    ]
+    trailing = _split_trailing(sig.tail)
+    if trailing is not None and prefix[-1:] == ["auto"]:
+        tail, ret = trailing
+        lead = _unqualify(prefix[:-1] + ret, cls)
+        forms.append(
+            _form(sig.headers, lead, sig.name, params=sig.params, tail=tail, init=sig.init)
+        )
+    return forms
+
+
+def _check_definition(m: Member, d: Member, report: Report) -> None:
+    assert m.cls is not None
+    where = f"{m.path}:{m.line}"
+    label = m.label()
+    expected = m.cls.qualifier()
+    if expected is not None and d.sig.qual[-len(expected) :] != expected:
+        report.errors.append(
+            f"{d.path}:{d.line}: error: member {label} (base {where}): the qualifier is "
+            f"{''.join(d.sig.qual)} (expected {''.join(expected)})"
+        )
+    diff = _compare_bodies(m, d)
+    if diff is not None:
+        hn, ht, bn, bt = diff
+        report.errors.append(
+            f"{d.path}:{hn}: error: member {label} (base {where}): the body changed: "
+            f"{ht.strip()} (base {m.path}:{bn}: {bt.strip()})"
+        )
+    header = Path(d.path).suffix in HEADER_SUFFIXES
+    templated = bool(d.sig.headers)
+    if header and not templated and not set(d.sig.prefix) & {"inline", "constexpr", "consteval"}:
+        report.errors.append(
+            f"{d.path}:{d.line}: error: member {label} (base {where}): a non-template "
+            f"definition out of the class in a header needs 'inline' (one definition rule)"
+        )
+    if not header:
+        report.warnings.append(
+            f"{d.path}:{d.line}: warning: member {label} (base {where}) moved to a source "
+            f"file (linkage change: no longer inline)"
+        )
+    types = m.cls.scope_types()
+    templates = {c.names[-1] for c in m.cls.chain() if c.header is not None}
+    prefix = d.sig.prefix
+    for k, t in enumerate(prefix):
+        if k and prefix[k - 1] in ("::", ".", "->"):
+            continue
+        if t in types or (t in templates and prefix[k + 1 : k + 2] != ["<"]):
+            report.errors.append(
+                f"{d.path}:{d.line}: error: member {label} (base {where}): the return type "
+                f"names the class's '{t}' unqualified, which out of the class resolves at "
+                f"namespace scope; qualify it or use a trailing return type"
+            )
+            break
+
+
+@dataclass
+class ClassLine:
+    """A non-blank line the class at HEAD must hold."""
+
+    text: str  # normalized
+    line: int  # in the base
+    member: Member | None  # the member the line belongs to
+    decl: bool  # the declaration a moved definition left
+
+
+def _line_range(src: Source, item: Item) -> range:
+    return range(src.line(item.start), src.line(item.end - 1) + 1)
+
+
+def _expected_class(root: Cls, moved: dict[int, Member]) -> list[ClassLine]:
+    """The base class's lines with each moved definition replaced by its declaration."""
+    src = root.src
+    every = sorted(root.all_members(), key=lambda m: m.item.start)
+    lines = _line_range(src, root.item)
+    lo = src.starts[lines[0] - 1]
+    hi = src.starts[lines[-1]] - 1 if lines[-1] < len(src.starts) else len(src.text)
+    chunks: list[tuple[str, int, Member | None]] = []
+    pos = lo
+    for m in every:
+        if id(m) in moved:
+            chunks.append((src.text[pos : m.item.start], pos, None))
+            chunks.append(("".join(_decl_text(m)), m.item.start, m))
+            pos = m.item.end
+    chunks.append((src.text[pos:hi], pos, None))
+    starts = [m.item.start for m in every]
+
+    def owner_at(offset: int) -> Member | None:
+        k = bisect.bisect_right(starts, offset) - 1  # members never nest
+        return every[k] if k >= 0 and offset < every[k].item.end else None
+
+    out: list[ClassLine] = []
+    current = ClassLine("", lines[0], None, False)
+    for chunk, at, decl_of in chunks:
+        offset = at
+        for k, piece in enumerate(chunk.split("\n")):
+            if k:
+                out.append(current)
+                line = decl_of.line + k if decl_of else src.line(offset)
+                current = ClassLine("", line, None, False)
+            if piece.strip():
+                current.member = current.member or decl_of or owner_at(offset)
+                current.decl = current.decl or decl_of is not None
+            current.text += piece
+            offset += len(piece) + 1
+    out.append(current)
+    for e in out:
+        e.text = normalize(e.text)
+    return [e for e in out if e.text]
+
+
+def _check_class(
+    root: Cls,
+    moved: dict[int, Member],
+    head_classes: dict[tuple[str, ...], list[Cls]],
+    *,
+    report: Report,
+    gone: set[tuple[str, int]],
+    came: set[tuple[str, int]],
+) -> list[ClassLine]:
+    """The class at HEAD must read as the base's with each moved definition replaced by its
+    declaration. Returns the class-level preprocessor lines that left it."""
+    label = "::".join(root.names)
+    where = f"{root.path}:{root.src.line(root.item.start)}"
+    gone.update((root.path, n) for n in _line_range(root.src, root.item))
+    heads = head_classes.get(root.key, [])
+    if not heads:
+        report.errors.append(f"{where}: error: class {label}: not found at HEAD")
+        return []
+    head = next((h for h in heads if h.path == root.path), heads[0])
+    came.update((head.path, n) for n in _line_range(head.src, head.item))
+    expected = _expected_class(root, moved)
+    actual = [
+        (normalize(head.src.text_of(n)), n)
+        for n in _line_range(head.src, head.item)
+        if head.src.text_of(n).strip()
+    ]
+    leaving: list[ClassLine] = []
+    matcher = difflib.SequenceMatcher(
+        None, [e.text for e in expected], [a[0] for a in actual], autojunk=False
+    )
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op == "equal":
+            continue
+        if op == "delete" and all(not e.decl and e.line in root.src.pp for e in expected[i1:i2]):
+            leaving.extend(expected[i1:i2])
+            continue
+        exp = expected[min(i1, len(expected) - 1)]
+        member = next((e.member for e in expected[i1:i2] if e.member is not None), exp.member)
+        about = (
+            f"member {member.label()} (base {member.path}:{member.line})"
+            if member is not None
+            else f"class {label} (base {where})"
+        )
+        if j1 < j2:
+            text, n = actual[j1]
+            what = "the declaration left in the class differs" if exp.decl else "the class changed"
+            tail = f" (expected base {root.path}:{exp.line}: {exp.text})" if i1 < i2 else ""
+            report.errors.append(f"{head.path}:{n}: error: {about}: {what}: {text}{tail}")
+        else:
+            report.errors.append(
+                f"{root.path}:{exp.line}: error: {about}: a line left the class and does not "
+                f"leave with a moved definition (line number in the base): {exp.text}"
+            )
+    return leaving
+
+
+Gap = tuple[int, int]  # ids of the moved members before and after (0 when none is adjacent)
+
+
+def _gaps(events: list[tuple[str, int]]) -> dict[Gap, list[int]]:
+    """Groups preprocessor events ("P", index) by the moved definitions ("D", id) beside them;
+    any other code ("O") between breaks the adjacency."""
+    out: dict[Gap, list[int]] = defaultdict(list)
+    for k, (kind, value) in enumerate(events):
+        if kind != "P":
+            continue
+        before = next((e for e in reversed(events[:k]) if e[0] != "P"), ("O", 0))
+        after = next((e for e in events[k + 1 :] if e[0] != "P"), ("O", 0))
+        key = (before[1] if before[0] == "D" else 0, after[1] if after[0] == "D" else 0)
+        out[key].append(value)
+    return out
+
+
+def _events(
+    src: Source, lines: range, span: dict[int, Member], moving: dict[int, int]
+) -> list[tuple[str, int]]:
+    """The lines as events: a moved definition, a moving preprocessor line, or other code."""
+    events: list[tuple[str, int]] = []
+    for n in lines:
+        if n in span:
+            event = ("D", id(span[n]))
+            if not events or events[-1] != event:
+                events.append(event)
+        elif n in moving:
+            events.append(("P", moving[n]))
+        elif src.code_of(n).strip() or n in src.pp:
+            events.append(("O", 0))
+    return events
+
+
+def _check_moved_preprocessor(
+    root: Cls,
+    leaving: list[ClassLine],
+    moved: dict[int, Member],
+    new: list[Parsed],
+    *,
+    report: Report,
+    came: set[tuple[str, int]],
+) -> None:
+    """A class-level preprocessor line may leave the class only to sit beside the same moved
+    definitions, in the same order: a `#define` and `#undef` pair around a member's body."""
+    if not leaving:
+        return
+    src = root.src
+    span: dict[int, Member] = {}
+    for m in root.all_members():
+        if id(m) in moved:
+            span.update(dict.fromkeys(range(m.line, src.line(m.item.close) + 1), m))
+    base_lines = {e.line: k for k, e in enumerate(leaving)}
+    base_gaps = _gaps(_events(src, _line_range(src, root.item), span, base_lines))
+
+    texts = {e.text for e in leaving}
+    owner = {id(d): m for m in root.all_members() if (d := moved.get(id(m))) is not None}
+    found: list[tuple[str, str, int]] = []  # text, path, line at HEAD
+    head_gaps: dict[Gap, list[int]] = {}
+    for p in new:
+        dspan: dict[int, Member] = {}
+        for d in p.defs:
+            m = owner.get(id(d))
+            if m is not None:
+                dspan.update(dict.fromkeys(range(d.line, p.src.line(d.item.close) + 1), m))
+        if not dspan:
+            continue
+        moving: dict[int, int] = {}
+        for n in range(1, len(p.src.starts) + 1):
+            text = normalize(p.src.text_of(n))
+            if n in p.src.pp and n not in dspan and text in texts and (p.path, n) not in came:
+                moving[n] = len(found)
+                found.append((text, p.path, n))
+        head_gaps.update(_gaps(_events(p.src, range(1, len(p.src.starts) + 1), dspan, moving)))
+    label = "::".join(root.names)
+    for key, group in base_gaps.items():
+        there = head_gaps.get(key, [])
+        if key != (0, 0) and [found[k][0] for k in there] == [leaving[k].text for k in group]:
+            came.update((found[k][1], found[k][2]) for k in there)
+            continue
+        for k in group:
+            report.errors.append(
+                f"{root.path}:{leaving[k].line}: error: class {label}: a preprocessor line "
+                f"left the class but does not sit beside the same moved definitions at HEAD "
+                f"(line number in the base): {leaving[k].text}"
+            )
+
+
 def check_sizes(repo: Path, paths: list[str], max_lines: int, report: Report) -> None:
     out = git(repo, "grep", "-c", "-I", "", "HEAD", "--", *paths, check=False)
     for row in out.splitlines():
@@ -783,11 +2012,13 @@ def repo_paths(repo: Path, paths: list[str]) -> list[str]:
     return out
 
 
-def check(repo: Path, base: str | None, max_lines: int, paths: list[str]) -> Report:
+def check(
+    repo: Path, base: str | None, max_lines: int, paths: list[str], members: bool = False
+) -> Report:
     """Runs every check; `paths` are relative to the repository root."""
     report = Report()
     merge_base = resolve_base(repo, base)
-    check_moves(repo, merge_base, paths, report)
+    check_moves(repo, merge_base, paths, report, members)
     check_sizes(repo, paths, max_lines, report)
     report.errors.sort(key=_sort_key)
     report.warnings.sort(key=_sort_key)
@@ -804,7 +2035,7 @@ def _sort_key(message: str) -> tuple[str, int, str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Proves a file split moved code and changed none.",
-        usage="%(prog)s [--base REF] [--max-lines N] PATH...",
+        usage="%(prog)s [--base REF] [--max-lines N] [--members] PATH...",
     )
     parser.add_argument(
         "--base", metavar="REF", help="compare against merge-base of REF and HEAD (default: main)"
@@ -816,11 +2047,18 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_MAX_LINES,
         help=f"report C/C++ files under PATH over N lines as notes (default {DEFAULT_MAX_LINES})",
     )
+    parser.add_argument(
+        "--members",
+        action="store_true",
+        help="also prove member function definitions moved out of a class body",
+    )
     parser.add_argument("paths", metavar="PATH", nargs="+", help="files or directories to check")
     args = parser.parse_args(argv)
     try:
         toplevel = Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip())
-        report = check(toplevel, args.base, args.max_lines, repo_paths(toplevel, args.paths))
+        report = check(
+            toplevel, args.base, args.max_lines, repo_paths(toplevel, args.paths), args.members
+        )
     except GitError as e:
         print(f"split_check: error: {e}")
         return 1

@@ -10,12 +10,15 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
 import split_check as sc
 
 TOOL = Path(__file__).resolve().parent / "split_check.py"
+OUTLINE = Path(__file__).resolve().parent / "outline.py"
+MEMBERS = Path(__file__).resolve().parent / "testdata" / "members"
 SCRATCH = Path(__file__).resolve().parent.parent / ".scratch" / "split-check-tests"
 
 BIG = """\
@@ -769,6 +772,331 @@ class CommandLineTest(Case):
         outside = self.run_tool("../..")
         self.assertEqual(outside.returncode, 1)
         self.assertIn("outside the repository", outside.stdout)
+
+
+class Outlined(Case):
+    """A fixture class at the base, and outline.py's move of it at HEAD (not yet committed)."""
+
+    def outline(self, name: str, *flags: str) -> None:
+        self.base({f"src/{name}.hh": (MEMBERS / f"{name}.hh").read_text()})
+        self.run_outline(name, *flags)
+
+    def run_outline(self, name: str, *flags: str) -> None:
+        args = ["apply", f"src/{name}.hh", str(MEMBERS / f"{name}.map"), *flags]
+        proc = subprocess.run(
+            [sys.executable, str(OUTLINE), *args],
+            cwd=self.repo.root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual((proc.returncode, proc.stderr), (0, ""))
+
+    def read(self, path: str) -> str:
+        return (self.repo.root / path).read_text()
+
+    def edit(self, path: str, old: str, new: str) -> None:
+        text = self.read(path)
+        self.assertIn(old, text)
+        self.repo.write(path, text.replace(old, new, 1))
+
+    def members(self) -> sc.Report:
+        self.repo.commit("move")
+        return sc.check(self.repo.root, None, 100000, ["src"], members=True)
+
+    def compiles(self, source: str) -> None:
+        cxx = shutil.which("c++")
+        if cxx is None:
+            self.skipTest("no c++ compiler")
+        tu = self.repo.root / "src" / "tu.cc"
+        tu.write_text(source)
+        proc = subprocess.run(
+            [cxx, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror", str(tu)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        tu.unlink()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+
+STORE_TU = '#include "store.hh"\ntemplate class demo::store<int>;\nint main() { return 0; }\n'
+WIDE_TU = textwrap.dedent(
+    """\
+    #include "wide.hh"
+    #include "wide.hh"
+    int main() {
+        wide w(3);
+        int x[2] = {1, 2};
+        return static_cast<int>(*w.first() + wide::sum(x, 2) + wide::selector(true)(5));
+    }
+    """
+)
+
+
+class OutlineTest(Outlined):
+    """outline.py's moves pass the member mode, for both restructures' shapes (A5)."""
+
+    def test_class_template_move_passes(self) -> None:
+        self.outline("store")
+        report = self.members()
+        self.assertEqual((report.errors, report.warnings), ([], []))
+        umbrella = self.read("src/store.hh")
+        self.assertIn("\tstatic entry make(int key, int value = 1);\n", umbrella)
+        self.assertIn("\tint operator()(int key) const { return get(key); }\n", umbrella)
+        self.assertIn('#include "store_read.hh"\n', umbrella)
+        life = self.read("src/store_life.hh")
+        self.assertIn(
+            "template <class Layout>\nstore<Layout>::store(int capacity, int fill) : capacity_",
+            life,
+        )
+        self.assertIn("auto store<Layout>::operator=(const store& o) -> store& {", life)
+        read = self.read("src/store_read.hh")
+        self.assertIn("auto store<Layout>::size() const noexcept -> size_type {", read)
+        self.assertIn("auto store<Layout>::stats() const -> std::pair<size_type, int> {", read)
+        self.assertIn("template <class Layout>\ntemplate <class F, class G>\nvoid", read)
+        self.assertIn("\n#if defined(DEMO_TRACE)\n\t\ttrace(e.key);\n#endif\n", read)
+        self.assertIn('return R"(store\n\tof items)";\n', read)
+        write = self.read("src/store_write.hh")
+        self.assertIn(
+            "void store<Layout>::reserve(int n)\n\trequires(sizeof(Layout) > 0)\n{", write
+        )
+        self.assertIn("auto store<Layout>::make(int key, int value) -> entry {", write)
+        self.assertTrue(write.startswith("// store's writes"))
+
+    def test_class_template_move_compiles(self) -> None:
+        self.base({"src/store.hh": (MEMBERS / "store.hh").read_text()})
+        self.compiles(STORE_TU)
+        self.run_outline("store")
+        self.compiles(STORE_TU)
+        for piece in ("store_life", "store_read", "store_write"):
+            self.compiles(f'#include "{piece}.hh"\n#include "{piece}.hh"\n')
+
+    def test_non_template_class_move_passes(self) -> None:
+        self.outline("wide", "--inline")
+        report = self.members()
+        self.assertEqual((report.errors, report.warnings), ([], []))
+        umbrella = self.read("src/wide.hh")
+        self.assertIn('#undef WIDE_PRIVATE\n\n#include "wide/container.hh"\n', umbrella)
+        self.assertIn("\t\tcontainer() noexcept;\n", umbrella)
+        self.assertIn("\tstatic digit (*selector(bool hi))(digit);\n", umbrella)
+        self.assertNotIn("WIDE_UNROLL", umbrella)
+        box = self.read("src/wide/container.hh")
+        self.assertIn('#include "../wide.hh"\n', box)
+        self.assertIn(
+            "inline wide::container::container() noexcept : _p(_local), _size(0) { }\n", box
+        )
+        self.assertIn(
+            "inline auto wide::container::begin() noexcept -> iterator { return _p; }", box
+        )
+        self.assertIn("\tfor (size_type i = 0; i < o._size; ++i) {\n\t\t_local[i]", box)
+        emit = self.read("src/wide/emit.hh")
+        self.assertIn("inline void (*wide::pick(unsigned k))(const digit&, unsigned char*) {", emit)
+        self.assertIn("#  define WIDE_UNROLL\n#endif\n\ninline int wide::sum(", emit)
+        self.assertIn(
+            "}\n\n#undef WIDE_UNROLL\n\ninline auto wide::first() -> container::iterator", emit
+        )
+        value = self.read("src/wide/value.hh")
+        self.assertIn("inline wide::digit (*wide::selector(bool hi))(digit) {", value)
+        self.assertIn("inline auto wide::low(digit x, unsigned bits) -> digit {", value)
+        self.assertIn("inline WIDE_NOINLINE auto wide::high(digit x) const -> digit {", value)
+        self.assertIn("template <typename T, typename>\ninline void wide::set(T v) {", value)
+        self.assertIn("inline wide::wide(digit v) : _value() {", value)
+        self.assertIn('\n#if defined(WIDE_DEBUG)\n\tout += "dbg";\n#endif\n', value)
+
+    def test_non_template_class_move_compiles(self) -> None:
+        self.base({"src/wide.hh": (MEMBERS / "wide.hh").read_text()})
+        self.compiles(WIDE_TU)
+        self.run_outline("wide", "--inline")
+        self.compiles(WIDE_TU)
+        for piece in ("container", "emit", "value"):
+            self.compiles(f'#include "wide/{piece}.hh"\n#include "wide/{piece}.hh"\n')
+
+    def test_list_names_each_member_and_its_header(self) -> None:
+        self.base({"src/store.hh": (MEMBERS / "store.hh").read_text()})
+        proc = subprocess.run(
+            [sys.executable, str(OUTLINE), "list", "src/store.hh", str(MEMBERS / "store.map")],
+            cwd=self.repo.root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        rows = {" ".join(r.split()[2:]) for r in proc.stdout.splitlines()}
+        self.assertIn("store_life.hh ~store", rows)
+        self.assertIn("? operator()", rows)
+        self.assertIn("? entry::operator==", rows)
+
+    def test_a_key_naming_nothing_fails(self) -> None:
+        self.base({"src/store.hh": (MEMBERS / "store.hh").read_text()})
+        bad = self.repo.root / "bad.map"
+        bad.write_text("x.hh: nothing\n\tnosuch\n")
+        proc = subprocess.run(
+            [sys.executable, str(OUTLINE), "apply", "src/store.hh", str(bad)],
+            cwd=self.repo.root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("nosuch: names no member", proc.stderr)
+
+
+class MembersTest(Outlined):
+    """What the member mode accepts and refuses beyond outline.py's output (A1)."""
+
+    def test_a_qualified_member_type_in_the_return_passes(self) -> None:
+        self.outline("wide", "--inline")
+        self.edit(
+            "src/wide/container.hh",
+            "inline auto wide::container::begin() noexcept -> iterator {",
+            "inline wide::container::iterator wide::container::begin() noexcept {",
+        )
+        self.edit(
+            "src/wide/value.hh",
+            "inline auto wide::low(digit x, unsigned bits) -> digit {",
+            "inline wide::digit wide::low(digit x, unsigned bits) {",
+        )
+        self.assertPasses(self.members())
+
+    def test_an_unqualified_member_type_in_the_return_fails(self) -> None:
+        self.outline("wide", "--inline")
+        self.edit(
+            "src/wide/container.hh",
+            "inline auto wide::container::begin() noexcept -> iterator {",
+            "inline iterator wide::container::begin() noexcept {",
+        )
+        self.assertHas(
+            self.members().errors,
+            "member wide::container::begin",
+            "names the class's 'iterator' unqualified",
+        )
+
+    def test_a_template_without_inline_passes_and_a_plain_member_needs_it(self) -> None:
+        self.outline("wide", "--inline")
+        self.edit(
+            "src/wide/value.hh",
+            "template <typename T, typename>\ninline void",
+            "template <typename T, typename>\nvoid",
+        )
+        self.edit("src/wide/value.hh", "inline wide::wide(digit v)", "wide::wide(digit v)")
+        errors = self.members().errors
+        self.assertHas(errors, "src/wide/value.hh:", "member wide::wide", "needs 'inline'")
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_a_specifier_kept_on_the_definition_fails(self) -> None:
+        self.outline("wide", "--inline")
+        self.edit("src/wide/value.hh", "inline auto wide::low(", "static inline auto wide::low(")
+        self.assertHas(self.members().errors, "member wide::low", "the definition's head is not")
+
+    def test_a_definition_left_in_the_class_too_fails(self) -> None:
+        self.outline("store")
+        self.edit("src/store.hh", "\t~store();\n", "\t~store() {\n\t\titems_.clear();\n\t}\n")
+        self.assertHas(self.members().errors, "member store::~store", "the class changed")
+
+    def test_another_change_in_the_class_fails(self) -> None:
+        self.outline("store")
+        self.edit("src/store.hh", "\tint capacity_;\n", "\tlong capacity_;\n")
+        self.assertHas(self.members().errors, "src/store.hh:", "class store", "long capacity_;")
+
+    def test_a_raw_string_must_keep_its_lines(self) -> None:
+        self.outline("store")
+        self.edit("src/store_read.hh", '\n\tof items)";', '\nof items)";')
+        self.assertHas(self.members().errors, "member store::describe", "the body changed")
+
+    def test_a_non_uniform_dedent_fails(self) -> None:
+        self.outline("wide", "--inline")
+        self.edit("src/wide/emit.hh", "\t\ts += x[i];\n", "\ts += x[i];\n")
+        self.assertHas(self.members().errors, "member wide::sum", "the body changed", "s += x[i];")
+
+    def test_a_preprocessor_line_must_stay_beside_its_members(self) -> None:
+        self.outline("wide", "--inline")
+        self.edit("src/wide/emit.hh", "#undef WIDE_UNROLL\n", "")
+        self.edit(
+            "src/wide/value.hh",
+            "\n\ninline auto wide::low(",
+            "\n\n#undef WIDE_UNROLL\n\ninline auto wide::low(",
+        )
+        self.assertHas(
+            self.members().errors, "class wide", "#undef WIDE_UNROLL", "does not sit beside"
+        )
+
+    def test_without_the_flag_the_move_is_not_a_split(self) -> None:
+        self.outline("store")
+        self.repo.commit("move")
+        self.assertTrue(sc.check(self.repo.root, None, 100000, ["src"]).errors)
+
+
+class MutatedMoveTest(Outlined):
+    """A mutated move fails with the member named (A2)."""
+
+    def test_a_changed_statement_fails(self) -> None:
+        self.outline("store")
+        self.edit("src/store_read.hh", "return items_.size();", "return items_.size() + 1;")
+        errors = self.members().errors
+        self.assertHas(errors, "src/store_read.hh:", "member store::size", "the body changed")
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_a_reordered_statement_fails(self) -> None:
+        self.outline("store")
+        self.edit(
+            "src/store_write.hh",
+            "\te.key = key;\n\te.value = value;\n",
+            "\te.value = value;\n\te.key = key;\n",
+        )
+        errors = self.members().errors
+        self.assertHas(errors, "member store::make", "the body changed", "e.value = value;")
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_a_dropped_definition_fails(self) -> None:
+        self.outline("wide", "--inline")
+        text = self.read("src/wide/emit.hh")
+        start = text.index("inline void wide::emit0(")
+        end = text.index("\n", start) + 1
+        self.repo.write("src/wide/emit.hh", text[:start] + text[end:])
+        errors = self.members().errors
+        self.assertHas(errors, "member wide::emit0", "no out-of-class definition matches it")
+
+    def test_a_changed_default_argument_fails(self) -> None:
+        self.outline("store")
+        self.edit("src/store.hh", "int value = 1);", "int value = 2);")
+        errors = self.members().errors
+        self.assertHas(errors, "member store::make", "the declaration left in the class differs")
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_a_changed_signature_fails(self) -> None:
+        self.outline("store")
+        self.edit(
+            "src/store_read.hh",
+            "get(int key, int fallback) const {",
+            "get(int key, long fallback) const {",
+        )
+        errors = self.members().errors
+        self.assertHas(
+            errors, "member store::get", "the definition's head is not the declaration's"
+        )
+
+
+class MembersCommandLineTest(Outlined):
+    def run_tool(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(TOOL), *args],
+            cwd=self.repo.root / "src",
+            capture_output=True,
+            text=True,
+            env=self.repo.env,
+            check=False,
+        )
+
+    def test_members_flag(self) -> None:
+        self.outline("wide", "--inline")
+        self.repo.commit("move")
+        proc = self.run_tool("--members", ".")
+        self.assertEqual(
+            (proc.returncode, proc.stdout),
+            (0, "split_check: 0 error(s), 0 warning(s), 0 note(s)\n"),
+        )
+        plain = self.run_tool(".")
+        self.assertEqual(plain.returncode, 1)
 
 
 if __name__ == "__main__":

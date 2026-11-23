@@ -1,0 +1,10 @@
+# store's members by mechanism, as index-restructure maps basic_index.
+class: store
+keep-one-line: yes
+includes-comment: // The member definitions, one header per mechanism.
+store_life.hh: store's lifecycle: construction, destruction and assignment
+	store ~store operator=
+store_read.hh: store's reads: size, lookups, iteration and description
+	size get each stats describe
+store_write.hh: store's writes: reserve and entry making
+	reserve make

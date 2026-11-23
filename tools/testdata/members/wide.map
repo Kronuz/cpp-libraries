@@ -1,0 +1,10 @@
+# wide's members by family, as uinteger-restructure maps uinteger_t (outline.py --inline).
+class: wide
+umbrella-include: "../wide.hh"
+includes-after: #undef WIDE_PRIVATE
+wide/container.hh: The limb container: storage and iteration.
+	container::container container::begin container::end container::size container::copy
+wide/emit.hh: Digit emission, with the unroll macro around the sum.
+	pick emit0 emit1 sum first #81-85 #96
+wide/value.hh: Construction, the word helpers and the string form.
+	wide low high set hi_part lo_part selector str
