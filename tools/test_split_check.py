@@ -805,19 +805,22 @@ class Outlined(Case):
         return sc.check(self.repo.root, None, 100000, ["src"], members=True)
 
     def compiles(self, source: str) -> None:
-        cxx = shutil.which("c++")
-        if cxx is None:
+        """With every compiler found: GCC and Clang disagree on attributes."""
+        names = ["c++", "g++", "clang++", *(f"g++-{v}" for v in range(17, 10, -1))]
+        found = {os.path.realpath(p): p for n in names if (p := shutil.which(n))}
+        if not found:
             self.skipTest("no c++ compiler")
         tu = self.repo.root / "src" / "tu.cc"
         tu.write_text(source)
-        proc = subprocess.run(
-            [cxx, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror", str(tu)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        for cxx in found.values():
+            proc = subprocess.run(
+                [cxx, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror", str(tu)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, f"{cxx}: {proc.stderr}")
         tu.unlink()
-        self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
 STORE_TU = '#include "store.hh"\ntemplate class demo::store<int>;\nint main() { return 0; }\n'
@@ -853,7 +856,12 @@ class OutlineTest(Outlined):
         self.assertIn("auto store<Layout>::operator=(const store& o) -> store& {", life)
         read = self.read("src/store_read.hh")
         self.assertIn("auto store<Layout>::size() const noexcept -> size_type {", read)
-        self.assertIn("auto store<Layout>::stats() const -> std::pair<size_type, int> {", read)
+        self.assertIn("\tstd::pair<size_type, int> stats() const;\n", umbrella)
+        self.assertIn(
+            "template <class Layout>\n[[gnu::noinline]] auto store<Layout>::stats() const -> "
+            "std::pair<size_type, int> {",
+            read,
+        )
         self.assertIn("template <class Layout>\ntemplate <class F, class G>\nvoid", read)
         self.assertIn("\n#if defined(DEMO_TRACE)\n\t\ttrace(e.key);\n#endif\n", read)
         self.assertIn('return R"(store\n\tof items)";\n', read)
@@ -900,6 +908,7 @@ class OutlineTest(Outlined):
         self.assertIn("inline wide::digit (*wide::selector(bool hi))(digit) {", value)
         self.assertIn("inline auto wide::low(digit x, unsigned bits) -> digit {", value)
         self.assertIn("inline WIDE_NOINLINE auto wide::high(digit x) const -> digit {", value)
+        self.assertIn("\tdigit high(digit x) const;\n", umbrella)
         self.assertIn("template <typename T, typename>\ninline void wide::set(T v) {", value)
         self.assertIn("inline wide::wide(digit v) : _value() {", value)
         self.assertIn('\n#if defined(WIDE_DEBUG)\n\tout += "dbg";\n#endif\n', value)
@@ -987,6 +996,28 @@ class MembersTest(Outlined):
         self.outline("wide", "--inline")
         self.edit("src/wide/value.hh", "inline auto wide::low(", "static inline auto wide::low(")
         self.assertHas(self.members().errors, "member wide::low", "the definition's head is not")
+
+    def test_a_noinline_attribute_kept_on_the_declaration_fails(self) -> None:
+        self.outline("wide", "--inline")
+        self.edit(
+            "src/wide.hh",
+            "\tdigit high(digit x) const;\n",
+            "\tWIDE_NOINLINE digit high(digit x) const;\n",
+        )
+        self.assertHas(
+            self.members().errors,
+            "member wide::high",
+            "the declaration keeps a noinline attribute, which moves to the definition",
+        )
+
+    def test_a_noinline_attribute_dropped_from_the_definition_fails(self) -> None:
+        self.outline("store")
+        self.edit(
+            "src/store_read.hh",
+            "[[gnu::noinline]] auto store<Layout>::stats",
+            "auto store<Layout>::stats",
+        )
+        self.assertHas(self.members().errors, "member store::stats", "the definition's head is not")
 
     def test_a_definition_left_in_the_class_too_fails(self) -> None:
         self.outline("store")

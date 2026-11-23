@@ -31,8 +31,8 @@ the check enforces, are in [docs/SPLITTING.md](../docs/SPLITTING.md). Between
   `file: note: file has N lines`.
 
 `--members` also accepts a class restructure: member function definitions moved out of a class
-body into headers, each with its declaration left in the class (SPLITTING.md, "Restructuring a
-large class", lists what may change). A failure there names the member, as
+body into headers, each with its declaration left in the class and a noinline attribute moved to
+the definition (SPLITTING.md, "Restructuring a large class", lists what may change). A failure there names the member, as
 `file:line: error: member C::f (base file:line): ...`.
 
 Exit status 0 means no errors; 1 means an error, or that the base or a PATH could not be
@@ -48,7 +48,8 @@ pass. Python 3.9 or newer, standard library only; its tests are
 Moves a class's member function definitions out of its body: `list` prints each member with its
 lines and the header the map gives it, `apply` rewrites HEADER (each moved definition becomes its
 declaration, and the pieces' includes go after the class) and writes the pieces. `--inline` marks
-each definition `inline`, for a non-template class. The map format is in the tool's header. It
+each definition `inline`, for a non-template class. A noinline attribute leaves the declaration
+for the definition, which GCC needs. The map format is in the tool's header. It
 shares no code with `split_check.py`, so `split_check.py --members` is a second reading of the
 move; its tests are in `tools/test_split_check.py`, over the fixtures in
 `tools/testdata/members/`.

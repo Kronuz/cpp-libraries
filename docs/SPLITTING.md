@@ -94,9 +94,12 @@ its file. It is restructured on its own quest, in two steps:
    any change, not proved by the check.
 
 Step 1 changes no code: a non-template member defined out of the class is `inline`, as it was in
-the class, and a template's members stay templates. Members defined on one line may stay in the
-class when that reads better; a friend defined in the class stays there, since moving it changes
-how it is found.
+the class, and a template's members stay templates. A noinline attribute moves from the
+declaration to the definition: GCC rejects an `inline` definition after a declaration that carries
+it (`-Wattributes`, an error under `-Werror`; Clang accepts it), and dropping `inline` instead
+breaks the one definition rule in a header. Members defined on one line may stay in the class
+when that reads better; a friend defined in the class stays there, since moving it changes how it
+is found.
 
 ## What `tools/split_check.py` checks
 
@@ -132,7 +135,11 @@ then run on the rest of the diff:
    (`C::T`, `typename C<P>::T`) or the return type written as a trailing return type
    (`auto C<P...>::f(...) -> T`). A constructor keeps its member initializers.
 3. The class at HEAD reads as the base's with each moved definition replaced by its declaration:
-   its head up to the body (or the initializers) and a `;`. Any other change in the class fails.
+   its head up to the body (or the initializers) and a `;`, without its noinline attribute, which
+   the definition keeps (`[[gnu::noinline]]`, `[[clang::noinline]]`, `__attribute__((noinline))`,
+   `__declspec(noinline)`, or an object-like macro defined in a file of the diff whose every
+   non-empty definition is one of these). Any other change in the class fails; a declaration that
+   keeps the attribute fails, saying so.
 4. A class-level preprocessor line may leave the class only to sit beside the same moved
    definitions at HEAD, in the same order (a `#define` and `#undef` pair around a member).
 5. A non-template definition out of the class in a header has `inline` (or `constexpr`); a

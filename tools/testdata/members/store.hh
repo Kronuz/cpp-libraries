@@ -76,7 +76,7 @@ public:
 		items_.reserve(static_cast<size_type>(n));
 	}
 
-	std::pair<size_type, int> stats() const {
+	[[gnu::noinline]] std::pair<size_type, int> stats() const {
 		return {items_.size(), capacity_};
 	}
 

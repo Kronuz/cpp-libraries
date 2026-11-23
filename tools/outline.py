@@ -12,6 +12,9 @@ body is unchanged except one tab-or-space prefix less on every line after the fi
 preprocessor lines and lines inside raw strings stay as they are. The definition:
 
 - drops `static`, `virtual`, `explicit`, `friend`, `override`, `final` and default arguments;
+- keeps a noinline attribute, which leaves the declaration (GCC rejects `inline` after it): a
+  `[[gnu::noinline]]`, `__attribute__((noinline))`, `__declspec(noinline)`, or an object-like
+  macro HEADER defines as one; noinline inside a longer attribute list is refused;
 - gains each enclosing class template's header, the member's own header without default
   arguments, the class qualifier (`C<T>::`, `C::Nested::`), and `inline` with `--inline` (for a
   non-template class);
@@ -68,7 +71,8 @@ NOT_NAMES = frozenset(
     ]
 )
 SPECIFIER = re.compile(
-    r"\s*(?:\[\[.*?\]\]|alignas\s*\([^()]*\)|inline|static|constexpr|consteval|virtual|"
+    r"\s*(?:\[\[.*?\]\]|alignas\s*\([^()]*\)|__attribute__\s*\(\([^()]*\)\)|"
+    r"__declspec\s*\([^()]*\)|inline|static|constexpr|consteval|virtual|"
     r"explicit|friend|[A-Z][A-Z0-9_]+(?!\s*::))(?!\w)\s*"
 )
 
@@ -426,6 +430,30 @@ class Member:
         return "::".join([s.name for s in self.scopes[1:]] + [self.name])
 
 
+def is_noinline(spec: str) -> bool:
+    """`[[gnu::noinline]]`, `__attribute__((noinline))` or `__declspec(noinline)`, alone."""
+    words = re.findall(r"\w+", spec)
+    if len(words) != 2 or words[1].strip("_") != "noinline":
+        return False
+    if spec.startswith("[["):
+        return words[0] in ("gnu", "clang", "msvc") and "::" in spec
+    return words[0] in ("__attribute__", "__declspec")
+
+
+def noinline_macros(text: str) -> set[str]:
+    """Object-like macros whose every non-empty `#define` is a noinline attribute."""
+    good: set[str] = set()
+    bad: set[str] = set()
+    for line in text.split("\n"):
+        d = re.match(r"\s*#\s*define\s+(\w+)(?![\w(])(.*)", line)
+        if not d:
+            continue
+        body = d.group(2).split("//")[0].strip()
+        if body:
+            (good if is_noinline(body) else bad).add(d.group(1))
+    return good - bad
+
+
 def template_args(params: str) -> str:
     """`<T, Ts...>` for the parameter list `class T, class... Ts`."""
     names = []
@@ -466,6 +494,7 @@ class Outline:
         for ln in self.lines[:-1]:
             self.starts.append(self.starts[-1] + len(ln) + 1)
         self.code, self.raw = blank(self.text)
+        self.noinline = noinline_macros(self.text)
         self.cls, self.namespaces, self.head, self.open = self.find_class(cls)
         close = closing(self.code, self.open)
         header = re.match(r"\s*template\s*<", self.code[self.head : self.open])
@@ -561,9 +590,26 @@ class Outline:
         k = stop - 1
         while code[k].isspace():
             k -= 1
-        m.decl = text[u.start : k + 1] + ";" + text[k + 1 : stop].rstrip()
-
         own = after_templates(code, u.start)
+        # A noinline attribute moves to the definition: GCC rejects `inline` after it.
+        decl = text[u.start : k + 1]
+        at = own + len(text[own:stop]) - len(text[own:stop].lstrip())
+        cuts: list[tuple[int, int]] = []
+        while (sm := SPECIFIER.match(text, at)) and sm.end() > at:
+            word = text[at : sm.end()].strip()
+            begin = at + text[at : sm.end()].index(word)
+            if word in self.noinline or is_noinline(word):
+                cuts.append((begin - u.start, sm.end() - u.start))
+            elif word.startswith("[[") and "noinline" in re.findall(r"\w+", word.replace("__", "")):
+                raise SystemExit(
+                    f"outline: {m.qualified()}: noinline shares an attribute list; "
+                    f"write it as its own [[gnu::noinline]]"
+                )
+            at = sm.end()
+        for a, b in reversed(cuts):
+            decl = decl[:a] + decl[b:]
+        m.decl = decl + ";" + text[k + 1 : stop].rstrip()
+
         headers = [f"template <{s.header}>" for s in m.scopes if s.header is not None]
         pos = u.start
         while (h := re.compile(r"\s*template\s*<").match(code, pos)) and h.end() <= own:

@@ -25,8 +25,9 @@ changes), an added `using` of a detail namespace, a removed include or comment t
 nowhere, and a namespace-scope object with a dynamic initializer that moved to another file.
 
 With --members it first proves member function definitions moved out of a class body (each body
-unchanged but for one indentation change, its declaration left in the class, the head changed
-only as docs/SPLITTING.md lists) and runs the checks above on the rest of the diff.
+unchanged but for one indentation change, its declaration left in the class without its noinline
+attribute, the head changed only as docs/SPLITTING.md lists) and runs the checks above on the
+rest of the diff.
 """
 
 from __future__ import annotations
@@ -67,6 +68,11 @@ FORWARD_DECL = re.compile(
     r"(?:\s+\[\[[^\]]*\]\])?\s+[\w:]+(?:\s*:\s*[\w:\s]+)?\s*;$"
 )
 STATIC_TOKEN = re.compile(r"\bstatic\s+")
+NOINLINE_ATTRIBUTE = (
+    r"\[\[\s*(?:gnu|clang|msvc)\s*::\s*(?:__)?noinline(?:__)?\s*\]\]"
+    r"|__attribute__\s*\(\(\s*(?:__)?noinline(?:__)?\s*\)\)|__declspec\s*\(\s*noinline\s*\)"
+)
+OBJECT_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(\w+)(?![\w(])(.*)$", re.M)
 INLINE_TOKEN = re.compile(r"^inline\s+")
 # A namespace-scope using of a detail namespace, where SPLITTING.md puts helpers pieces share.
 USING = re.compile(r"^using\s+(?:namespace\s+)?(?:[\w:]*::)?\w*detail\w*(?:::\w+)*\s*;$")
@@ -1653,8 +1659,11 @@ def check_members(
     gone: set[tuple[str, int]] = set()
     came: set[tuple[str, int]] = set()
     added_at = {(e.path, e.lineno) for e in added}
-    old = [_parse(p, Source(read_blob(repo, base, p))) for p in sorted({e.path for e in removed})]
-    new = [_parse(p, Source(read_blob(repo, "HEAD", p))) for p in sorted({e.path for e in added})]
+    old_src = {p: Source(read_blob(repo, base, p)) for p in sorted({e.path for e in removed})}
+    new_src = {p: Source(read_blob(repo, "HEAD", p)) for p in sorted({e.path for e in added})}
+    old = [_parse(p, src) for p, src in old_src.items()]
+    new = [_parse(p, src) for p, src in new_src.items()]
+    noinline = _noinline_pattern([*old_src.values(), *new_src.values()])
     base_classes = {c.key: c for p in old for c in p.classes}
     head_classes: dict[tuple[str, ...], list[Cls]] = defaultdict(list)
     for p in new:
@@ -1691,8 +1700,9 @@ def check_members(
         assert m.cls is not None
         if id(m) in moved:
             continue
-        decl = normalize(_decl_text(m)[0])
-        if not any(decl in h.decls for h in head_classes.get(m.cls.key, [])):
+        decl = _decl_text(m)[0]
+        forms = {normalize(decl), normalize(re.sub(noinline, " ", decl))}
+        if not any(forms & h.decls for h in head_classes.get(m.cls.key, [])):
             continue  # still defined in the class, or the class check reports it
         roots[id(m.cls.root())] = m.cls.root()
         where = f"{m.path}:{m.line}"
@@ -1722,7 +1732,9 @@ def check_members(
             _check_definition(m, d, report)
             came.update((d.path, n) for n in range(d.line, d.src.line(d.item.close) + 1))
     for root in roots.values():
-        leaving = _check_class(root, moved, head_classes, report=report, gone=gone, came=came)
+        leaving = _check_class(
+            root, moved, head_classes, noinline, report=report, gone=gone, came=came
+        )
         _check_moved_preprocessor(root, leaving, moved, new, report=report, came=came)
     return gone, came
 
@@ -1810,8 +1822,23 @@ def _line_range(src: Source, item: Item) -> range:
     return range(src.line(item.start), src.line(item.end - 1) + 1)
 
 
-def _expected_class(root: Cls, moved: dict[int, Member]) -> list[ClassLine]:
-    """The base class's lines with each moved definition replaced by its declaration."""
+def _noinline_pattern(sources: list[Source]) -> str:
+    """A noinline attribute, or an object-like macro defined in `sources` whose every non-empty
+    definition is one."""
+    verdict: dict[str, bool] = {}
+    for src in sources:
+        for d in OBJECT_DEFINE.finditer(src.text):
+            body = re.sub(r"\s*(?://.*|/\*.*?\*/\s*)$", "", d.group(2)).strip()
+            if body:
+                ok = re.fullmatch(NOINLINE_ATTRIBUTE, body) is not None
+                verdict[d.group(1)] = verdict.get(d.group(1), True) and ok
+    names = sorted(n for n, ok in verdict.items() if ok)
+    return "|".join([NOINLINE_ATTRIBUTE, *(rf"\b{re.escape(n)}\b" for n in names)])
+
+
+def _expected_class(root: Cls, moved: dict[int, Member], noinline: str) -> list[ClassLine]:
+    """The base class's lines with each moved definition replaced by its declaration, which
+    leaves a noinline attribute to the definition."""
     src = root.src
     every = sorted(root.all_members(), key=lambda m: m.item.start)
     lines = _line_range(src, root.item)
@@ -1822,7 +1849,7 @@ def _expected_class(root: Cls, moved: dict[int, Member]) -> list[ClassLine]:
     for m in every:
         if id(m) in moved:
             chunks.append((src.text[pos : m.item.start], pos, None))
-            chunks.append(("".join(_decl_text(m)), m.item.start, m))
+            chunks.append((re.sub(noinline, " ", "".join(_decl_text(m))), m.item.start, m))
             pos = m.item.end
     chunks.append((src.text[pos:hi], pos, None))
     starts = [m.item.start for m in every]
@@ -1855,6 +1882,7 @@ def _check_class(
     root: Cls,
     moved: dict[int, Member],
     head_classes: dict[tuple[str, ...], list[Cls]],
+    noinline: str,
     *,
     report: Report,
     gone: set[tuple[str, int]],
@@ -1871,7 +1899,7 @@ def _check_class(
         return []
     head = next((h for h in heads if h.path == root.path), heads[0])
     came.update((head.path, n) for n in _line_range(head.src, head.item))
-    expected = _expected_class(root, moved)
+    expected = _expected_class(root, moved, noinline)
     actual = [
         (normalize(head.src.text_of(n)), n)
         for n in _line_range(head.src, head.item)
@@ -1897,6 +1925,11 @@ def _check_class(
         if j1 < j2:
             text, n = actual[j1]
             what = "the declaration left in the class differs" if exp.decl else "the class changed"
+            if exp.decl and normalize(re.sub(noinline, " ", text)) == exp.text != text:
+                what = (
+                    "the declaration keeps a noinline attribute, which moves to the definition "
+                    "(GCC rejects an inline definition after a noinline declaration)"
+                )
             tail = f" (expected base {root.path}:{exp.line}: {exp.text})" if i1 < i2 else ""
             report.errors.append(f"{head.path}:{n}: error: {about}: {what}: {text}{tail}")
         else:
