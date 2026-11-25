@@ -193,7 +193,7 @@ def scan(text: str) -> list[Line]:
                 i = _skip_quoted(raw, i, '"')
                 code.append('""')
                 continue
-            if c == "'" and not (i > 0 and raw[i - 1].isdigit()):
+            if c == "'" and not _digit_separator(raw, i):
                 i = _skip_quoted(raw, i, "'")
                 code.append("''")
                 continue

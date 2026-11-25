@@ -724,6 +724,11 @@ class ScanTest(unittest.TestCase):
         lines = sc.scan("int a = 1'000'000; }\n")
         self.assertEqual(lines[0].code, "int a = 1'000'000; }")
 
+    def test_hex_digit_separators_are_not_char_literals(self) -> None:
+        lines = sc.scan("auto m = 0xffff'ffffu; }\nchar c = u8'a';\n")
+        self.assertEqual(lines[0].code, "auto m = 0xffff'ffffu; }")
+        self.assertEqual(lines[1].code, "char c = u8'';")
+
     def test_macro_bodies_are_not_scanned(self) -> None:
         lines = sc.scan("#define X { \\\n  1 \\\n}\nnamespace a {\n}\n")
         self.assertTrue(lines[4].ns_close)
